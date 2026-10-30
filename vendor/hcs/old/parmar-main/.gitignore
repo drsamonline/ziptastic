@@ -1,0 +1,40 @@
+# Corpus tiers -- 5.3GB of PG-19 text. Rebuild with:
+#   python build_corpus.py --tiers "64MB,256MB,1GB,4GB" --out ./corpus/
+# The .meta.json sidecars ARE tracked, so a rebuilt corpus can be verified
+# byte-for-byte against the sha256 that produced the published results.
+corpus/*.txt
+
+# Per-cell archives and decompression scratch
+_work/
+*.parmar
+_probe.txt
+
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Editors / OS
+.vscode/
+.idea/
+.claude/
+.DS_Store
+Thumbs.db
+
+# Transient
+*.bak
+*.tmp
+
+# Internal design/spec documents -- kept locally, not published
+PROMPT.md
+PARMAR_HANDOFF.md
+_ascii_title.txt
+
+# Translation handoff prompts and their structural checker -- local tooling,
+# regenerate with: python _i18n_prompts/build_prompts.py
+_i18n_prompts/
+
+# Locks the translating agent to read+edit only (no shell, so no git)
+opencode.json

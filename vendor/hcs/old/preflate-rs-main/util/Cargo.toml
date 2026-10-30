@@ -1,0 +1,18 @@
+[package]
+name = "preflate_util"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+preflate-rs = { path = "../preflate" }
+preflate-container = { path = "../container" }
+env_logger = "0.11"
+log = "0.4"
+clap ={ version = "4", features = ["derive"]}
+cpu-time = "1"
+
+[[bin]]
+name = "preflate_util"

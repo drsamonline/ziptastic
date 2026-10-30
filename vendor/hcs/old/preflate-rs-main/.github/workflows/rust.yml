@@ -1,0 +1,31 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main", "release/*" ]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+      with:
+        toolchain: stable
+        targets: wasm32-wasip1,aarch64-unknown-linux-musl,x86_64-pc-windows-msvc,x86_64-unknown-linux-gnu
+        components: rustfmt,clippy
+
+    - name: Check formatting
+      run: cargo fmt --check --all
+    - name: Build debug
+      run: cargo build --verbose --locked --all
+    - name: Run tests
+      run: cargo test --verbose --all
+    - name: Build release
+      run: cargo build --verbose --locked --release --all

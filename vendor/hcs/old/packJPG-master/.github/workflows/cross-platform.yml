@@ -1,0 +1,126 @@
+name: Cross-platform verification
+
+on:
+  push:
+    branches: [ master, 'maint/**' ]
+    tags:     [ '[0-9]*' ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build-and-roundtrip:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux ARM64 is the only job covering a non-x86_64 Linux host,
+          # which is where the `padbit` signedness bug showed up (bare `char`
+          # is unsigned on ARM64, breaking the `== -1` sentinel and corrupting
+          # the arithmetic coder). x86_64 builds cannot catch that class.
+          #
+          # macOS was dropped after v5.0c because the Apple Silicon job failed
+          # on every run from 2026-07-19 on. The cause was the Makefile, which
+          # linked linuxlibs/x86_64 on every host ("not a mach-o file"). Since
+          # v5.0g it picks the vendored set by host, and macOS is a supported
+          # target again, with its own maclibs/universal.
+          - os: ubuntu-24.04-arm
+            label: Linux ARM64
+            install: sudo apt-get update -q && sudo apt-get install -y libjpeg-turbo-progs imagemagick
+          - os: macos-14
+            label: macOS Apple Silicon
+            install: brew install imagemagick
+          - os: macos-15-intel
+            label: macOS Intel
+            install: brew install imagemagick
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: ${{ matrix.install }}
+
+      - name: Show toolchain
+        run: |
+          uname -a
+          c++ --version
+          which cjpeg djpeg magick || which convert
+
+      - name: Build lib tests
+        working-directory: source
+        run: |
+          make lib CXX=c++ CXXFLAGS="-I. -O2 -Wall -DUNIX -DBUILD_LIB -std=c++17" -j$(getconf _NPROCESSORS_ONLN)
+          c++ -I. -O2 -std=c++17 test/lib_roundtrip_test.cpp   packJPGlib.a -lpthread -o test/lib_roundtrip_test
+          c++ -I. -O2 -std=c++17 test/lib_concurrent_test.cpp packJPGlib.a -lpthread -o test/lib_concurrent_test
+          c++ -I. -O2 -std=c++17 test/lib_batch_test.cpp       packJPGlib.a -lpthread -o test/lib_batch_test
+          ls -la test/lib_*_test
+
+      - name: Build packJPG
+        working-directory: source
+        run: |
+          make clean
+          # Default flags, so the vendored JPEG-LS set for this host is linked
+          # in (linuxlibs/aarch64 or maclibs/universal) and gets exercised.
+          make CXX=c++ -j$(getconf _NPROCESSORS_ONLN)
+          ls -la packJPG
+          ./packJPG 2>&1 | head -1
+
+      - name: Generate test JPEG corpus
+        run: |
+          mkdir -p rt_in rt_out
+          # Synthesize 12 diverse JPEGs at varying quality/size.
+          # ImageMagick is cross-platform ubiquitous; "magick" on v7, falls
+          # back to "convert" on v6.
+          MAGICK="magick"; command -v "$MAGICK" >/dev/null || MAGICK="convert"
+          for i in 1 2 3 4 5 6; do
+            size=$((256 + i*128))
+            $MAGICK -size ${size}x${size} gradient:red-blue -quality 85 rt_in/grad_${i}.jpg
+            $MAGICK -size ${size}x${size} plasma: -quality 70       rt_in/plasma_${i}.jpg
+          done
+          ls -la rt_in
+
+      - name: Round-trip (CLI, v4.0 default)
+        run: |
+          cp rt_in/*.jpg rt_out/
+          # `|| true`: packJPG exits non-zero when ANY file in the batch
+          # warned/errored, even if others succeeded — under bash -e (GH
+          # Actions' default) that would abort the script right here,
+          # before the per-file skip-handling below even runs.
+          ./source/packJPG a -np -o rt_out/*.jpg || true
+          fail=0
+          for f in rt_in/*.jpg; do
+            stem=$(basename "${f%.*}")
+            pjg="rt_out/${stem}.pjg"
+            if [ ! -f "$pjg" ]; then
+              # Used to be a SKIP that kept the job green. The one time it
+              # fired it was the padbit bug (bare `char`, unsigned on ARM64),
+              # not an ImageMagick quirk: a JPEG that does not compress here
+              # is a failure.
+              echo "FAIL (not compressed): $stem"; fail=1
+              continue
+            fi
+            ./source/packJPG x -np -o -od/tmp "$pjg" || true
+            cmp "$f" "/tmp/${stem}.jpg" && echo "PASS: $stem" || { echo "FAIL: $stem"; fail=1; }
+          done
+          exit $fail
+
+      - name: Round-trip of test-files/, JPEG-LS included
+        run: bash .github/roundtrip_testfiles.sh source/packJPG
+
+      - name: Round-trip (library harness)
+        working-directory: source
+        run: |
+          ./test/lib_roundtrip_test ../rt_in/*.jpg
+
+      - name: Batch API byte-exact (library harness)
+        working-directory: source
+        run: |
+          ./test/lib_batch_test ../rt_in/*.jpg
+
+      - name: Concurrent host threads (library harness, 4 threads × 25 iters)
+        working-directory: source
+        run: |
+          ./test/lib_concurrent_test 4 25 ../rt_in/*.jpg

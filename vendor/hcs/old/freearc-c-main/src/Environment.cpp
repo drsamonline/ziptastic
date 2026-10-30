@@ -1,0 +1,725 @@
+#define _WIN32_WINNT 0x0500
+#include <stdio.h>
+#include <sys/stat.h>
+#include <utime.h>
+#include <limits.h>
+#include <memory.h>
+#include "Environment.h"
+#include "Compression/Compression.h"
+
+/* ********************************************************************************************************
+*  Find largest contiguous memory block available and dump information about all available memory blocks
+***********************************************************************************************************/
+
+void memstat(void);
+
+struct LargestMemoryBlock
+{
+  void   *p;
+  size_t size;
+  LargestMemoryBlock();
+  ~LargestMemoryBlock()         {free();}
+  void alloc(size_t n);
+  void free();
+  void test();
+};
+
+LargestMemoryBlock::LargestMemoryBlock() : p(NULL)
+{
+  size_t a=0, b=UINT_MAX;
+  while (b-a>1) {
+    free();
+    size_t c=(a+b)/2;
+    alloc(c);
+    if(p) a=c;  else b=c;
+  }
+}
+
+void LargestMemoryBlock::test()
+{
+  if ((size>>20)>0) {
+    printf("Allocated %4d mb, addr=%p\n", size>>20, p);
+    LargestMemoryBlock next;
+    next.test();
+  } else {
+    memstat();
+  }
+}
+
+
+void TestMalloc (void)
+{
+  memstat();
+  printf("\n");
+  LargestMemoryBlock m;
+  m.test();
+}
+
+
+#ifdef FREEARC_WIN
+
+#include <windows.h>
+#include <stdio.h>
+#include <conio.h>
+#include <time.h>
+
+// Provide VirtualAlloc operations for testing
+void LargestMemoryBlock::alloc(size_t n) {p = VirtualAlloc (0, size=n, MEM_RESERVE, PAGE_READWRITE);};
+void LargestMemoryBlock::free ()         {VirtualFree (p, 0, MEM_RELEASE); p=NULL;};
+
+
+// Use to convert bytes to MB
+#define DIV (1024*1024)
+
+// Specify the width of the field in which to print the numbers.
+// The asterisk in the format specifier "%*I64d" takes an integer
+// argument and uses it to pad and right justify the number.
+#define WIDTH 4
+
+void memstat (void)
+{
+  MEMORYSTATUSEX statex;
+
+  statex.dwLength = sizeof (statex);
+
+  GlobalMemoryStatusEx (&statex);
+
+  printf ("There is  %*ld percent of memory in use.\n",
+          WIDTH, statex.dwMemoryLoad);
+  printf ("There are %*I64d total Mbytes of physical memory.\n",
+          WIDTH, statex.ullTotalPhys/DIV);
+  printf ("There are %*I64d free Mbytes of physical memory.\n",
+          WIDTH, statex.ullAvailPhys/DIV);
+  printf ("There are %*I64d total Mbytes of paging file.\n",
+          WIDTH, statex.ullTotalPageFile/DIV);
+  printf ("There are %*I64d free Mbytes of paging file.\n",
+          WIDTH, statex.ullAvailPageFile/DIV);
+  printf ("There are %*I64d total Mbytes of virtual memory.\n",
+          WIDTH, statex.ullTotalVirtual/DIV);
+  printf ("There are %*I64d free Mbytes of virtual memory.\n",
+          WIDTH, statex.ullAvailVirtual/DIV);
+
+  // Show the amount of extended memory available.
+
+  printf ("There are %*I64d free Mbytes of extended memory.\n",
+          WIDTH, statex.ullAvailExtendedVirtual/DIV);
+}
+
+#else
+
+// Provide malloc operations for testing
+void LargestMemoryBlock::alloc(size_t n) {p=malloc(size=n);};
+void LargestMemoryBlock::free ()         {::free(p); p=NULL;};
+
+void memstat (void)
+{
+}
+
+#endif
+
+
+#ifdef FREEARC_WIN
+
+/*
+void SetDateTimeAttr(const char* Filename, time_t t)
+{
+    struct tm* t2 = gmtime(&t);
+
+    SYSTEMTIME t3;
+    t3.wYear         = t2->tm_year+1900;
+    t3.wMonth        = t2->tm_mon+1;
+    t3.wDay          = t2->tm_mday;
+    t3.wHour         = t2->tm_hour;
+    t3.wMinute       = t2->tm_min;
+    t3.wSecond       = t2->tm_sec;
+    t3.wMilliseconds = 0;
+
+    FILETIME ft;
+    SystemTimeToFileTime(&t3, &ft);
+
+    HANDLE hndl=CreateFile(Filename,GENERIC_WRITE,0,NULL,OPEN_EXISTING,0,0);
+    SetFileTime(hndl,NULL,NULL,&ft);  //creation, last access, modification times
+    CloseHandle(hndl);
+    //SetFileAttributes(Filename,ai.attrib);
+}
+*/
+
+
+FILENAME GetExeName (FILENAME buf, int bufsize)
+{
+  GetModuleFileNameA (NULL, buf, bufsize);
+  return buf;
+}
+
+unsigned GetPhysicalMemory (void)
+{
+  MEMORYSTATUS buf;
+    GlobalMemoryStatus (&buf);
+  return buf.dwTotalPhys;
+}
+
+unsigned GetMaxMemToAlloc (void)
+{
+  LargestMemoryBlock block;
+  return block.size - 5*mb;
+}
+
+unsigned GetAvailablePhysicalMemory (void)
+{
+  MEMORYSTATUS buf;
+    GlobalMemoryStatus (&buf);
+  return buf.dwAvailPhys;
+}
+
+int GetProcessorsCount (void)
+{
+  SYSTEM_INFO si;
+    GetSystemInfo (&si);
+  return si.dwNumberOfProcessors;
+}
+
+// Delete entrire subtree from Windows Registry
+DWORD RegistryDeleteTree(HKEY hStartKey, LPTSTR pKeyName)
+{
+   const int MAX_KEY_LENGTH = MAX_PATH;
+   DWORD   dwRtn, dwSubKeyLength;
+   TCHAR   szSubKey[MAX_KEY_LENGTH];
+   HKEY    hKey;
+
+   // Do not allow NULL or empty key name
+   if ( pKeyName &&  lstrlen(pKeyName))
+   {
+      if( (dwRtn=RegOpenKeyEx(hStartKey,pKeyName,
+         0, KEY_ENUMERATE_SUB_KEYS | DELETE, &hKey )) == ERROR_SUCCESS)
+      {
+         while (dwRtn == ERROR_SUCCESS )
+         {
+            dwSubKeyLength = MAX_KEY_LENGTH;
+            dwRtn=RegEnumKeyEx(
+                           hKey,
+                           0,       // always index zero
+                           szSubKey,
+                           &dwSubKeyLength,
+                           NULL,
+                           NULL,
+                           NULL,
+                           NULL
+                         );
+
+            if(dwRtn == ERROR_NO_MORE_ITEMS)
+            {
+               dwRtn = RegDeleteKey(hStartKey, pKeyName);
+               break;
+            }
+            else if(dwRtn == ERROR_SUCCESS)
+               dwRtn=RegistryDeleteTree(hKey, szSubKey);
+         }
+         RegCloseKey(hKey);
+         // Do not save return code because error
+         // has already occurred
+      }
+   }
+   else
+      dwRtn = ERROR_BADKEY;
+
+   return dwRtn;
+}
+
+#else // For Unix:
+
+
+#include <unistd.h>
+#include <sys/sysinfo.h>
+
+unsigned GetPhysicalMemory (void)
+{
+  struct sysinfo si;
+    sysinfo(&si);
+  return si.totalram*si.mem_unit;
+}
+
+unsigned GetMaxMemToAlloc (void)
+{
+  //struct sysinfo si;
+  //  sysinfo(&si);
+  return UINT_MAX;
+}
+
+unsigned GetAvailablePhysicalMemory (void)
+{
+  struct sysinfo si;
+    sysinfo(&si);
+  return si.freeram*si.mem_unit;
+}
+
+int GetProcessorsCount (void)
+{
+  return get_nprocs();
+}
+
+#endif // Windows/Unix
+
+
+void FormatDateTime (char *buf, int bufsize, time_t t)
+{
+  struct tm *p;
+  if (t==-1)  t=0;  // Иначе получим вылет :(
+  p = localtime(&t);
+  strftime( buf, bufsize, "%Y-%m-%d %H:%M:%S", p);
+}
+
+// Максимальная длина имени файла
+int long_path_size (void)
+{
+  return MY_FILENAME_MAX;
+}
+
+
+/************************************************************************
+ ************* CRC-32 subroutines ***************************************
+ ************************************************************************/
+
+uint CRCTable[8][256];
+#define CRCTab (CRCTable[0])
+
+void InitCRC()
+{
+  for (int I=0;I<256;I++)
+  {
+    uint C=I;
+    for (int J=0;J<8;J++)
+      C=(C & 1) ? (C>>1)^0xEDB88320L : (C>>1);
+    CRCTable[0][I]=C;
+  }
+  for (int K=1; K<8; K++)
+  {
+    for (int I=0; I<256; I++)
+    {
+      CRCTable[K][I] = (CRCTable[K-1][I] >> 8) ^ CRCTable[0][CRCTable[K-1][I] & 0xFF];
+    }
+  }
+}
+
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)) && (defined(__GNUC__) || defined(__clang__))
+#include <stdint.h>
+#include <emmintrin.h>
+#include <smmintrin.h>
+#include <wmmintrin.h>
+
+__attribute__((__target__("sse4.2,pclmul")))
+static uint32 crc32_sse42_simd_(const unsigned char *buf, size_t len, uint32 crc) {
+  static const uint64_t __attribute__((aligned(16))) k1k2[] = { 0x0154442bd4ULL, 0x01c6e41596ULL };
+  static const uint64_t __attribute__((aligned(16))) k3k4[] = { 0x01751997d0ULL, 0x00ccaa009eULL };
+  static const uint64_t __attribute__((aligned(16))) k5k0[] = { 0x0163cd6124ULL, 0x0000000000ULL };
+  static const uint64_t __attribute__((aligned(16))) poly[] = { 0x01db710641ULL, 0x01f7011641ULL };
+
+  __m128i x0, x1, x2, x3, x4, x5, x6, x7, x8, y5, y6, y7, y8;
+
+  x1 = _mm_loadu_si128((const __m128i *)(buf + 0x00));
+  x2 = _mm_loadu_si128((const __m128i *)(buf + 0x10));
+  x3 = _mm_loadu_si128((const __m128i *)(buf + 0x20));
+  x4 = _mm_loadu_si128((const __m128i *)(buf + 0x30));
+
+  x1 = _mm_xor_si128(x1, _mm_cvtsi32_si128((int)crc));
+  x0 = _mm_load_si128((const __m128i *)k1k2);
+
+  buf += 64;
+  len -= 64;
+
+  while (len >= 64) {
+    x5 = _mm_clmulepi64_si128(x1, x0, 0x00);
+    x6 = _mm_clmulepi64_si128(x2, x0, 0x00);
+    x7 = _mm_clmulepi64_si128(x3, x0, 0x00);
+    x8 = _mm_clmulepi64_si128(x4, x0, 0x00);
+
+    x1 = _mm_clmulepi64_si128(x1, x0, 0x11);
+    x2 = _mm_clmulepi64_si128(x2, x0, 0x11);
+    x3 = _mm_clmulepi64_si128(x3, x0, 0x11);
+    x4 = _mm_clmulepi64_si128(x4, x0, 0x11);
+
+    y5 = _mm_loadu_si128((const __m128i *)(buf + 0x00));
+    y6 = _mm_loadu_si128((const __m128i *)(buf + 0x10));
+    y7 = _mm_loadu_si128((const __m128i *)(buf + 0x20));
+    y8 = _mm_loadu_si128((const __m128i *)(buf + 0x30));
+
+    x1 = _mm_xor_si128(x1, x5);
+    x2 = _mm_xor_si128(x2, x6);
+    x3 = _mm_xor_si128(x3, x7);
+    x4 = _mm_xor_si128(x4, x8);
+
+    x1 = _mm_xor_si128(x1, y5);
+    x2 = _mm_xor_si128(x2, y6);
+    x3 = _mm_xor_si128(x3, y7);
+    x4 = _mm_xor_si128(x4, y8);
+
+    buf += 64;
+    len -= 64;
+  }
+
+  x0 = _mm_load_si128((const __m128i *)k3k4);
+
+  x5 = _mm_clmulepi64_si128(x1, x0, 0x00);
+  x1 = _mm_clmulepi64_si128(x1, x0, 0x11);
+  x1 = _mm_xor_si128(x1, x2);
+  x1 = _mm_xor_si128(x1, x5);
+
+  x5 = _mm_clmulepi64_si128(x1, x0, 0x00);
+  x1 = _mm_clmulepi64_si128(x1, x0, 0x11);
+  x1 = _mm_xor_si128(x1, x3);
+  x1 = _mm_xor_si128(x1, x5);
+
+  x5 = _mm_clmulepi64_si128(x1, x0, 0x00);
+  x1 = _mm_clmulepi64_si128(x1, x0, 0x11);
+  x1 = _mm_xor_si128(x1, x4);
+  x1 = _mm_xor_si128(x1, x5);
+
+  while (len >= 16) {
+    x2 = _mm_loadu_si128((const __m128i *)buf);
+    x5 = _mm_clmulepi64_si128(x1, x0, 0x00);
+    x1 = _mm_clmulepi64_si128(x1, x0, 0x11);
+    x1 = _mm_xor_si128(x1, x2);
+    x1 = _mm_xor_si128(x1, x5);
+    buf += 16;
+    len -= 16;
+  }
+
+  x2 = _mm_clmulepi64_si128(x1, x0, 0x10);
+  x3 = _mm_setr_epi32(~0, 0, ~0, 0);
+  x1 = _mm_srli_si128(x1, 8);
+  x1 = _mm_xor_si128(x1, x2);
+
+  x0 = _mm_loadl_epi64((const __m128i*)k5k0);
+
+  x2 = _mm_srli_si128(x1, 4);
+  x1 = _mm_and_si128(x1, x3);
+  x1 = _mm_clmulepi64_si128(x1, x0, 0x00);
+  x1 = _mm_xor_si128(x1, x2);
+
+  x0 = _mm_load_si128((const __m128i*)poly);
+
+  x2 = _mm_and_si128(x1, x3);
+  x2 = _mm_clmulepi64_si128(x2, x0, 0x10);
+  x2 = _mm_and_si128(x2, x3);
+  x2 = _mm_clmulepi64_si128(x2, x0, 0x00);
+  x1 = _mm_xor_si128(x1, x2);
+
+  return (uint32)_mm_extract_epi32(x1, 1);
+}
+#endif
+
+uint UpdateCRC( void *Addr, uint Size, uint StartCRC)
+{
+  if (CRCTable[0][1]==0)
+    InitCRC();
+  const uint8 *Data = (const uint8 *)Addr;
+
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)) && (defined(__GNUC__) || defined(__clang__))
+  static int s_has_pclmul = -1;
+  if (s_has_pclmul < 0) {
+    s_has_pclmul = __builtin_cpu_supports("pclmul") ? 1 : 0;
+  }
+  if (s_has_pclmul && Size >= 64) {
+    size_t chunk_size = Size & ~15ULL;
+    StartCRC = crc32_sse42_simd_(Data, chunk_size, StartCRC);
+    Data += chunk_size;
+    Size -= (uint)chunk_size;
+  }
+#endif
+
+  while (Size >= 16)
+  {
+    uint32 one, two;
+    memcpy(&one, Data, 4);
+    memcpy(&two, Data + 4, 4);
+    one ^= StartCRC;
+    StartCRC = CRCTable[7][(uint8)(one)]
+             ^ CRCTable[6][(uint8)(one >> 8)]
+             ^ CRCTable[5][(uint8)(one >> 16)]
+             ^ CRCTable[4][(uint8)(one >> 24)]
+             ^ CRCTable[3][(uint8)(two)]
+             ^ CRCTable[2][(uint8)(two >> 8)]
+             ^ CRCTable[1][(uint8)(two >> 16)]
+             ^ CRCTable[0][(uint8)(two >> 24)];
+
+    memcpy(&one, Data + 8, 4);
+    memcpy(&two, Data + 12, 4);
+    one ^= StartCRC;
+    StartCRC = CRCTable[7][(uint8)(one)]
+             ^ CRCTable[6][(uint8)(one >> 8)]
+             ^ CRCTable[5][(uint8)(one >> 16)]
+             ^ CRCTable[4][(uint8)(one >> 24)]
+             ^ CRCTable[3][(uint8)(two)]
+             ^ CRCTable[2][(uint8)(two >> 8)]
+             ^ CRCTable[1][(uint8)(two >> 16)]
+             ^ CRCTable[0][(uint8)(two >> 24)];
+
+    Data += 16;
+    Size -= 16;
+  }
+
+  while (Size >= 8)
+  {
+    uint32 one, two;
+    memcpy(&one, Data, 4);
+    memcpy(&two, Data + 4, 4);
+    one ^= StartCRC;
+    StartCRC = CRCTable[7][(uint8)(one)]
+             ^ CRCTable[6][(uint8)(one >> 8)]
+             ^ CRCTable[5][(uint8)(one >> 16)]
+             ^ CRCTable[4][(uint8)(one >> 24)]
+             ^ CRCTable[3][(uint8)(two)]
+             ^ CRCTable[2][(uint8)(two >> 8)]
+             ^ CRCTable[1][(uint8)(two >> 16)]
+             ^ CRCTable[0][(uint8)(two >> 24)];
+    Data += 8;
+    Size -= 8;
+  }
+
+  while (Size > 0)
+  {
+    StartCRC = CRCTable[0][(uint8)(StartCRC ^ *Data++)] ^ (StartCRC >> 8);
+    Size--;
+  }
+  return StartCRC;
+}
+
+// Вычислить CRC блока данных
+uint CalcCRC( void *Addr, uint Size)
+{
+  return UpdateCRC (Addr, Size, INIT_CRC) ^ INIT_CRC;
+}
+
+
+
+// От-xor-ить два блока данных
+void memxor (char *dest, char *src, uint size)
+{
+  while (size >= 16) {
+    uint64 a, b, c, d;
+    memcpy(&a, dest, 8);
+    memcpy(&b, src, 8);
+    memcpy(&c, dest + 8, 8);
+    memcpy(&d, src + 8, 8);
+    a ^= b;
+    c ^= d;
+    memcpy(dest, &a, 8);
+    memcpy(dest + 8, &c, 8);
+    dest += 16;
+    src += 16;
+    size -= 16;
+  }
+  while (size >= 8) {
+    uint64 a, b;
+    memcpy(&a, dest, 8);
+    memcpy(&b, src, 8);
+    a ^= b;
+    memcpy(dest, &a, 8);
+    dest += 8;
+    src += 8;
+    size -= 8;
+  }
+  while (size > 0) {
+    *dest++ ^= *src++;
+    size--;
+  }
+}
+
+// Вернуть имя файла без имени каталога
+FILENAME basename (FILENAME fullname)
+{
+  char *basename = fullname;
+  for (char* p=fullname; *p; p++)
+    if (in_set (*p, ALL_PATH_DELIMITERS))
+      basename = p+1;
+  return basename;
+}
+
+
+/* ***************************************************************************
+*                                                                            *
+* Random system values collection routine from CryptLib by Peter Gutmann     *
+* [ftp://ftp.franken.de/pub/crypt/cryptlib/cl331.zip]                        *
+*                                                                            *
+*****************************************************************************/
+
+/* The size of the intermediate buffer used to accumulate polled data */
+#define RANDOM_BUFSIZE	4096
+
+// Handling random data buffer
+#define initRandomData(rand_buf, rand_size)  \
+                                 char *rand_ptr=(rand_buf), *rand_end=(rand_buf)+(rand_size)
+#define addRandomData(ptr,size)  (memcpy (rand_ptr, (ptr), mymin((size),rand_end-rand_ptr)), rand_ptr+=mymin((size),rand_end-rand_ptr))
+#define addRandomLong(value)     {long n=(value); addRandomData(&n, sizeof(long));}
+#define addRandomValue(value)    addRandomLong((long) value)
+
+
+/* Map a value that may be 32 or 64 bits depending on the platform */
+#if defined( _MSC_VER ) && ( _MSC_VER >= 1400 )
+  #define addRandomHandle( handle ) \
+		  addRandomLong( PtrToUlong( handle ) )
+#else
+  #define addRandomHandle( handle ) \
+		  addRandomLong( (uintptr_t)(handle) )
+#endif /* 32- vs. 64-bit VC++ */
+
+
+// This routine fills buffer with system-generated pseudo-random data
+// and returns number of bytes filled
+int systemRandomData (char *rand_buf, int rand_size)
+{
+#ifdef FREEARC_WIN
+
+	FILETIME  creationTime, exitTime, kernelTime, userTime;
+#ifdef _WIN64
+	SIZE_T minimumWorkingSetSize, maximumWorkingSetSize;
+#else
+	DWORD minimumWorkingSetSize, maximumWorkingSetSize;
+#endif
+	LARGE_INTEGER performanceCount;
+	MEMORYSTATUS memoryStatus;
+	HANDLE handle;
+	POINT point;
+
+	initRandomData (rand_buf, rand_size);
+
+	/* Get various basic pieces of system information: Handle of active
+	   window, handle of window with mouse capture, handle of clipboard owner
+	   handle of start of clpboard viewer list, pseudohandle of current
+	   process, current process ID, pseudohandle of current thread, current
+	   thread ID, handle of desktop window, handle  of window with keyboard
+	   focus, whether system queue has any events, cursor position for last
+	   message, 1 ms time for last message, handle of window with clipboard
+	   open, handle of process heap, handle of procs window station, types of
+	   events in input queue, and milliseconds since Windows was started.
+	   Since a HWND/HANDLE can be a 64-bit value on a 64-bit platform, we
+	   have to use a mapping macro that discards the high 32 bits (which
+	   presumably won't be of much interest anyway) */
+	addRandomHandle( GetActiveWindow() );
+	addRandomHandle( GetCapture() );
+	addRandomHandle( GetClipboardOwner() );
+	addRandomHandle( GetClipboardViewer() );
+	addRandomHandle( GetCurrentProcess() );
+	addRandomValue( GetCurrentProcessId() );
+	addRandomHandle( GetCurrentThread() );
+	addRandomValue( GetCurrentThreadId() );
+	addRandomHandle( GetDesktopWindow() );
+	addRandomHandle( GetFocus() );
+	addRandomValue( GetInputState() );
+	addRandomValue( GetMessagePos() );
+	addRandomValue( GetMessageTime() );
+	addRandomHandle( GetOpenClipboardWindow() );
+	addRandomHandle( GetProcessHeap() );
+	addRandomHandle( GetProcessWindowStation() );
+	addRandomValue( GetTickCount() );
+
+	/* Get multiword system information: Current caret position, current
+	   mouse cursor position */
+	GetCaretPos( &point );
+	addRandomData( &point, sizeof( POINT ) );
+	GetCursorPos( &point );
+	addRandomData( &point, sizeof( POINT ) );
+
+	/* Get percent of memory in use, bytes of physical memory, bytes of free
+	   physical memory, bytes in paging file, free bytes in paging file, user
+	   bytes of address space, and free user bytes */
+	memoryStatus.dwLength = sizeof( MEMORYSTATUS );
+	GlobalMemoryStatus( &memoryStatus );
+	addRandomData( &memoryStatus, sizeof( MEMORYSTATUS ) );
+
+	/* Get thread and process creation time, exit time, time in kernel mode,
+	   and time in user mode in 100ns intervals */
+	handle = GetCurrentThread();
+	GetThreadTimes( handle, &creationTime, &exitTime, &kernelTime, &userTime );
+	addRandomData( &creationTime, sizeof( FILETIME ) );
+	addRandomData( &exitTime, sizeof( FILETIME ) );
+	addRandomData( &kernelTime, sizeof( FILETIME ) );
+	addRandomData( &userTime, sizeof( FILETIME ) );
+	handle = GetCurrentProcess();
+	GetProcessTimes( handle, &creationTime, &exitTime, &kernelTime, &userTime );
+	addRandomData( &creationTime, sizeof( FILETIME ) );
+	addRandomData( &exitTime, sizeof( FILETIME ) );
+	addRandomData( &kernelTime, sizeof( FILETIME ) );
+	addRandomData( &userTime, sizeof( FILETIME ) );
+
+	/* Get the minimum and maximum working set size for the current process */
+	GetProcessWorkingSetSize( handle, &minimumWorkingSetSize, &maximumWorkingSetSize );
+	addRandomValue( minimumWorkingSetSize );
+	addRandomValue( maximumWorkingSetSize );
+
+	/* The following are fixed for the lifetime of the process */
+       	/* Get name of desktop, console window title, new window position and
+       	   size, window flags, and handles for stdin, stdout, and stderr */
+       	STARTUPINFO startupInfo;
+       	startupInfo.cb = sizeof( STARTUPINFO );
+       	GetStartupInfo( &startupInfo );
+       	addRandomData( &startupInfo, sizeof( STARTUPINFO ) );
+
+	/* The performance of QPC varies depending on the architecture it's
+	   running on and on the OS, the MS documentation is vague about the
+	   details because it varies so much.  Under Win9x/ME it reads the
+	   1.193180 MHz PIC timer.  Under NT/Win2K/XP it may or may not read the
+	   64-bit TSC depending on the HAL and assorted other circumstances,
+	   generally on machines with a uniprocessor HAL
+	   KeQueryPerformanceCounter() uses a 3.579545MHz timer and on machines
+	   with a multiprocessor or APIC HAL it uses the TSC (the exact time
+	   source is controlled by the HalpUse8254 flag in the kernel).  That
+	   choice of time sources is somewhat peculiar because on a
+	   multiprocessor machine it's theoretically possible to get completely
+	   different TSC readings depending on which CPU you're currently
+	   running on, while for uniprocessor machines it's not a problem.
+	   However, the kernel appears to synchronise the TSCs across CPUs at
+	   boot time (it resets the TSC as part of its system init), so this
+	   shouldn't really be a problem.  Under WinCE it's completely platform-
+	   dependant, if there's no hardware performance counter available, it
+	   uses the 1ms system timer.
+
+	   Another feature of the TSC (although it doesn't really affect us here)
+	   is that mobile CPUs will turn off the TSC when they idle, Pentiums
+	   will change the rate of the counter when they clock-throttle (to
+	   match the current CPU speed), and hyperthreading Pentiums will turn
+	   it off when both threads are idle (this more or less makes sense,
+	   since the CPU will be in the halted state and not executing any
+	   instructions to count).
+
+	   To make things unambiguous, we detect a CPU new enough to call RDTSC
+	   directly by checking for CPUID capabilities, and fall back to QPC if
+	   this isn't present */
+       	if( QueryPerformanceCounter( &performanceCount ) )
+       		addRandomData( &performanceCount,
+       					   sizeof( LARGE_INTEGER ) );
+       	else
+       		/* Millisecond accuracy at best... */
+       		addRandomValue( GetTickCount() );
+
+        return rand_ptr-rand_buf;
+
+#else // For Unix:
+
+	FILE *f = fopen ("/dev/urandom", "rb");
+
+	if (f == NULL)
+	{
+		perror ("Cannot open /dev/urandom");
+		return 0;
+	}
+
+	if (file_read (f, rand_buf, rand_size) != rand_size)
+	{
+		perror ("Read from /dev/urandom failed");
+		fclose (f);
+		return 0;
+	}
+
+	fclose (f);
+	return rand_size;
+
+#endif // Windows/Unix
+
+}
+
+/****************************************************************************
+*
+*                                           Random system values collection *
+*
+****************************************************************************/
+

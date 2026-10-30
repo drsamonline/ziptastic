@@ -1,0 +1,8 @@
+€§¬Ґ­Ґ­Ёп, ў­Ґбс­­лҐ ў Є®¤ PPMD:
+
+1. ў PPMdType.h ЁбЇ®«м§®ў ­ Є« бб PRIME_STREAM, ­ бва®Ґ­­л© ­  ЁбЇ®«м§®ў ­ЁҐ callbacks
+2. BOOL _STDCALL StartSubAllocator(UINT t) - вҐЇҐам Ї®«гз Ґв а §¬Ґа Ї ¬пвЁ ў Ў ©в е,   ­Ґ ¬ҐЈ Ў ©в е
+3. static void _STDCALL StartModelRare(int _MaxOrder,MR_METHOD _MRMethod)
+   зв®Ўл § ¬Ґ­Ёвм ::MaxOrder/::MRMethod ­  MaxOrder/MRMethod
+4. Њ ЄбЁ¬ «м­л© Ї®ап¤®Є ¬®¤Ґ«Ё: MAX_O=128
+5. Љ®¬ЇЁ«ЁагҐвбп в®«мЄ® б -O1 !
