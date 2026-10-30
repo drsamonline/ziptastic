@@ -74,16 +74,18 @@ block_count = 0` with no blocks at all.
 | mode              u8       |
 | uncompressed_size varint   |
 | compressed_size   varint   |
-| metadata          variable |  mode-specific, may be empty
-| payload           compressed_size bytes
+| body              compressed_size bytes |
+|                            |  = metadata + payload
 ```
 
 - `uncompressed_size` — bytes this block expands to. Never 0, never above
   1 GiB.
-- `compressed_size` — length of `payload`. Must not exceed the bytes remaining
-  in the stream.
-- `metadata` — defined per mode below. A decoder that does not know the mode
-  cannot skip it, so unknown modes are a hard error, not a skipped block.
+- `compressed_size` — length of the **block body**, which is metadata plus
+  payload. For RAW the metadata is empty, so body == payload. Defining it this
+  way lets the decoder bounds-check one span before any mode-specific parsing
+  happens, and means an unknown mode is a hard error rather than a skipped
+  block.
+- `metadata` — defined per mode below, and always read out of the body.
 
 The decoder additionally enforces that a block cannot claim more output than
 the stream's remaining `original_size` budget, and that the bytes a mode
@@ -98,7 +100,7 @@ actually produced match `uncompressed_size`.
 | `0x02` | `HUFF_STATIC` | Phase 7 | reserved |
 | `0x03` | `HUFF_ADAPT` | Phase 7 | reserved |
 | `0x04` | `BWT_BSC` | Phase 9 | reserved |
-| `0x05` | `LZMA2_FALLBACK` | Phase 1 | reserved |
+| `0x05` | `LZMA2_FALLBACK` | see below | **implemented** (Phase 1) |
 | `0x06` | `BROTLI` | Phase 9 | reserved |
 | `0x07` | `ZSTD` | Phase 9 | reserved |
 | `0x08` | `LZ4` | Phase 9 | reserved |
@@ -106,6 +108,26 @@ actually produced match `uncompressed_size`.
 | `0x0A` | `PPMD` | Phase 11 | reserved |
 
 Bytes `0x0B`–`0xFF` are undefined and rejected as `bad-mode`.
+
+### `0x05` — LZMA2_FALLBACK
+
+Body layout:
+
+```
+| props_len  varint  |   always 1 today
+| props      props_len bytes |  LZMA2 filter property (dict-size code)
+| payload    remaining bytes |  a bare LZMA2 stream, no .xz container
+```
+
+`payload` is a **raw LZMA2 stream** — the bytes `xz --format=raw` produces, not
+an `.xz` file. `props` is the liblzma filter property for LZMA2 (one byte, the
+dictionary-size code), so a decoder rebuilds the exact filter without guessing
+options. Upstream `xz --format=raw --lzma2=dict=64MiB -dc` decodes any
+`LZMA2_FALLBACK` payload produced by this build; the test suite checks that.
+
+The encoder uses preset 9 (64 MiB dictionary) and preset 9|EXTREME, and keeps
+whichever is smaller, because extreme is not a superset — it wins by 4.1% on
+`xml` and loses by 0.02% on `dickens`.
 
 ### `0x00` — RAW
 
@@ -130,6 +152,7 @@ The decoder returns exactly one of these; nothing throws.
 | `bad-block-size` | zero block, block above 1 GiB, or stream above 1 TiB |
 | `size-mismatch` | declared sizes disagree with the bytes produced |
 | `trailing-data` | bytes remain after the last block |
+| `corrupt` | an entropy backend rejected its own payload |
 | `io-error` | CLI read/write failure |
 
 ## Encoder behaviour notes
@@ -145,6 +168,14 @@ assume and what a future version may change.
   streaming header variant (block count moved to a trailer) is deliberately
   deferred: it costs ratio (you cannot choose block boundaries without knowing
   the size) and buys nothing for the file-to-file use case.
+- **The LZMA2 fallback is whole-stream, not per-block.** A `LZMA2_FALLBACK`
+  stream contains exactly one block covering the whole input. Independent
+  per-block LZMA2 streams would reset the dictionary every 256 KiB and lose
+  badly to `xz -9` on files with long-range redundancy, so the fallback is
+  chosen as an alternative to the entire CHCE-native encoding and the
+  comparison is on total stream size. Per-block LZMA2 becomes meaningful only
+  once blocks carry their own model state, which is what Phase 4's rANS blocks
+  do.
 - **State carries across blocks.** From Phase 2 onward the LZ dictionary, both
   match-finder indexes and the rANS context models persist from block to block;
   the format does not delimit that state, because the decoder rebuilds it by

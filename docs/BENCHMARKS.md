@@ -8,10 +8,12 @@ described under *Test machine*, with the command shown.
 
 | | |
 |---|---|
-| CPU | containerised x86-64 vCPU, shared |
+| CPU | containerised x86-64 vCPU, 2 cores, shared |
+| RAM | 2 GiB |
 | OS | Debian 12 (bookworm) |
 | Compiler | Clang 22.1.8 (via Zig 0.17.0 as the C/C++ driver), `-O3` |
 | Build | CMake 4.4.4, Ninja, `-DCMAKE_BUILD_TYPE=Release` |
+| Baseline | `xz` built from `vendor/hcs/old/xz-master`, same compiler |
 
 Absolute MB/s here is a floor, not a target: the container's CPU is shared and
 the I/O path is a network-backed filesystem. Ratios are the meaningful column.
@@ -21,7 +23,7 @@ the I/O path is a network-backed filesystem. Ratios are the meaningful column.
 | Phase | Silesia total | `silesia.zip` | Decode MB/s | Status |
 |---|---|---|---|---|
 | 0 — Skeleton (RAW only) | n/a | n/a | 100–108 | **pass** |
-| 1 — LZMA2 fallback | | | | not started |
+| 1 — LZMA2 fallback | 48,438,819 (46.19 MiB) | n/a (Phase 8) | 20–27 | **pass** |
 | 2 — Fine match finder | | | | not started |
 | 3 — Joint parser | | | | not started |
 | 4 — rANS + context models | | | | not started |
@@ -36,7 +38,10 @@ the I/O path is a network-backed filesystem. Ratios are the meaningful column.
 
 Reference targets (from §9): `ziptastic -9 corpus/` ≤ `xz -9 corpus/`;
 `ziptastic -9 silesia.zip` ≤ 44.0 MiB; `ziptastic --max-ratio silesia/`
-≤ 42 MiB; decode ≥ 100 MB/s.
+≤ 42 MiB; decode ≥ 100 MB/s on the default (rANS) mode.
+
+Baseline for the ratio columns: `xz -9` totals **48,795,576 bytes (46.54 MiB)**
+on the 12-file Silesia corpus (211,938,580 bytes raw).
 
 ## Phase 0 — Skeleton
 
@@ -44,7 +49,7 @@ Reference targets (from §9): `ziptastic -9 corpus/` ≤ `xz -9 corpus/`;
 `help`), v1 header serialisation, RAW blocks only. Nothing is compressed yet:
 this phase proves the container and the block loop, not the ratio.
 
-**Tests.** All five suites pass (`ctest --test-dir build --output-on-failure`):
+**Tests.** All suites pass (`ctest --test-dir build --output-on-failure`):
 
 | suite | what it proves | result |
 |---|---|---|
@@ -55,8 +60,7 @@ this phase proves the container and the block loop, not the ratio.
 | `integration.cli` | `echo hi \| ziptastic \| ziptastic -d`, file round-trip, overwrite guard, error exits, `-b`, `bench` | pass |
 
 **Container overhead.** A 1 MiB incompressible input produces 1 048 614 bytes:
-38 bytes of header and block framing over 4 blocks of 256 KiB (9 bytes of
-stream header + 6 bytes per block header + varint sizes). Overhead is
+38 bytes of header and block framing over 4 blocks of 256 KiB. Overhead is
 independent of content, so it is invisible on real inputs.
 
 **Throughput (RAW, 64 MiB incompressible input).**
@@ -77,5 +81,77 @@ ceiling; Phase 4 sets the real rANS decode number against the ≥150 MB/s gate.
 - The stream header carries `original_size` and `block_count`, so the encoder
   buffers its input before writing. Documented in `docs/FORMAT.md`; a
   streaming trailer variant is deferred to Phase 12 if it ever matters.
-- The build has no dependencies beyond CMake and a C++20 compiler, and links
-  nothing from `vendor/hcs/` yet — that starts in Phase 1.
+
+## Phase 1 — LZMA2 fallback (the Tier-1 guarantee)
+
+**Scope.** Every input is also encoded as raw LZMA2 through liblzma, built
+from `vendor/hcs/old/xz-master`. If that encoding is smaller than the
+CHCE-native one, the stream ships as a single `LZMA2_FALLBACK` block. This is
+the "never worse than `xz -9`" safety net, not the ratio story — the wins are
+meant to come from Phases 4–8.
+
+**Gate result: PASSED on all 12 files.** Every file is smaller than `xz -9`,
+and every round-trip is bit-exact.
+
+| file | raw | `xz -9` | ziptastic | delta |
+|---|---|---|---|---|
+| `mozilla` | 51,220,480 | 13,374,168 | 13,374,119 | -0.0004% |
+| `webster` | 41,458,703 | 8,385,876 | 8,368,631 | -0.2056% |
+| `nci` | 33,553,445 | 1,738,892 | 1,449,230 | -16.6578% |
+| `samba` | 21,606,400 | 3,763,624 | 3,739,486 | -0.6413% |
+| `dickens` | 10,192,446 | 2,830,612 | 2,830,563 | -0.0017% |
+| `osdb` | 10,085,684 | 2,849,916 | 2,844,515 | -0.1895% |
+| `mr` | 9,970,564 | 2,750,280 | 2,750,233 | -0.0017% |
+| `x-ray` | 8,474,240 | 4,489,876 | 4,489,829 | -0.0010% |
+| `sao` | 7,251,944 | 4,415,080 | 4,415,033 | -0.0011% |
+| `reymont` | 6,627,202 | 1,317,160 | 1,315,552 | -0.1221% |
+| `ooffice` | 6,152,192 | 2,426,824 | 2,426,777 | -0.0019% |
+| `xml` | 5,345,280 | 453,268 | 434,851 | -4.0632% |
+| **total** | **211,938,580** | **48,795,576** | **48,438,819** | **-0.7311%** |
+
+Two design choices drive these numbers, both documented in `docs/FORMAT.md`:
+
+1. **Raw LZMA2, not an `.xz` container.** We emit the bare LZMA2 stream and
+   carry the one-byte filter property in the block metadata. That is worth
+   ~50 bytes per file, which is why the "flat" files (mozilla, x-ray, sao,
+   ooffice) land at −0.001% rather than at zero: they are `xz -9`'s own output
+   minus the container.
+2. **Two presets, keep the smaller.** Preset 9|EXTREME is not a superset of
+   preset 9. Measured: `xml` −4.06% and `nci` −16.66% (extreme wins big on
+   both), but `dickens` is 608 bytes *worse* with extreme. Encoding both and
+   keeping the smaller is what makes the guarantee a measurement instead of a
+   hope. It costs 2x encode time — a Phase 12 tuning knob, not a correctness
+   issue.
+
+The fallback is deliberately **whole-stream**. Independent LZMA2 per 256 KiB
+block would reset the 64 MiB dictionary at every boundary and lose to `xz -9`
+on exactly the files with long-range redundancy (mozilla, webster). Per-block
+LZMA2 only becomes meaningful once blocks carry their own model state, which
+is what Phase 4's rANS blocks do.
+
+**Format compatibility.** A `LZMA2_FALLBACK` payload decodes with upstream
+`xz`, not just with us:
+
+```
+xz --format=raw --lzma2=dict=64MiB -dc payload.bin   # bit-exact on xml
+```
+
+**Throughput (fallback path).**
+
+| operation | measurement |
+|---|---|
+| compress | ~1.2 MB/s per preset (two presets per file) |
+| decompress (incl. file I/O) | dickens 19–21 MB/s, mozilla 26–27 MB/s |
+| round-trip | bit-exact (`cmp`) on all 12 files |
+
+Decode is slow for LZMA2 because of the 64 MiB dictionary on a shared vCPU;
+the ≥100 MB/s acceptance target applies to the default rANS path, not to the
+safety net.
+
+**Tests added.** `unit.lzma2` covers codec round-trips across sizes and content
+kinds, compression on text, wrong-size rejection, corrupted-payload rejection,
+bad/oversized filter properties, and truncation. `unit.roundtrip` gained
+fallback-wins-on-compressible, fallback-declines-on-incompressible and
+disabled-fallback cases. `tests/benchmark/silesia_gate.sh` is the reusable
+gate: it resumes, verifies bit-exactness, and exits non-zero if any file is
+larger than `xz -9`.

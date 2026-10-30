@@ -19,10 +19,29 @@ option(CHCE_BUILD_TESTS "Build the test suite" ON)
 option(CHCE_WERROR "Treat warnings as errors" OFF)
 
 # ---------------------------------------------------------------------------
+# Vendored liblzma (Phase 1 — the Tier-1 LZMA2 fallback)
+#
+# Built from vendor/hcs/old/xz-master with its own CMake support, out of tree
+# and untouched. We only need the library: tools, translations and xz's own
+# test suite are all switched off so they do not leak into our build or ctest.
+# ---------------------------------------------------------------------------
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(XZ_NLS OFF CACHE BOOL "" FORCE)
+set(XZ_TOOL_XZ OFF CACHE BOOL "" FORCE)
+set(XZ_TOOL_XZDEC OFF CACHE BOOL "" FORCE)
+set(XZ_TOOL_LZMADEC OFF CACHE BOOL "" FORCE)
+set(XZ_TOOL_LZMAINFO OFF CACHE BOOL "" FORCE)
+set(XZ_TOOL_SYMLINKS OFF CACHE BOOL "" FORCE)
+
+set(XZ_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/hcs/old/xz-master)
+add_subdirectory(${XZ_DIR} ${CMAKE_BINARY_DIR}/xz EXCLUDE_FROM_ALL)
+
+# ---------------------------------------------------------------------------
 # Engine core
 #
-# Phase 0 links nothing but itself. Later phases add vendored sources here:
-#   Phase 1  vendor/hcs/old/xz       (liblzma, LZMA2 fallback)
+# Phase 0 links nothing but itself; Phase 1 adds liblzma. Later phases add
+# more vendored sources here:
 #   Phase 8  vendor/hcs/old/preflate (DEFLATE recompressor)
 #   Phase 9  vendor/hcs/old/libbsc, brotli-master, zstd-dev, lz4-dev
 #   Phase 10 vendor/hcs/old/zpaq     (libzpaq, --max-ratio only)
@@ -33,12 +52,16 @@ add_library(chce_core STATIC
   src/engine/block_writer.cpp
   src/engine/compressor.cpp
   src/engine/decompressor.cpp
+  src/codecs/lzma2_fallback.cpp
 )
 
 target_include_directories(chce_core
   PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
+
+target_link_libraries(chce_core PRIVATE liblzma)
+target_include_directories(chce_core PRIVATE ${XZ_DIR}/src/liblzma/api)
 
 if(MSVC)
   target_compile_options(chce_core PRIVATE /W4)
@@ -68,7 +91,6 @@ target_include_directories(ziptastic PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 if(CHCE_BUILD_TESTS)
   enable_testing()
-
   add_subdirectory(tests)
 endif()
 

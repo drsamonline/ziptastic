@@ -8,26 +8,50 @@
 #include <algorithm>
 
 #include "chimera/block.hpp"
+#include "codecs/lzma2_fallback.hpp"
 
 namespace chce {
 namespace {
 
-// Decodes one payload into `dst`. Phase 0 handles RAW; later phases add one
-// branch per mode here.
-Err decode_payload(const BlockHeader& hdr, std::span<const uint8_t> payload,
-                   std::vector<uint8_t>& dst) {
+// Decodes one block body (metadata + payload) into `dst`. Later phases add
+// one branch per mode here.
+Err decode_body(const BlockHeader& hdr, std::span<const uint8_t> body,
+                std::vector<uint8_t>& dst) {
   switch (hdr.mode) {
     case Mode::Raw:
-      if (hdr.compressed_size != hdr.uncompressed_size) return Err::SizeMismatch;
-      dst.insert(dst.end(), payload.begin(), payload.end());
+      // RAW has no metadata, so the body is the block itself.
+      if (body.size() != hdr.uncompressed_size) return Err::SizeMismatch;
+      dst.insert(dst.end(), body.begin(), body.end());
       return Err::Ok;
+
+    case Mode::Lzma2Fallback: {
+      // body = props_len varint | props | raw LZMA2 payload
+      ByteReader r(body);
+      uint64_t props_len = 0;
+      if (!r.varint(props_len)) return Err::BadVarint;
+      if (props_len == 0 || props_len > 16) return Err::BadMode;
+
+      std::span<const uint8_t> props;
+      if (!r.take(static_cast<size_t>(props_len), props)) return Err::Truncated;
+
+      std::span<const uint8_t> payload;
+      if (!r.take(r.remaining(), payload)) return Err::Truncated;
+      if (payload.empty()) return Err::Truncated;
+
+      std::vector<uint8_t> block;
+      if (Err e = lzma2_decode(payload, props, hdr.uncompressed_size, block);
+          e != Err::Ok) {
+        return e;
+      }
+      dst.insert(dst.end(), block.begin(), block.end());
+      return Err::Ok;
+    }
 
     // Defined in the format but not yet implemented in this engine build.
     case Mode::RansCtx:
     case Mode::HuffStatic:
     case Mode::HuffAdapt:
     case Mode::BwtBsc:
-    case Mode::Lzma2Fallback:
     case Mode::Brotli:
     case Mode::Zstd:
     case Mode::Lz4:
@@ -62,12 +86,12 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
       return Err::SizeMismatch;
     }
 
-    std::span<const uint8_t> payload;
-    if (!r.take(static_cast<size_t>(bh.compressed_size), payload)) {
+    std::span<const uint8_t> body;
+    if (!r.take(static_cast<size_t>(bh.compressed_size), body)) {
       return Err::Truncated;
     }
     const size_t before = dst.size();
-    if (Err e = decode_payload(bh, payload, dst); e != Err::Ok) return e;
+    if (Err e = decode_body(bh, body, dst); e != Err::Ok) return e;
     if (dst.size() - before != bh.uncompressed_size) return Err::SizeMismatch;
 
     ++blocks;

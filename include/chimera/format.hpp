@@ -95,6 +95,7 @@ enum class Err : int {
   BadBlockSize,   // zero, or above kMaxBlockSize / kMaxStreamSize
   SizeMismatch,   // declared sizes disagree with the bytes actually produced
   TrailingData,   // bytes left over after the last block
+  Corrupt,        // an entropy backend rejected its own payload
   Io,             // read or write failure on the CLI side
 };
 
@@ -110,6 +111,7 @@ constexpr const char* err_name(Err e) {
     case Err::BadBlockSize: return "bad-block-size";
     case Err::SizeMismatch: return "size-mismatch";
     case Err::TrailingData: return "trailing-data";
+    case Err::Corrupt: return "corrupt";
     case Err::Io: return "io-error";
   }
   return "unknown";
@@ -128,6 +130,7 @@ constexpr const char* err_message(Err e) {
     case Err::BadBlockSize: return "invalid block size";
     case Err::SizeMismatch: return "declared size does not match payload";
     case Err::TrailingData: return "trailing data after final block";
+    case Err::Corrupt: return "compressed payload is corrupt";
     case Err::Io: return "i/o error";
   }
   return "unknown error";

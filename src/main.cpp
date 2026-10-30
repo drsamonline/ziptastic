@@ -43,6 +43,7 @@ void print_usage(FILE* f) {
       "  -9                   maximum effort preset (no CM backend)\n"
       "      --max-ratio      allow the CM backend (slowest, smallest)\n"
       "      --no-precomp     disable semantic precompression\n"
+      "      --no-lzma2       disable the LZMA2 fallback (breaks Tier-1)\n"
       "      --no-coarse      disable the coarse match index\n"
       "  -b, --block-size N   block size in KiB (default 256)\n"
       "  -o, --output FILE    write to FILE instead of stdout\n"
@@ -126,6 +127,8 @@ int parse_args(int argc, char** argv, Options& o) {
       o.comp.coarse = true;
     } else if (a == "--no-precomp") {
       o.comp.precomp = false;
+    } else if (a == "--no-lzma2") {
+      o.comp.lzma2_fallback = false;
     } else if (a == "--no-coarse") {
       o.comp.coarse = false;
     } else if (a == "-b" || a == "--block-size") {
@@ -214,13 +217,16 @@ int run_compress(const Options& o) {
 
   if (o.verbose) {
     std::fprintf(stderr,
-                 "ziptastic: %zu -> %zu bytes (%.2f%%), %llu blocks (%llu raw)\n",
+                 "ziptastic: %zu -> %zu bytes (%.2f%%), %llu blocks (%llu raw, "
+                 "%llu lzma2)%s\n",
                  input.size(), out.size(),
                  input.empty() ? 100.0
                                : 100.0 * static_cast<double>(out.size()) /
                                      static_cast<double>(input.size()),
                  static_cast<unsigned long long>(stats.blocks),
-                 static_cast<unsigned long long>(stats.raw_blocks));
+                 static_cast<unsigned long long>(stats.raw_blocks),
+                 static_cast<unsigned long long>(stats.lzma2_blocks),
+                 stats.lzma2_stream ? " [lzma2 fallback]" : "");
   }
   return 0;
 }
