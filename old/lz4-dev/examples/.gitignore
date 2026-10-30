@@ -1,0 +1,14 @@
+/Makefile.lz4*
+/print_version
+/simple_buffer
+/frameCompress
+/fileCompress
+/fileRandomAccess
+/blockStreaming_doubleBuffer
+/blockStreaming_ringBuffer
+/streamingHC_ringBuffer
+/blockStreaming_lineByLine
+/dictionaryRandomAccess
+/bench_functions
+/*.exe
+/*.lz4s*

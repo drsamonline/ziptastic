@@ -1,0 +1,6 @@
+ctempdir=/tmp/out/FreeArc
+mkdir -p $ctempdir
+cd clibs/Compression
+./compile
+cd ..
+make

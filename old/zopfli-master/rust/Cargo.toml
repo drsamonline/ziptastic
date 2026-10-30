@@ -1,0 +1,15 @@
+[package]
+name = "zopfli-rs"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+thiserror = "2.0"
+libc = "0.2"
+
+[profile.release]
+debug = true
+debug-assertions = false

@@ -1,0 +1,148 @@
+# HCS Source Manifest
+
+Machine-readable list of every source in `/old`. Consumers (`ziptastic`,
+build scripts, CI) read this file — **do not move rows around without
+updating consumers.**
+
+Columns:
+- **id** — directory name under `old/`
+- **url** — canonical upstream repository
+- **pin** — commit SHA or tag currently vendored (`TBD` until first build)
+- **license** — SPDX identifier or `verify`
+- **integration** — `link` | `copy-src` | `external-process` | `reference`
+
+---
+
+## Entropy / Final-Stage
+
+| id | url | pin | license | integration |
+|---|---|---|---|---|
+| xz | https://github.com/tukaani-project/xz | TBD | 0BSD+LGPL-2.1 | link |
+| lzma | https://www.7-zip.org/sdk.html | TBD | Public-Domain | copy-src |
+| 7z | https://www.7-zip.org/ | TBD | Public-Domain | copy-src |
+| brotli | https://github.com/google/brotli | TBD | MIT | link |
+| fse | https://github.com/Cyan4973/FiniteStateEntropy | TBD | BSD-3-Clause | copy-src |
+| ryg_rans | https://github.com/rygorous/ryg_rans | TBD | Public-Domain | copy-src |
+
+## LZ / Match Finder
+
+| id | url | pin | license | integration |
+|---|---|---|---|---|
+| srep | https://github.com/essencesh/srep | TBD | Public-Domain | copy-src |
+| zstd | https://github.com/facebook/zstd | TBD | BSD-3-Clause | link |
+| lz4 | https://github.com/lz4/lz4 | TBD | BSD-2-Clause | link |
+| lzham | https://github.com/richgel999/lzham_codec | TBD | MIT | link |
+| freearc-c | https://github.com/seb3773/freearc-c | TBD | verify | copy-src |
+| freearc-main | https://github.com/Bulat-Ziganshin/FA | TBD | mixed | reference |
+| FA-master | https://github.com/Bulat-Ziganshin/FA | TBD | mixed | reference |
+
+## Context-Mixing
+
+| id | url | pin | license | integration |
+|---|---|---|---|---|
+| zpaq | https://github.com/zpaq/zpaq | TBD | Public-Domain | link |
+| zpaqfranz | https://github.com/fcorbelli/zpaqfranz | TBD | PD+GPL | link |
+| paq8px | https://github.com/hxim/paq8px | TBD | GPL-2.0 | external-process |
+| LPAQ9 | http://mattmahoney.net/dc/lpaq9.zip | TBD | Public-Domain | external-process |
+| omnizip-zpaq | https://github.com/omnizip/omnizip-rs | TBD | verify | reference |
+
+## BWT
+
+| id | url | pin | license | integration |
+|---|---|---|---|---|
+| libbsc | https://github.com/IlyaGrebnov/libbsc | TBD | Apache-2.0 | link |
+| bzip3 | https://github.com/kspalaiologos/bzip3 | TBD | Apache-2.0 | link |
+
+## Numeric / Structured
+
+| id | url | pin | license | integration |
+|---|---|---|---|---|
+| pcodec | https://github.com/mayhemheroes/quantile-compression | TBD | Apache-2.0 | copy-src |
+| bitshuffle | https://github.com/kiyo-masui/bitshuffle | TBD | MIT | rewrite |
+
+## Fast / Asymmetric
+
+| id | url | pin | license | integration |
+|---|---|---|---|---|
+| zxc | https://github.com/hellobertrand/zxc | TBD | verify | link |
+| density | https://github.com/centaurean/density | TBD | BSD-2-Clause | link |
+| csc | https://github.com/fusiyuan2010/CSC | TBD | verify | link |
+| lizard | https://github.com/inikep/lizard | TBD | BSD-2-Clause | link |
+| brieflz | https://github.com/jibsen/brieflz | TBD | zlib | link |
+| snappy | https://github.com/google/snappy | TBD | BSD-3-Clause | link |
+| lzo | https://github.com/nemequ/lzo | TBD | GPL+commercial | external-process |
+
+## Preprocessors
+
+| id | url | pin | license | integration |
+|---|---|---|---|---|
+| parmar | https://github.com/shallowbyte/parmar | TBD | verify | copy-src |
+| shoco | https://github.com/Ed-von-Schleck/shoco | TBD | MIT | copy-src |
+| smaz | https://github.com/antirez/smaz | TBD | BSD-3-Clause | copy-src |
+
+## Recompressors
+
+| id | url | pin | license | integration |
+|---|---|---|---|---|
+| preflate | https://github.com/deus-libri/preflate | TBD | Apache-2.0 | link |
+| preflate-rs | https://github.com/microsoft/preflate-rs | TBD | Apache-2.0 | link |
+| precomp-cpp | https://github.com/schnaader/precomp-cpp | TBD | Apache-2.0 | reference |
+| packJPG | https://github.com/YadeWira/packJPG | TBD | LGPL-3.0 | external-process |
+| aqueous | https://github.com/lifthrasiir/aqueous | TBD | MIT-0 | copy-src |
+| rhefo | https://github.com/T-3B/rhefo | TBD | verify | copy-src |
+| zopfli | https://github.com/google/zopfli | TBD | Apache-2.0 | link |
+| advancecomp | https://github.com/amadvance/advancecomp | TBD | GPL-3.0 | external-process |
+
+## Fast Deflate
+
+| id | url | pin | license | integration |
+|---|---|---|---|---|
+| zlib-ng | https://github.com/zlib-ng/zlib-ng | TBD | zlib | link |
+| libdeflate | https://github.com/ebiggers/libdeflate | TBD | MIT | link |
+
+## Executable Packers
+
+| id | url | pin | license | integration |
+|---|---|---|---|---|
+| upx | https://github.com/upx/upx | TBD | GPL-2.0 | external-process |
+| zelf | https://github.com/seb3773/zelf | TBD | verify | reference |
+
+## Embedded
+
+| id | url | pin | license | integration |
+|---|---|---|---|---|
+| tamp | https://github.com/BrianPugh/tamp | TBD | MIT | copy-src |
+| heatshrink | https://github.com/atomicobject/heatshrink | TBD | ISC | copy-src |
+
+## Discovery / Reference Lists
+
+| id | url | pin | license | integration |
+|---|---|---|---|---|
+| awesome-compopt | https://github.com/MartinEesmaa/awesome-compopt | TBD | CC | reference |
+| awesome-cpp | https://github.com/hstsethi/awesome-cpp | TBD | CC | reference |
+
+## Additional / Experimental
+
+| id | url | pin | license | integration |
+|---|---|---|---|---|
+| BARF | (fill in) | TBD | verify | reference |
+| BBB | (fill in) | TBD | verify | reference |
+| FLZP | (fill in) | TBD | verify | reference |
+| FPAQF2 | (fill in) | TBD | verify | reference |
+| SR3A | (fill in) | TBD | verify | reference |
+
+---
+
+## Pending Additions (queued for next commit)
+
+| id | url | pin | license | integration |
+|---|---|---|---|---|
+| csc | https://github.com/fusiyuan2010/CSC | TBD | verify | link |
+| lzo | https://github.com/nemequ/lzo | TBD | GPL+commercial | external-process |
+
+Clone them with:
+
+```bash
+git clone --depth=1 https://github.com/fusiyuan2010/CSC.git old/csc
+git clone --depth=1 https://github.com/nemequ/lzo.git        old/lzo
+rm -rf old/csc/.git old/lzo/.git

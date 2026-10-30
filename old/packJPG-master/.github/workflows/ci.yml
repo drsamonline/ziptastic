@@ -1,0 +1,278 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, 'maint/**' ]
+    tags:     [ '[0-9]*', 'v[0-9]*' ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v4.0a)'
+        required: true
+
+jobs:
+  build:
+    name: Build & test
+    # Pinned (not ubuntu-latest): the build machine's glibc/libstdc++ version
+    # gets baked into the released binaries as a minimum-version runtime
+    # requirement. ubuntu-latest silently rolled to 24.04 (glibc 2.39) at some
+    # point, so packJPG_linux_x64/libpackJPG.so/the .deb required GLIBC_2.38
+    # (__isoc23_sscanf, fmod) and couldn't even start on Ubuntu 22.04 LTS or
+    # Debian 12 — same failure class as the libjxl0.7-vs-0.11 .deb bug, just
+    # for glibc instead. ubuntu-22.04 (glibc 2.35) gives a much wider floor.
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        # libcharls-dev/libjxl-dev no longer needed: JPEG-LS is fully covered
+        # by the vendored static libs under source/linuxlibs/ (see its
+        # README.md) — the Makefile prefers those over any system libcharls/
+        # libjxl. Dropping them also fixes ubuntu-22.04 CI, which doesn't
+        # even have a libjxl-dev package in its default repos.
+        run: sudo apt-get update -q && sudo apt-get install -y mingw-w64 rpm g++-aarch64-linux-gnu qemu-user
+
+      - name: Build all targets
+        run: bash build_all.sh
+
+      - name: Build packages (.tar.gz, .deb, .rpm)
+        run: bash build_pkg.sh --tar --deb --rpm
+
+      - name: Build library/SDK archives (linux/win64/win32)
+        run: bash build_lib_pkg.sh
+
+      - name: Smoke test (Linux binary)
+        run: |
+          find test-files -name '*.jpg' ! -name '* *' | head -5 | while read f; do
+            stem=$(basename "${f%.*}")
+            ./dist/packJPG_linux_x64 a -np -o -od/tmp "$f"
+            ./dist/packJPG_linux_x64 x -np -o -od/tmp "/tmp/${stem}.pjg"
+            cmp "$f" "/tmp/${stem}.jpg" && echo "PASS: $f" || { echo "FAIL: $f"; exit 1; }
+          done
+
+      - name: Smoke test (JPEG-LS, Linux binary)
+        run: |
+          f=test-files/grayscale.jls
+          ./dist/packJPG_linux_x64 a -np -o -od/tmp "$f"
+          ./dist/packJPG_linux_x64 x -np -o -od/tmp /tmp/grayscale.pjg
+          cmp "$f" /tmp/grayscale.jls && echo "PASS: $f (JPEG-LS)" || { echo "FAIL: $f (JPEG-LS)"; exit 1; }
+
+      - name: Smoke test (Linux ARM64 binary, under qemu)
+        run: |
+          # Cross-built here, run with qemu-user: the release binary itself,
+          # not a rebuild. cross-platform.yml also builds and round-trips
+          # natively on an ARM64 runner.
+          file dist/packJPG_linux_arm64 | grep -q 'ARM aarch64'
+          A64="qemu-aarch64 -L /usr/aarch64-linux-gnu ./dist/packJPG_linux_arm64"
+          mkdir -p /tmp/a64
+          n=0
+          for f in test-files/*.jpg test-files/grayscale.jls; do
+            b=$(basename "$f"); stem="${b%.*}"
+            $A64 a -np -o -od/tmp/a64 "$f"
+            ./dist/packJPG_linux_x64 a -np -o -od/tmp "$f"
+            # same .pjg on both architectures
+            cmp "/tmp/a64/${stem}.pjg" "/tmp/${stem}.pjg"
+            mkdir -p /tmp/a64/x && $A64 x -np -o -od/tmp/a64/x "/tmp/a64/${stem}.pjg"
+            cmp "$f" "/tmp/a64/x/$b" && echo "PASS: $f (arm64)" && n=$((n+1))
+          done
+          [ "$n" -eq 6 ] || { echo "FAIL: $n of 6"; exit 1; }
+
+      - name: Lib batch API smoke (v4.0e)
+        run: |
+          ( cd source && \
+            make lib CXX=c++ CXXFLAGS="-I. -O2 -Wall -DUNIX -DBUILD_LIB -std=c++17" -j$(nproc) && \
+            c++ -I. -O2 -std=c++17 test/lib_batch_test.cpp packJPGlib.a -lpthread -o test/lib_batch_test && \
+            ./test/lib_batch_test ../test-files/*.jpg )
+
+      - name: Upload release binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: packJPG-binaries
+          path: dist/
+          if-no-files-found: error
+
+  # .pjg con un bit alterado que rompian el decodificador (puntero nulo y
+  # lecturas fuera del heap). Una lectura fuera de rango no hace caer un build
+  # normal: solo se ve con los sanitizers, asi que este job compila con ellos.
+  codec-asan:
+    name: Codec under ASan/UBSan (corrupt .pjg regressions)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Corrupt .pjg are rejected cleanly
+        working-directory: source
+        run: test/pjg_corruptos.sh
+
+  # macOS: one universal binary (arm64 + x86_64), built on Apple Silicon and
+  # then run on an Intel runner too, so each slice is executed on its own
+  # hardware and not only linked.
+  build-macos:
+    name: Build & test (macOS universal)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        working-directory: source
+        run: |
+          make macos CXX=clang++
+          lipo bin/packJPG_macos -verify_arch arm64 x86_64
+          lipo -info bin/packJPG_macos
+          otool -L bin/packJPG_macos
+      - name: Round-trip (arm64 slice)
+        run: bash .github/roundtrip_testfiles.sh source/bin/packJPG_macos
+      - name: Package
+        run: |
+          APP=$(sed -n 's/.*appversion *= *\([0-9]*\);.*/\1/p' source/packjpg.cpp)
+          SUB=$(sed -n 's/.*subversion *= *"\([a-z]*\)";.*/\1/p' source/packjpg.cpp)
+          V="${APP:0:1}.${APP:1}${SUB}"
+          mkdir -p dist/packjpg-$V-macos
+          cp source/bin/packJPG_macos dist/
+          cp source/bin/packJPG_macos dist/packjpg-$V-macos/packjpg
+          cp LICENSE dist/packjpg-$V-macos/
+          tar -C dist -czf dist/packjpg-$V-macos.tar.gz packjpg-$V-macos
+          rm -rf dist/packjpg-$V-macos
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packJPG-macos
+          path: dist/
+          if-no-files-found: error
+
+  test-macos-intel:
+    name: Test (macOS Intel, x86_64 slice)
+    needs: build-macos
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: packJPG-macos
+          path: dist/
+      - name: Round-trip (x86_64 slice)
+        run: |
+          chmod +x dist/packJPG_macos
+          [ "$(uname -m)" = x86_64 ]
+          bash .github/roundtrip_testfiles.sh dist/packJPG_macos
+
+  release:
+    name: Create GitHub release
+    needs: [ build, build-macos, test-macos-intel ]
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: packJPG-binaries
+          path: dist/
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: packJPG-macos
+          path: dist/
+
+      - name: Extract release notes from CHANGELOG
+        id: changelog
+        run: |
+          REF="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${REF#v}"
+          NOTES="$(awk "/^## v${VERSION//./\\.}/,/^---/" CHANGELOG.md | sed '$d')"
+          echo "notes<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$NOTES"    >> "$GITHUB_OUTPUT"
+          echo "EOF"       >> "$GITHUB_OUTPUT"
+          echo "tag=$REF"  >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.changelog.outputs.tag }}
+          name: "${{ steps.changelog.outputs.tag }} Windows, Linux & macOS"
+          files: dist/*
+          body: ${{ steps.changelog.outputs.notes }}
+
+  apt-repo:
+    name: Update apt repository
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+
+      - name: Download .deb from artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: packJPG-binaries
+          path: /tmp/dist
+
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | \
+            gpg --batch --yes --no-tty --pinentry-mode loopback --passphrase "" --import
+          echo "${{ secrets.GPG_KEY_ID }}:6:" | gpg --import-ownertrust
+
+      - name: Update apt repository
+        run: |
+          sudo apt-get install -y apt-utils
+
+          cp /tmp/dist/*.deb pool/main/
+
+          dpkg-scanpackages --multiversion pool/ \
+            > dists/stable/main/binary-amd64/Packages
+          gzip -k -f dists/stable/main/binary-amd64/Packages
+
+          printf '%s\n' \
+            'Origin: packJPG' \
+            'Label: packJPG' \
+            'Suite: stable' \
+            'Codename: stable' \
+            'Architectures: amd64' \
+            'Components: main' \
+            'Description: packJPG apt repository' \
+            > dists/stable/Release
+          apt-ftparchive release dists/stable >> dists/stable/Release
+
+          gpg --default-key "${{ secrets.GPG_KEY_ID }}" \
+              --batch --yes --no-tty --pinentry-mode loopback --passphrase "" \
+              --clearsign -o dists/stable/InRelease dists/stable/Release
+          gpg --default-key "${{ secrets.GPG_KEY_ID }}" \
+              --batch --yes --no-tty --pinentry-mode loopback --passphrase "" \
+              -abs -o dists/stable/Release.gpg dists/stable/Release
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "apt: publish packjpg ${{ github.event.inputs.tag || github.ref_name }}"
+          git push
+
+      - name: Notify shared pack-apt repo
+        # Feeds the same .deb into the Pack Family shared apt repo
+        # (github.com/YadeWira/pack-apt) alongside packJPG's own gh-pages
+        # above. PACK_APT_TOKEN is a fine-grained PAT (Contents: read/write,
+        # scoped only to pack-apt) — GITHUB_TOKEN can't dispatch across repos.
+        env:
+          GH_TOKEN: ${{ secrets.PACK_APT_TOKEN }}
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          gh api repos/YadeWira/pack-apt/dispatches \
+            -f event_type=deb-release \
+            -f "client_payload[repo]=YadeWira/packJPG" \
+            -f "client_payload[tag]=$TAG"

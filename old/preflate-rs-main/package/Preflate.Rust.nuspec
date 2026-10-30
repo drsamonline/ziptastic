@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
+  <metadata>
+    <id>Preflate.Rust</id>
+    <version>0.8.0.0</version>
+    <title>PreflateRs Compression Rust binaries and libraries</title>
+    <authors>kristofr</authors>
+    <owners>kristofr</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>Preflate Rust binaries and libraries</description>
+    <tags>lepton</tags>
+  </metadata>
+  <files>
+    <file src="..\target\release\preflate_rs_0_8.dll" target="lib\release\x64" />
+    <file src="..\target\release\preflate_rs_0_8.pdb" target="lib\release\x64" />
+  </files>
+</package>

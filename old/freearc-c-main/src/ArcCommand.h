@@ -1,0 +1,790 @@
+#pragma once
+#include <vector>
+#include <string>
+#include <limits.h>
+#include <unistd.h>
+
+// SFX module is just unarc.cpp compiled with FREEARC_SFX defined
+#ifdef FREEARC_SFX
+#define NAME           "SFX"
+#else
+#define NAME           "unpacker"
+#endif
+
+#define HEADER1        "UnArc 0.60RC "
+#define HEADER2        "  http://freearc.org  2009-10-05 (link seems dead)\n"
+
+
+/******************************************************************************
+** Callbacks ��� ����������� ������� ******************************************
+******************************************************************************/
+class COMMAND;
+
+#if defined(FREEARC_WIN) && defined(FREEARC_GUI)
+typedef CFILENAME MYFILENAME;
+#else
+typedef  FILENAME MYFILENAME;
+#endif
+
+class BASEUI
+{
+public:
+  virtual ~BASEUI() {}
+  virtual void DisplayHeader (char* header) {}
+  virtual bool AllowProcessing (char cmd, int silent, MYFILENAME arcname, char* comment, int cmtsize, FILENAME outdir)  {return TRUE;}
+  virtual FILENAME GetOutDir() {return "";}
+  virtual void BeginProgress (uint64 totalBytes)    {}
+  virtual bool ProgressRead  (uint64 readBytes)     {return TRUE;}
+  virtual bool ProgressWrite (uint64 writtenBytes)  {return TRUE;}
+  virtual bool ProgressFile  (bool isdir, const char *operation, MYFILENAME filename, uint64 filesize)  {return TRUE;}
+  virtual void EndProgress(COMMAND*) {}
+  virtual char AskOverwrite (MYFILENAME filename, uint64 size, time_t modified) {return 'n';}
+  virtual void ListHeader (COMMAND &) {}
+  virtual void ListFooter (COMMAND &) {}
+  virtual void ListFiles (DIRECTORY_BLOCK*, COMMAND &) {}
+  virtual void Abort (COMMAND*, int errcode)  {
+    if (g_logfile) {
+      fprintf(g_logfile, "ERROR: operation terminated with error code %d\n", errcode);
+      fflush(g_logfile);
+    }
+    exit (FREEARC_EXIT_ERROR);
+  }
+};
+
+static inline std::string clean_option_path(const std::string &raw) {
+  std::string s = raw;
+  while (!s.empty() && (s[0] == ' ' || s[0] == '\t' || s[0] == '\r' || s[0] == '\n'))
+    s.erase(s.begin());
+  while (!s.empty() && (s[s.size() - 1] == ' ' || s[s.size() - 1] == '\t' || s[s.size() - 1] == '\r' || s[s.size() - 1] == '\n'))
+    s.resize(s.size() - 1);
+
+  bool changed = true;
+  while (changed && s.size() >= 2) {
+    changed = false;
+    if ((s[0] == '"' && s[s.size() - 1] == '"') ||
+        (s[0] == '\'' && s[s.size() - 1] == '\'')) {
+      s = s.substr(1, s.size() - 2);
+      changed = true;
+    } else if (s[0] == '{' && s[s.size() - 1] == '}') {
+      s = s.substr(1, s.size() - 2);
+      changed = true;
+    }
+  }
+  while (s.size() > 1 && (s[s.size() - 1] == '/' || s[s.size() - 1] == '\\')) {
+#ifdef _WIN32
+    if (s.size() == 3 && isalpha((unsigned char)s[0]) && s[1] == ':') break;
+#endif
+    s.resize(s.size() - 1);
+  }
+  return s;
+}
+
+static inline uint64 parse_mem_limit(const char *s) {
+  if (!s || !*s) return 0;
+  if (*s == '=') s++;
+  while (*s == ' ' || *s == '\t') s++;
+  char *endp = NULL;
+  unsigned long long val = strtoull(s, &endp, 10);
+  if (!endp || endp == s) return 0;
+  while (*endp == ' ') endp++;
+  if (*endp == 'k' || *endp == 'K') {
+    val *= 1024ULL;
+  } else if (*endp == 'm' || *endp == 'M') {
+    val *= 1024ULL * 1024ULL;
+  } else if (*endp == 'g' || *endp == 'G') {
+    val *= 1024ULL * 1024ULL * 1024ULL;
+  } else if (*endp == 'b' || *endp == 'B') {
+    // bytes
+  } else if (*endp == '\0') {
+    if (val <= 65536ULL) {
+      val *= 1024ULL * 1024ULL;
+    }
+  }
+  return (uint64)val;
+}
+
+static inline int parse_threads_val(const char *s) {
+  if (!s || !*s) return 0;
+  if (*s == '=') s++;
+  int v = atoi(s);
+  return v > 0 ? v : 0;
+}
+
+static inline void create_dir_recursive(const std::string &path) {
+  if (path.empty()) return;
+  char buf[PATH_MAX];
+  snprintf(buf, sizeof(buf), "%s", path.c_str());
+  for (char *p = buf + 1; *p; p++) {
+    if (*p == '/' || *p == '\\') {
+      if (p == buf + 2 && buf[1] == ':') continue;
+      char save = *p;
+      *p = '\0';
+#ifdef _WIN32
+      mkdir(buf);
+#else
+      mkdir(buf, 0777);
+#endif
+      *p = save;
+    }
+  }
+#ifdef _WIN32
+  mkdir(buf);
+#else
+  mkdir(buf, 0777);
+#endif
+}
+
+static inline void ensure_parent_dirs(const std::string &filepath) {
+  std::string s = clean_option_path(filepath);
+  size_t pos = s.find_last_of("/\\");
+  if (pos != std::string::npos && pos > 0) {
+    std::string dir = s.substr(0, pos);
+    if (dir.size() == 2 && dir[1] == ':') return;
+    create_dir_recursive(dir);
+  }
+}
+
+static inline bool is_diskpath_opt(const char *a, std::string &out_val, bool &need_next_arg) {
+  need_next_arg = false;
+  out_val.clear();
+  if (strcasecmp(a, "-dp") == 0 || strcasecmp(a, "--diskpath") == 0) {
+    need_next_arg = true;
+    return true;
+  }
+  if (strncasecmp(a, "-dp=", 4) == 0) {
+    out_val = a + 4;
+    return true;
+  }
+  if (strncasecmp(a, "-dp", 3) == 0 && a[3] != '\0') {
+    out_val = a + 3;
+    return true;
+  }
+  if (strncasecmp(a, "--diskpath=", 11) == 0) {
+    out_val = a + 11;
+    return true;
+  }
+  return false;
+}
+
+static inline bool is_limit_decomp_opt(const char *a, std::string &out_val, bool &need_next_arg) {
+  need_next_arg = false;
+  out_val.clear();
+  if (strcasecmp(a, "-ld") == 0 || strcasecmp(a, "--limitdecompmem") == 0) {
+    need_next_arg = true;
+    return true;
+  }
+  if (strncasecmp(a, "-ld=", 4) == 0) {
+    out_val = a + 4;
+    return true;
+  }
+  if (strncasecmp(a, "-ld", 3) == 0 && a[3] != '\0') {
+    out_val = a + 3;
+    return true;
+  }
+  if (strncasecmp(a, "--limitdecompmem=", 17) == 0) {
+    out_val = a + 17;
+    return true;
+  }
+  return false;
+}
+
+static inline bool is_limit_comp_opt(const char *a, std::string &out_val, bool &need_next_arg) {
+  need_next_arg = false;
+  out_val.clear();
+  if (strcasecmp(a, "-lc") == 0 || strcasecmp(a, "--limitcompmem") == 0) {
+    need_next_arg = true;
+    return true;
+  }
+  if (strncasecmp(a, "-lc=", 4) == 0) {
+    out_val = a + 4;
+    return true;
+  }
+  if (strncasecmp(a, "-lc", 3) == 0 && a[3] != '\0') {
+    out_val = a + 3;
+    return true;
+  }
+  if (strncasecmp(a, "--limitcompmem=", 15) == 0) {
+    out_val = a + 15;
+    return true;
+  }
+  return false;
+}
+
+static inline bool is_logfile_opt(const char *a, std::string &out_val, bool &need_next_arg) {
+  need_next_arg = false;
+  out_val.clear();
+  if (strcasecmp(a, "-lo") == 0 || strcasecmp(a, "--logfile") == 0) {
+    need_next_arg = true;
+    return true;
+  }
+  if (strncasecmp(a, "-lo=", 4) == 0) {
+    out_val = a + 4;
+    return true;
+  }
+  if (strncasecmp(a, "-lo", 3) == 0 && a[3] != '\0') {
+    out_val = a + 3;
+    return true;
+  }
+  if (strncasecmp(a, "--logfile=", 10) == 0) {
+    out_val = a + 10;
+    return true;
+  }
+  return false;
+}
+
+static inline bool is_multithread_opt(const char *a, std::string &out_val, bool &need_next_arg) {
+  need_next_arg = false;
+  out_val.clear();
+  if (strcasecmp(a, "-mt") == 0 || strcasecmp(a, "--multithreaded") == 0) {
+    need_next_arg = true;
+    return true;
+  }
+  if (strncasecmp(a, "-mt=", 4) == 0) {
+    out_val = a + 4;
+    return true;
+  }
+  if (strncasecmp(a, "-mt", 3) == 0 && a[3] != '\0') {
+    out_val = a + 3;
+    return true;
+  }
+  if (strncasecmp(a, "--multithreaded=", 16) == 0) {
+    out_val = a + 16;
+    return true;
+  }
+  return false;
+}
+
+
+/******************************************************************************
+** ���������� � ����������� ������������� ������� *****************************
+******************************************************************************/
+class COMMAND
+{
+public:
+  char cmd;             // Executed command
+  FILENAME arcname;     // Archive name
+  FILENAME *filenames;  // Pointer to argv filenames
+  std::vector<std::string> excludes;      // -x patterns
+  std::vector<std::string> includes;      // -i patterns
+  std::vector<std::string> file_patterns; // Positional patterns (and @listfiles)
+  std::string arcprefix;                  // -ap prefix
+  std::string clean_arcname_storage;      // Backing storage for arcname
+  std::string clean_outpath_storage;      // Backing storage for outpath
+  BOOL to_stdout;                         // Extract to stdout (-so or cmd 'p')
+  MYDIR    outpath;     // Output path (-dp)
+  MYDIR    workdir;     // Temp directory (-w)
+  MYFILE   runme;       // SFX executable
+  BOOL tempdir;
+  BOOL wipeoutdir;
+  BOOL ok;
+  int  silent;          // Silent mode -s
+  BOOL yes;             // -o+
+  BOOL no;              // -o-
+  BOOL noarcext;        // --noarcext
+  BOOL nooptions;       // --
+  char *password;       // -p
+  uint64 limit_decomp_mem;
+  uint64 limit_comp_mem;
+  int    custom_threads;
+  std::string logfile_path;
+
+  COMMAND (int argc, char *argv[]);
+  void Prepare();
+  bool list_cmd()  {return cmd=='l' || cmd=='v';}
+  BOOL accept_file (DIRECTORY_BLOCK *dirblock, int i);
+  void add_exclude (const char *pat);
+  void add_include (const char *pat);
+};
+
+
+/******************************************************************************
+** External compressors support ***********************************************
+******************************************************************************/
+extern "C" {
+#include "Compression/External/C_External.h"
+}
+
+// Register external compressors declared in arc.ini
+void RegisterExternalCompressors (char *progname)
+{
+#ifndef FREEARC_TINY
+  // Open config file arc.ini found in the same dir as sfx/unarc
+  char *cfgfile = "arc.ini";
+  char *name = (char*) malloc (strlen(progname) + strlen(cfgfile));
+                                                 if (!name)  return;
+  strcpy(name, progname);
+  strcpy(drop_dirname(name), cfgfile);
+  MYFILE f(name);
+  if (!f.tryOpen(READ_MODE))                     return;
+
+  // Read config file into memory
+  FILESIZE size = f.size();                      if (!size)  return;
+  char *contents = (char*) malloc(size+2);       if (!contents)  return;
+  *contents = '\n';
+  size = f.tryRead(contents+1, size);            if (size<0)  return;
+  contents[size] = '\0';
+
+  // Register each external compressor found in config file
+  char *ANY_HEADING = "\n[", *EXT_HEADING = "[External compressor:";
+  ClearExternalCompressorsTable();
+  for (char *p, *section = strstr(contents, ANY_HEADING);  section != NULL;  section = p)
+  {
+    section++;
+    p = strstr(section, ANY_HEADING);
+    if (p)  *p = '\0';
+    if (start_with(section,EXT_HEADING)  &&  AddExternalCompressor(section) != 1)
+    {
+      //printf("Error in config file %s section:\n%s\n", cfgfile, section);
+    }
+  }
+
+  free(contents);
+  f.close();
+#endif
+}
+
+
+/******************************************************************************
+** ������ ��������� ������ ****************************************************
+******************************************************************************/
+static void read_patterns_file(const char *filename, std::vector<std::string> &list) {
+  FILE *f = fopen(filename, "r");
+  if (!f) return;
+  char line[MY_FILENAME_MAX * 4];
+  while (fgets(line, sizeof(line), f)) {
+    char *p = line;
+    while (*p == ' ' || *p == '\t') p++;
+    char *e = p + strlen(p);
+    while (e > p && (e[-1] == '\n' || e[-1] == '\r' || e[-1] == ' ' || e[-1] == '\t'))
+      *--e = '\0';
+    if (!*p || *p == '#') continue;
+    list.push_back(p);
+  }
+  fclose(f);
+}
+
+void COMMAND::add_exclude(const char *pat) {
+  if (!pat || !*pat) return;
+  if (pat[0] == '@') read_patterns_file(pat + 1, excludes);
+  else excludes.push_back(pat);
+}
+
+void COMMAND::add_include(const char *pat) {
+  if (!pat || !*pat) return;
+  if (pat[0] == '@') read_patterns_file(pat + 1, includes);
+  else includes.push_back(pat);
+}
+
+COMMAND::COMMAND (int argc, char *argv[])
+{
+#if defined(FREEARC_WIN) && !defined(FREEARC_LIBRARY)
+  // Instead of those ANSI-codepage encoded argv[] strings provide true UTF-8 data!
+  WCHAR **argv_w = CommandLineToArgvW (GetCommandLineW(), &argc);
+  argv = (char**) malloc ((argc+1) * sizeof(*argv));
+  for (int i=0; i<argc; i++)
+  {
+    argv[i] = (char*) malloc (wcslen (argv_w[i]) * 4 + 1);
+    utf16_to_utf8 (argv_w[i], argv[i]);
+    argv[i] = (char*) realloc (argv[i], strlen(argv[i]) + 1);
+  }
+  argv[argc] = NULL;
+#endif
+// Register external compressors using arc.ini in the same dir as argv[0]
+  RegisterExternalCompressors(argv[0]);
+
+  // Default options
+  noarcext  = FALSE;
+  nooptions = FALSE;
+  outpath.setname("");
+  workdir.setname("");
+  runme.setname("");
+  wipeoutdir = FALSE;
+  tempdir = FALSE;
+  yes = FALSE;
+  no  = FALSE;
+  silent = 0;
+  password = NULL;
+  limit_decomp_mem = 0;
+  limit_comp_mem = 0;
+  custom_threads = 0;
+  logfile_path.clear();
+#ifdef FREEARC_SFX
+  arcname = argv[0];
+#ifndef FREEARC_WIN
+  static char sfx_exe_path[PATH_MAX];
+  ssize_t sfx_len = readlink("/proc/self/exe", sfx_exe_path, sizeof(sfx_exe_path) - 1);
+  if (sfx_len > 0) {
+    sfx_exe_path[sfx_len] = '\0';
+    arcname = sfx_exe_path;
+  }
+#endif
+  cmd     = 'x';
+
+#ifdef FREEARC_INSTALLER
+  // Installer by default extracts itself into some temp directory, runs setup.exe and then remove directory's contents
+  if (argv[1] == NULL)
+  {
+      silent = 2;
+
+      // Create unique tempdir
+      if (!outpath.create_tempdir()) {
+#ifdef FREEARC_GUI
+        MessageBoxW (NULL, _T("Error creating temporary directory"), _T("Extraction impossible"), MB_OK | MB_ICONERROR);
+#else
+        printf("Error creating temporary directory");
+#endif
+        ok = false;
+        return;
+      }
+      tempdir = TRUE;
+
+      // Run setup.exe from this dir
+      runme.setname (outpath, "setup.exe");
+
+      // Delete extracted files afterwards
+      wipeoutdir = TRUE;
+  }
+#endif
+
+  // Parse options
+  for (ok=TRUE; ok && *++argv; )
+  {
+    if (argv[0][0]=='-' || strequ(argv[0],"/?") || strequ(argv[0],"/help"))
+    {
+      std::string dp_val;
+      bool dp_next = false;
+      std::string opt_val;
+      bool opt_next = false;
+           if (strequ(argv[0],"-l"))       cmd = 'l', silent = silent || 2;
+      else if (strequ(argv[0],"-v"))       cmd = 'v', silent = silent || 2;
+      else if (strequ(argv[0],"-e"))       cmd = 'e', silent = silent || 2;
+      else if (strequ(argv[0],"-x"))       cmd = 'x', silent = silent || 2;
+      else if (strequ(argv[0],"-t"))       cmd = 't', silent = silent || 2;
+      else if (strequ(argv[0],"-p"))       cmd = 'p', silent = silent || 2, to_stdout = TRUE;
+      else if (strequ(argv[0],"-so"))      to_stdout = TRUE;
+      else if (strequ(argv[0],"-y") || strequ(argv[0],"-o+")) yes = TRUE;
+      else if (strequ(argv[0],"-n") || strequ(argv[0],"-o-")) no  = TRUE;
+      else if (strequ(argv[0],"-p") && argv[1]) password = *++argv;
+      else if (start_with(argv[0],"-p") && argv[0][2]) password = argv[0]+2;
+      else if (strequ(argv[0],"-d") && argv[1]) {
+        clean_outpath_storage = clean_option_path(*++argv);
+        outpath.setname((char*)clean_outpath_storage.c_str());
+      }
+      else if (start_with(argv[0],"-d") && !start_with(argv[0],"-dp")) {
+        clean_outpath_storage = clean_option_path(argv[0]+2);
+        outpath.setname((char*)clean_outpath_storage.c_str());
+      }
+      else if (is_diskpath_opt(argv[0], dp_val, dp_next)) {
+        if (dp_next && argv[1]) clean_outpath_storage = clean_option_path(*++argv);
+        else clean_outpath_storage = clean_option_path(dp_val);
+        outpath.setname((char*)clean_outpath_storage.c_str());
+      }
+      else if (start_with(argv[0],"-w"))   workdir.setname(argv[0]+2);
+      else if (start_with(argv[0],"-ap"))  arcprefix = argv[0]+3;
+      else if (strequ(argv[0],"-x") && argv[1]) add_exclude(*++argv);
+      else if (start_with(argv[0],"-x") && argv[0][2]) add_exclude(argv[0]+2);
+      else if (strequ(argv[0],"-i") && argv[1]) add_include(*++argv);
+      else if (start_with(argv[0],"-i") && argv[0][2]) add_include(argv[0]+2);
+      else if (strequ(argv[0],"-s") || strequ(argv[0],"-s1") || strequ(argv[0],"-q")) silent = 1;
+      else if (strequ(argv[0],"-s0"))      silent = 0;
+      else if (strequ(argv[0],"-s2"))      silent = 2;
+      else if (strequ(argv[0],"--"))       nooptions=TRUE;
+      else if (is_limit_decomp_opt(argv[0], opt_val, opt_next)) {
+        if (opt_next && argv[1] && argv[1][0] != '-') limit_decomp_mem = parse_mem_limit(*++argv);
+        else limit_decomp_mem = parse_mem_limit(opt_val.c_str());
+      }
+      else if (is_limit_comp_opt(argv[0], opt_val, opt_next)) {
+        if (opt_next && argv[1] && argv[1][0] != '-') limit_comp_mem = parse_mem_limit(*++argv);
+        else limit_comp_mem = parse_mem_limit(opt_val.c_str());
+      }
+      else if (is_multithread_opt(argv[0], opt_val, opt_next)) {
+        if (opt_next && argv[1] && argv[1][0] != '-') custom_threads = parse_threads_val(*++argv);
+        else custom_threads = parse_threads_val(opt_val.c_str());
+      }
+      else if (is_logfile_opt(argv[0], opt_val, opt_next)) {
+        if (opt_next && argv[1] && argv[1][0] != '-') logfile_path = clean_option_path(*++argv);
+        else logfile_path = clean_option_path(opt_val);
+        if (!logfile_path.empty()) {
+          ensure_parent_dirs(logfile_path);
+          if (g_logfile) { fclose(g_logfile); g_logfile = NULL; }
+          g_logfile = fopen(logfile_path.c_str(), "a+");
+        }
+      }
+      else if (strncasecmp(argv[0],"-di", 3) == 0 || strncasecmp(argv[0],"-ds", 3) == 0 ||
+               strncasecmp(argv[0],"-ed", 3) == 0 || strcasecmp(argv[0],"--nodir") == 0 ||
+               strcasecmp(argv[0],"--no-pause") == 0 || strcasecmp(argv[0],"-kb") == 0 ||
+               strcasecmp(argv[0],"-ka") == 0 || strcasecmp(argv[0],"-kc") == 0) {}
+      else {
+        // Do not abort on unknown legacy options
+      }
+    }
+    else break;
+  }
+
+  filenames = argv;            // the rest of arguments are filenames
+  if (cmd == 'p') to_stdout = TRUE;
+  if (ok) {
+    while (*argv) {
+      if (argv[0][0] == '@') {
+        read_patterns_file(argv[0] + 1, file_patterns);
+      } else {
+        file_patterns.push_back(argv[0]);
+      }
+      argv++;
+    }
+    return;
+  }
+
+  // Display help
+  char *helpMsg = (char*) malloc_msg(1000+strlen(arcname));
+  sprintf (helpMsg,
+#ifdef FREEARC_GUI
+         HEADER1 NAME HEADER2
+#else
+         HEADER2
+#endif
+         "Usage: %s [options] [filenames...]\n"
+         "Available options:\n"
+#ifndef FREEARC_GUI
+         "  -l       - display archive listing\n"
+         "  -v       - display verbose archive listing\n"
+#endif
+         "  -x       - extract files with pathnames (default)\n"
+         "  -e       - extract files without pathnames\n"
+         "  -t       - test archive integrity\n"
+         "  -p       - extract files to standard output (pipe)\n"
+         "  -d{Path} - set destination path\n"
+         "  -p{Pass} - archive password\n"
+         "  -w{Path} - set temporary files directory\n"
+         "  -y       - answer Yes on all overwrite queries\n"
+         "  -n       - answer No  on all overwrite queries\n"
+         "  -s       - silent mode\n"
+         "  -x{Pat}  - exclude pattern (@listfile supported)\n"
+         "  -i{Pat}  - include pattern (@listfile supported)\n"
+         "  --       - no more options\n"
+         , drop_dirname(arcname));
+#ifdef FREEARC_GUI
+  MessageBoxW (NULL, MYFILE(helpMsg).displayname(), _T("Command-line help"), MB_OK | MB_ICONERROR);
+#else
+  printf("%s", MYFILE(helpMsg).displayname());
+#endif
+
+#else
+  cmd       = ' ';
+  arcname   = NULL;
+  to_stdout = FALSE;
+  for (ok=TRUE; ok && *++argv; )
+  {
+    if (argv[0][0]=='-')
+    {
+      std::string dp_val;
+      bool dp_next = false;
+      std::string opt_val;
+      bool opt_next = false;
+      if (strequ(argv[0],"--noarcext"))    noarcext =TRUE;
+      else if (strequ(argv[0],"-o+"))      yes      =TRUE;
+      else if (strequ(argv[0],"-o-"))      no       =TRUE;
+      else if (strequ(argv[0],"-so"))      to_stdout=TRUE;
+      else if (strequ(argv[0],"-p") && argv[1]) password = *++argv;
+      else if (start_with(argv[0],"-p") && argv[0][2]) password = argv[0]+2;
+      else if (strequ(argv[0],"-d") && argv[1]) {
+        clean_outpath_storage = clean_option_path(*++argv);
+        outpath.setname((char*)clean_outpath_storage.c_str());
+      }
+      else if (start_with(argv[0],"-d") && !start_with(argv[0],"-dp")) {
+        clean_outpath_storage = clean_option_path(argv[0]+2);
+        outpath.setname((char*)clean_outpath_storage.c_str());
+      }
+      else if (is_diskpath_opt(argv[0], dp_val, dp_next)) {
+        if (dp_next && argv[1]) clean_outpath_storage = clean_option_path(*++argv);
+        else clean_outpath_storage = clean_option_path(dp_val);
+        outpath.setname((char*)clean_outpath_storage.c_str());
+      }
+      else if (start_with(argv[0],"-ap"))  arcprefix = argv[0]+3;
+      else if (start_with(argv[0],"-w"))   workdir.setname(argv[0]+2);
+      else if (strequ(argv[0],"-s") || strequ(argv[0],"-s1") || strequ(argv[0],"-q")) silent = 1;
+      else if (strequ(argv[0],"-s2"))      silent = 2;
+      else if (strequ(argv[0],"-s0"))      silent = 0;
+      else if (strequ(argv[0],"-x") && argv[1]) add_exclude(*++argv);
+      else if (start_with(argv[0],"-x") && argv[0][2]) add_exclude(argv[0]+2);
+      else if (strequ(argv[0],"-i") && argv[1]) add_include(*++argv);
+      else if (start_with(argv[0],"-i") && argv[0][2]) add_include(argv[0]+2);
+      else if (strequ(argv[0],"--"))       nooptions=TRUE;
+      else if (is_limit_decomp_opt(argv[0], opt_val, opt_next)) {
+        if (opt_next && argv[1] && argv[1][0] != '-') limit_decomp_mem = parse_mem_limit(*++argv);
+        else limit_decomp_mem = parse_mem_limit(opt_val.c_str());
+      }
+      else if (is_limit_comp_opt(argv[0], opt_val, opt_next)) {
+        if (opt_next && argv[1] && argv[1][0] != '-') limit_comp_mem = parse_mem_limit(*++argv);
+        else limit_comp_mem = parse_mem_limit(opt_val.c_str());
+      }
+      else if (is_multithread_opt(argv[0], opt_val, opt_next)) {
+        if (opt_next && argv[1] && argv[1][0] != '-') custom_threads = parse_threads_val(*++argv);
+        else custom_threads = parse_threads_val(opt_val.c_str());
+      }
+      else if (is_logfile_opt(argv[0], opt_val, opt_next)) {
+        if (opt_next && argv[1] && argv[1][0] != '-') logfile_path = clean_option_path(*++argv);
+        else logfile_path = clean_option_path(opt_val);
+        if (!logfile_path.empty()) {
+          ensure_parent_dirs(logfile_path);
+          if (g_logfile) { fclose(g_logfile); g_logfile = NULL; }
+          g_logfile = fopen(logfile_path.c_str(), "a+");
+        }
+      }
+      else if (strncasecmp(argv[0],"-di", 3) == 0 || strncasecmp(argv[0],"-ds", 3) == 0 ||
+               strncasecmp(argv[0],"-ed", 3) == 0 || strcasecmp(argv[0],"--nodir") == 0 ||
+               strcasecmp(argv[0],"--no-pause") == 0 || strcasecmp(argv[0],"-kb") == 0 ||
+               strcasecmp(argv[0],"-ka") == 0 || strcasecmp(argv[0],"-kc") == 0) {}
+      else {
+        // Do not abort on unknown legacy options
+      }
+    }
+    else if (cmd==' ') {
+      if (strcasecmp(argv[0], "x") == 0 || strcasecmp(argv[0], "extract") == 0) cmd = 'x';
+      else if (strcasecmp(argv[0], "e") == 0) cmd = 'e';
+      else if (strcasecmp(argv[0], "t") == 0 || strcasecmp(argv[0], "test") == 0) cmd = 't';
+      else if (strcasecmp(argv[0], "l") == 0 || strcasecmp(argv[0], "list") == 0) cmd = 'l';
+      else if (strcasecmp(argv[0], "v") == 0 || strcasecmp(argv[0], "view") == 0) cmd = 'v';
+      else if (strcasecmp(argv[0], "p") == 0) cmd = 'p';
+      else ok = FALSE;
+    }
+    else if (!arcname) {
+      clean_arcname_storage = clean_option_path(argv[0]);
+      arcname = (char*)clean_arcname_storage.c_str();
+    }
+    else break;
+  }
+
+  filenames = argv;            // the rest of arguments are filenames
+  if (cmd == 'p') to_stdout = TRUE;
+  ok = ok && strchr("lvtexp",cmd) && arcname;
+  if (ok) {
+    while (*argv) {
+      if (argv[0][0] == '@') {
+        read_patterns_file(argv[0] + 1, file_patterns);
+      } else {
+        file_patterns.push_back(argv[0]);
+      }
+      argv++;
+    }
+    return;
+  }
+  printf(HEADER2
+         "Usage: unarc command [options] archive[.arc] [filenames...]\n"
+         "Available commands:\n"
+         "  l - display archive listing\n"
+         "  v - display verbose archive listing\n"
+         "  e - extract files into current directory\n"
+         "  x - extract files with pathnames\n"
+         "  t - test archive integrity\n"
+         "  p - extract files to standard output (pipe)\n"
+         "Available options:\n"
+         "  -dp{Path}   - set destination path\n"
+         "  -ap{Path}   - set path prefix\n"
+         "  -w{Path}    - set temporary files directory\n"
+         "  -o+         - overwrite existing files\n"
+         "  -o-         - don't overwrite existing files\n"
+         "  -so         - write extracted files to stdout\n"
+         "  -x{Pattern} - exclude files matching pattern (@listfile supported)\n"
+         "  -i{Pattern} - include only files matching pattern (@listfile supported)\n"
+         "  -s[0..2]    - silent mode\n"
+         "  --noarcext  - don't add default extension to archive name\n"
+         "  -p{Password}- password for encrypted archive\n"
+         "  --          - no more options\n");
+#endif
+}
+
+
+// Prepare
+void COMMAND::Prepare()
+{
+  SetTempDir (workdir.filename);
+  SetCompressionThreads (GetProcessorsCount());
+  SetArchivePassword (password);
+}
+
+
+static bool glob_match_unarc(const char *pat, const char *s) {
+  for (;;) {
+    if (*pat == '*') {
+      pat++;
+      if (!*pat) return true;
+      for (; *s; s++)
+        if (glob_match_unarc(pat, s)) return true;
+      return glob_match_unarc(pat, s);
+    }
+    if (*pat == '?') {
+      if (!*s) return false;
+      pat++; s++;
+      continue;
+    }
+    if (*pat != *s) return false;
+    if (!*pat) return true;
+    pat++; s++;
+  }
+}
+
+static bool match_one_pattern(const std::string &pat, const char *full, const char *base) {
+  if (pat.empty()) return false;
+
+  std::string p = pat;
+  while (!p.empty() && (p[p.size() - 1] == '/' || p[p.size() - 1] == '\\'))
+    p.resize(p.size() - 1);
+
+  if (strequ(full, p.c_str()) || strequ(base, p.c_str()))
+    return true;
+
+  std::string prefix = p + "/";
+  if (strncmp(full, prefix.c_str(), prefix.size()) == 0)
+    return true;
+
+  if (glob_match_unarc(pat.c_str(), full))
+    return true;
+
+  if (pat.find('/') == std::string::npos && pat.find('\\') == std::string::npos) {
+    if (glob_match_unarc(pat.c_str(), base))
+      return true;
+  }
+
+  return false;
+}
+
+// Accept file matching
+BOOL COMMAND::accept_file (DIRECTORY_BLOCK *dirblock, int i)
+{
+  char fullname_buf[MY_FILENAME_MAX * 4];
+  const char *full = dirblock->fullname(i, fullname_buf);
+  const char *base = dirblock->name[i];
+
+  // 1. Exclude patterns (-x)
+  for (size_t x = 0; x < excludes.size(); x++) {
+    if (match_one_pattern(excludes[x], full, base))
+      return FALSE;
+  }
+
+  // 2. Include patterns (-i)
+  if (!includes.empty()) {
+    bool inc_matched = false;
+    for (size_t inc = 0; inc < includes.size(); inc++) {
+      if (match_one_pattern(includes[inc], full, base)) {
+        inc_matched = true;
+        break;
+      }
+    }
+    if (!inc_matched) return FALSE;
+  }
+
+  // 3. Positional patterns
+  if (!file_patterns.empty()) {
+    bool pos_matched = false;
+    for (size_t f = 0; f < file_patterns.size(); f++) {
+      if (match_one_pattern(file_patterns[f], full, base)) {
+        pos_matched = true;
+        break;
+      }
+    }
+    if (!pos_matched) return FALSE;
+  }
+
+  return TRUE;
+}
