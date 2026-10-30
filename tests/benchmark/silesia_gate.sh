@@ -36,8 +36,8 @@ for path in "$CORPUS"/*; do
 
   raw=$(stat -c%s "$path" 2>/dev/null || stat -f%z "$path")
   "$XZ" -9 -k -c "$path" > "$TMP/$f.xz"      || { echo "xz failed: $f" >&2; fail=1; continue; }
-  "$ZIPTASIC" -9 -f -o "$TMP/$f.chce" "$path" || { echo "ziptastic failed: $f" >&2; fail=1; continue; }
-  "$ZIPTASIC" -d -f -o "$TMP/$f.out" "$TMP/$f.chce" || { echo "decode failed: $f" >&2; fail=1; continue; }
+  "$ZIPTASTIC" -9 -f -o "$TMP/$f.chce" "$path" || { echo "ziptastic failed: $f" >&2; fail=1; continue; }
+  "$ZIPTASTIC" -d -f -o "$TMP/$f.out" "$TMP/$f.chce" || { echo "decode failed: $f" >&2; fail=1; continue; }
   cmp -s "$path" "$TMP/$f.out" || { echo "ROUND-TRIP MISMATCH: $f" >&2; fail=1; continue; }
 
   x=$(stat -c%s "$TMP/$f.xz" 2>/dev/null || stat -f%z "$TMP/$f.xz")
