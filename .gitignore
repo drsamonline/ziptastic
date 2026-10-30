@@ -1,0 +1,24 @@
+# build output
+build/
+cmake-build-*/
+*.o
+*.a
+*.lib
+*.exe
+*.dll
+*.so
+*.dylib
+
+# ide / editor
+.vscode/
+.idea/
+*.swp
+compile_commands.json
+
+# working dirs
+workspace/
+tmp/
+
+# test artefacts
+*.chce
+Testing/
