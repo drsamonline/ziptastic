@@ -1,0 +1,440 @@
+# ziptastic — CHCE Native Engine — Agent Build Instructions
+
+You are building **ziptastic**, the native engine of CHCE (Chimera Hybrid
+Compression Engine). Read this entire document before writing any code.
+Every phase must pass its tests before the next phase begins.
+
+---
+
+## 1. Mission
+
+Build a single-binary, offline, closed-source-safe compression engine that:
+
+1. Beats `xz -9` by **≥3%** on Deflate-heavy archives (ZIP, PDF, PNG, nightly builds).
+2. Is **never worse than `xz -9`** by more than 0.5% on any input (hard guarantee via LZMA2 fallback).
+3. With `--max-ratio`, approaches the `paq8px` ratio class on general data.
+
+The engine composes preprocessors (SREP, Preflate), a dual-resolution match
+finder, a joint parser, and per-block entropy backends (rANS, Huffman, LZMA2
+fallback, and an optional CM bridge) into a **single unified format**. It does
+not shell out to external binaries.
+
+---
+
+## 2. Hard Constraints
+
+- **Offline only.** No network calls, no model downloads, no GPU.
+- **No external processes.** Everything is linked or compiled in.
+- **Codecs live under `vendor/hcs/old/<id>/`.** Read them, link them, or
+  copy their C sources into `src/codecs/<id>/`. Do not modify `vendor/hcs/`
+  in place — treat it as read-only. Any change must be a wrapper in `src/`.
+- **CMake only.** No other build system.
+- **C++20** for new engine code. C is fine for vendored source copies.
+- **License-safe.** Never link `paq8px`, `upx`, `advancecomp`, `packJPG`, or
+  `lzo` (GPL/LGPL). They are external-process-only in `heavenzip`.
+  Everything in `src/` must remain linkable into a closed-source binary.
+
+---
+
+## 3. What You Have (Source Map)
+
+All sources are already vendored under `vendor/hcs/old/`. Key ones:
+
+| Path | Use in ziptastic |
+|---|---|
+| `vendor/hcs/old/xz/` | LZMA2 encoder + decoder (fallback path) |
+| `vendor/hcs/old/lzma/` | Raw LZMA SDK (parsing DP reference) |
+| `vendor/hcs/old/zpaq/` | `libzpaq.cpp` — CM backend for `--max-ratio` |
+| `vendor/hcs/old/libbsc/` | BWT backend (link as library) |
+| `vendor/hcs/old/bzip3/` | Alternative BWT backend |
+| `vendor/hcs/old/brotli/` | Static dictionary backend |
+| `vendor/hcs/old/zstd/` | Fast/balanced backend |
+| `vendor/hcs/old/lz4/` | Ultra-fast backend |
+| `vendor/hcs/old/srep/` | Long-range block-hash reference (adapt, don't link) |
+| `vendor/hcs/old/preflate/` | DEFLATE recompressor (C++ — link) |
+| `vendor/hcs/old/preflate-rs/` | DEFLATE recompressor (Rust — reference) |
+| `vendor/hcs/old/ryg_rans/` | rANS encoder/decoder reference (adapt, don't link) |
+| `vendor/hcs/old/fse/` | FiniteStateEntropy (Huff0 = table-driven Huffman) |
+| `vendor/hcs/old/parmar/` | Text tokenization pre-filter |
+| `vendor/hcs/old/bitshuffle/` | Numeric bit-transpose pre-filter |
+| `vendor/hcs/old/pcodec/` | Numeric sequence compressor |
+| `vendor/hcs/old/7z/` | PPMd C source (copy `Ppmd7.*` into `src/codecs/ppmd/`) |
+
+If a phase needs a source that is missing, stop and report it — do not
+attempt to write a substitute from scratch.
+
+---
+
+## 4. The Innovation (What Must Be Built)
+
+ziptastic's differentiator is **not** a new compressor. It is:
+
+1. **Dual-resolution match finder** — a fine LZMA-style binary tree (64 MB window)
+   and a coarse SREP-style block-hash index (unbounded history) queried together
+   by one parser.
+2. **Joint parser** — LZMA-class optimal parser that prices literals, fine
+   matches, coarse matches, and semantic tokens with one cost model.
+3. **Per-block entropy mode selection** — the parser and the mode selector
+   cooperate: mode is chosen per block, and the parse is re-optimized for the
+   chosen mode.
+4. **Hard fallback** — every block is also trial-encoded with LZMA2; if the
+   CHCE-native encoding is larger, the block is stored as LZMA2. This is the
+   "never worse than xz" guarantee.
+5. **Semantic precompression as a Layer 0 transform** — Deflate streams in the
+   input are detected, inflated, and a recipe is stored in the block; the
+   inflated bytes flow into the match finder and parser.
+
+Everything else (CM, BWT, Brotli, Zstd, LZ4) is an alternative per-block
+backend that the mode selector can pick.
+
+---
+
+## 5. Repository Layout You Must Produce
+
+```
+ziptastic/
+├── AGENT_PROMPT.md            ← this file (do not edit)
+├── CMakeLists.txt
+├── vendor/hcs/                ← read-only, already populated
+├── include/chimera/
+│   ├── block.hpp
+│   ├── cost_model.hpp
+│   ├── match_finder.hpp
+│   ├── parser.hpp
+│   ├── mode_selector.hpp
+│   ├── entropy_rans.hpp
+│   ├── entropy_huff.hpp
+│   ├── semantic_precomp.hpp
+│   └── format.hpp
+├── src/
+│   ├── main.cpp               ← CLI entry
+│   ├── engine/
+│   │   ├── compressor.cpp     ← orchestrates block loop
+│   │   ├── decompressor.cpp
+│   │   ├── match_finder.cpp   ← dual-resolution implementation
+│   │   ├── parser.cpp         ← optimal-parse DP
+│   │   ├── mode_selector.cpp  ← per-block mode choice
+│   │   └── block_writer.cpp   ← header + payload serialization
+│   ├── entropy/
+│   │   ├── rans.cpp           ← context-modeled rANS
+│   │   ├── huff_static.cpp
+│   │   └── huff_adaptive.cpp  ← ARC-style
+│   ├── codecs/                ← thin wrappers around vendored codecs
+│   │   ├── lzma2_fallback.cpp
+│   │   ├── libbsc_wrap.cpp
+│   │   ├── brotli_wrap.cpp
+│   │   ├── zstd_wrap.cpp
+│   │   ├── lz4_wrap.cpp
+│   │   └── zpaq_wrap.cpp
+│   ├── precompressors/
+│   │   ├── preflate_wrap.cpp
+│   │   ├── parmar_wrap.cpp
+│   │   └── bitshuffle_wrap.cpp
+│   └── dedup/
+│       └── coarse_index.cpp   ← SREP-adapted block-hash index
+├── tests/
+│   ├── unit/                  ← one test file per module
+│   ├── integration/           ← round-trip tests
+│   ├── benchmark/             ← ratio/speed harness
+│   └── fixtures/              ← small sample files
+└── docs/
+    ├── FORMAT.md              ← bitstream spec (write as you build)
+    └── BENCHMARKS.md          ← results log
+```
+
+---
+
+## 6. Bitstream Format (v1)
+
+```
+┌─────────────────────────────────────────────────┐
+│ MAGIC  "CHCE"                       4 bytes     │
+│ version                              uint8 = 1 │
+│ flags (coarse_on, max_ratio, precomp_on) uint8  │
+│ original_size                        varint    │
+│ block_count                          varint    │
+├─────────────────────────────────────────────────┤
+│ For each block:                                 │
+│   mode                               uint8     │
+│   uncompressed_size                  varint    │
+│   compressed_size                    varint    │
+│   [mode-specific metadata]           variable  │
+│   payload                            bytes     │
+└─────────────────────────────────────────────────┘
+```
+
+Mode byte values:
+
+- `0x00` — RAW (stored, no entropy coding)
+- `0x01` — RANS_CTX (context-modeled rANS — primary)
+- `0x02` — HUFF_STATIC (two-pass Huffman, tree in header)
+- `0x03` — HUFF_ADAPT (ARC-style adaptive Huffman)
+- `0x04` — BWT_BSC (libbsc backend)
+- `0x05` — LZMA2_FALLBACK (xz-compatible — Tier-1 safety)
+- `0x06` — BROTLI
+- `0x07` — ZSTD
+- `0x08` — LZ4
+- `0x09` — CM_ZPAQ (libzpaq — only with `--max-ratio`)
+- `0x0A` — PPMD
+
+Metadata formats are per-mode and documented in `docs/FORMAT.md` as each
+mode is implemented.
+
+**Persistent state across blocks:** the LZ dictionary and both match-finder
+indexes carry forward across blocks. Context models for rANS carry forward.
+This is what makes it one engine, not a chain.
+
+---
+
+## 7. Phase Plan (Execute In Order)
+
+Each phase has explicit entry conditions and exit criteria. Do not skip.
+
+### Phase 0 — Skeleton
+**Goal:** CMake builds, CLI runs `ziptastic --version`, `--help`, and passes
+a trivial `echo "hi" | ziptastic | ziptastic -d` round-trip using RAW mode only.
+
+**Deliverables:**
+- `CMakeLists.txt` linking nothing but the engine itself
+- `src/main.cpp` with subcommand dispatch (`compress`, `decompress`, `bench`)
+- `src/engine/compressor.cpp` producing a valid header + RAW block
+- `src/engine/decompressor.cpp` producing the exact input bytes
+
+**Tests:**
+- Round-trip on 100 random files of size 0 B to 1 MB — must be bit-exact.
+- Header fuzz: mutated magic/version/length must error out cleanly.
+
+---
+
+### Phase 1 — LZMA2 Fallback (Tier-1 Guarantee)
+**Goal:** Every block is also LZMA2-encoded via `vendor/hcs/old/xz/`. If the
+CHCE-native encoding is larger, the block is stored as `LZMA2_FALLBACK`.
+
+**Deliverables:**
+- `src/codecs/lzma2_fallback.cpp` — encode/decode via liblzma
+- Mode selector picks `LZMA2_FALLBACK` when `chce_size >= lzma2_size`
+
+**Tests:**
+- Full Silesia corpus. Confirm `ziptastic` size ≤ `xz -9` size on every file.
+- Decompress `LZMA2_FALLBACK` blocks with upstream `xz` to confirm format compatibility.
+
+**Exit:** Tier-1 guarantee verified. **You may not proceed to Phase 2 without this passing.**
+
+---
+
+### Phase 2 — Fine Match Finder
+**Goal:** Port LZMA's binary-tree match finder, exposing matches to the parser.
+
+**Deliverables:**
+- `src/engine/match_finder.cpp` — binary-tree finder, configurable window
+- `include/chimera/match_finder.hpp` — exposes `query(pos) -> span<Match>`
+
+**Tests:**
+- Unit: known strings produce expected match lists.
+- Regression: fine matches on Silesia match upstream LZMA's parse (within 2% bit-rate).
+
+---
+
+### Phase 3 — Joint Parser (Fine Only)
+**Goal:** Optimal-parse DP over literals + fine matches only.
+
+**Deliverables:**
+- `src/engine/parser.cpp` — DP over positions, back-pointer tracking
+- `include/chimera/cost_model.hpp` — pluggable cost function
+
+**Tests:**
+- Round-trip on all Silesia files
+- Ratio vs Phase 1 (LZMA2 fallback) must be **within 5%** of LZMA2 (parse quality check)
+
+---
+
+### Phase 4 — rANS + Context Models (Primary Backend)
+**Goal:** Context-modeled rANS as the primary entropy backend, replacing raw
+bit output from Phase 3.
+
+**Deliverables:**
+- `src/entropy/rans.cpp` — encoder/decoder, 12-bit frequency tables
+- Literal context: `(prev_byte >> 4, pos_state & 3, match_flag)`
+- Length context: `(length_slot, pos_state)`
+- Distance context: `(dist_slot, match_source)`
+
+**Tests:**
+- Round-trip on Silesia — bit-exact
+- Ratio must **equal or beat** Phase 3's output
+- Decoder throughput ≥ 150 MB/s on a desktop CPU for rANS blocks
+
+---
+
+### Phase 5 — Adaptive Tables (ARC Spirit)
+**Goal:** Context frequency tables re-normalize every 256 symbols (exponential
+decay `(f * 15 + obs) >> 4`).
+
+**Tests:**
+- Bit-exact round-trip unchanged
+- Ratio improvement ≥ 1% on text-heavy files (dickens, webster from Silesia)
+
+---
+
+### Phase 6 — Coarse Index (SREP Spirit)
+**Goal:** Block-hash index over 48-byte blocks, 16-entry buckets, unbounded
+history. Parser queries both fine and coarse indexes.
+
+**Deliverables:**
+- `src/dedup/coarse_index.cpp`
+- Parser's `cost.match(..., source=COARSE)` gets a distance-context discount
+
+**Tests:**
+- Synthetic: `file_a` + 100 MB of noise + `file_a` again → coarse index must
+  find the 100 MB-distant match. Ratio must beat fine-only by ≥30% on this input.
+- Round-trip on all real data — bit-exact
+
+**Exit:** Phase 6 is where ziptastic first has a chance to beat `xz -9` on
+Deflate-heavy archives. If it does not, stop and report — do not proceed.
+
+---
+
+### Phase 7 — Static + Adaptive Huffman Modes
+**Goal:** Wire `HUFF_STATIC` (two-pass) and `HUFF_ADAPT` (ARC-style) as
+alternate entropy backends. Mode selector picks the smallest per block.
+
+**Tests:**
+- Round-trip all modes
+- On Silesia `mozilla` (paletted binary), `HUFF_ADAPT` should win by ≥2%
+- On incompressible blocks, `RAW` should win by ≥5%
+
+---
+
+### Phase 8 — Semantic Precompression (Preflate)
+**Goal:** Detect DEFLATE streams, inflate, store recipe in block header, feed
+inflated bytes into the parser.
+
+**Deliverables:**
+- `src/precompressors/preflate_wrap.cpp` using `vendor/hcs/old/preflate/`
+- Header extension: `PRECOMP` sub-block carrying recipe
+- Decision rule: apply Precomp iff `inflated + recipe < original` **and**
+  parser estimates net gain
+
+**Tests:**
+- Round-trip on `silesia.zip` — bit-exact
+- Ratio on `silesia.zip` must beat plain ziptastic by ≥2%
+- Round-trip on a PDF, a PNG, and a JAR
+
+**Exit:** This is the biggest ratio gate. If `silesia.zip` does not beat
+`xz -9` by ≥3%, report and stop.
+
+---
+
+### Phase 9 — BWT + Brotli + Zstd + LZ4 Backends
+**Goal:** Additional per-block backends. Mode selector treats them equally.
+
+**Tests:**
+- Round-trip per mode — bit-exact
+- On text corpora, BWT wins ≥1% over rANS_CTX on `dickens`-class inputs
+
+---
+
+### Phase 10 — CM Backend (libzpaq)
+**Goal:** `--max-ratio` flag activates `CM_ZPAQ` mode where rANS has
+plateaued. This is the ratio ceiling.
+
+**Deliverables:**
+- `src/codecs/zpaq_wrap.cpp` linking `vendor/hcs/old/zpaq/libzpaq.cpp`
+- Mode selector: if `--max-ratio` and block estimate is above threshold,
+  run libzpaq trial encode; use if smallest
+
+**Tests:**
+- Round-trip on Silesia
+- Total Silesia size with `--max-ratio` must be **≤42 MiB** (target)
+
+---
+
+### Phase 11 — PPMd Backend
+**Goal:** For text/source blocks, PPMd is a fast high-ratio choice.
+
+**Deliverables:**
+- `src/codecs/ppmd/` — copy `Ppmd7.c` + `Ppmd7.h` from `vendor/hcs/old/7z/`
+- Wrapper exposing `encode(block) -> bytes`, `decode(bytes) -> block`
+
+**Tests:**
+- Round-trip
+- PPMd must beat rANS_CTX by ≥2% on source-code files
+
+---
+
+### Phase 12 — Optimization Pass
+**Goal:** Bring compression time within 2× of `xz -9` on default mode.
+
+**Work:**
+- Block size tuning (start 256 KB)
+- Parallel block encoding (blocks are independent for match finder if you
+  reset state; document the boundary)
+- Skip coarse index when entropy of first 64 KB is > 7.5 bits/byte (nothing to find)
+
+**Tests:**
+- Time/ratio curve logged in `docs/BENCHMARKS.md`
+- No regression in ratio
+
+---
+
+## 8. Test Requirements (All Phases)
+
+Every phase must pass all of these:
+
+- **Round-trip bit-exactness** on all fixtures, Silesia, and randomized inputs.
+- **Fuzz the decoder** — 1000 mutated inputs must not crash or hang.
+- **Header validation** — invalid magic, invalid mode, zero-length blocks
+  rejected with a clear error code.
+- **Ratio gates** stated per phase (above) — measured, not assumed.
+- **Benchmark table** written to `docs/BENCHMARKS.md` after every phase.
+
+Test runner:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+```
+
+All tests must pass before the phase is considered done.
+
+---
+
+## 9. Acceptance Criteria (Whole Project)
+
+- `ziptastic -9 corpus/` produces `≤ xz -9 corpus/` on the entire Silesia corpus.
+- `ziptastic -9 silesia.zip` produces `≤ 44.0 MiB` (beats `xz -9` by ≥3%).
+- `ziptastic --max-ratio silesia/` produces `≤ 42 MiB` (approaches ZPAQ class).
+- Decompression speed on default mode ≥ 100 MB/s on modern hardware.
+- Zero network calls, zero external processes, zero model files.
+- Builds cleanly on Linux, macOS, Windows with only CMake + a C++20 compiler.
+
+---
+
+## 10. What NOT To Do
+
+- Do not modify anything under `vendor/hcs/`. Wrap it in `src/`.
+- Do not shell out to `paq8px.exe`, `upx`, `advancecomp`, `packJPG`, `lzo`,
+  or any other GPL/LGPL tool. They are excluded from ziptastic entirely.
+- Do not invent a new entropy coder from scratch. Use rANS + Huffman as specified.
+- Do not skip Phase 1 (LZMA2 fallback). Without it, the Tier-1 guarantee fails.
+- Do not proceed past a phase whose exit test fails — report the failure and wait.
+- Do not add network-dependent features, model downloads, or GPU paths.
+- Do not commit build artifacts. `build/` is git-ignored.
+
+---
+
+## 11. How to Report Progress
+
+After each phase completes:
+
+1. Write a section in `docs/BENCHMARKS.md` with: phase number, Silesia total
+   size, Silesia `silesia.zip` size, decompression MB/s, and any failing tests.
+2. Commit with message `phase-<N>: <description> — ratio <X> MiB`.
+3. If a phase gate fails, commit anyway with `phase-<N>: FAILED — <reason>`
+   and **stop**. Do not start the next phase.
+
+Begin with **Phase 0**. Read the source tree under `vendor/hcs/old/` to
+understand what you are wrapping. Do not ask for clarification; make the
+minimal reasonable choice and document it in the commit message.
+
+Start now.
