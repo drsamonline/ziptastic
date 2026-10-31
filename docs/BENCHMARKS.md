@@ -1278,3 +1278,32 @@ the theoretical best for this method, i.e. the framing is all that is left.
 It is tried **last and only kept when smaller**, because it is the most expensive
 thing in the engine — and it is confined to `--max-ratio`, so the default path
 never pays for it.
+
+## Parallel decode
+
+Decoding a `kFlagParallel` stream now uses all cores: every block decodes into its
+own buffer and the results are concatenated. That is only safe because the flag
+guarantees no block references another — in archive mode the same code would read
+output a block has not produced yet, which is why the sequential path remains for
+everything else.
+
+**Measured on `xml`, 2 cores:**
+
+| stream | blocks | parallel | sequential |
+|---|---|---|---|
+| `-b 512` | 11 | 356-489 ms | **241-295 ms** |
+| `-b 64` | 82 | **115 ms** | 138 ms |
+
+- **At 82 blocks: ~17% faster.**
+- **At 11 blocks: slower.** Thread startup costs more than 11 small blocks save.
+- Both spreads are wide (the shared vCPU again), so the 17% is suggestive rather
+  than conclusive; the loss at 11 blocks is unambiguous.
+
+So the path is gated at `kParallelDecodeMinBlocks = 8`: below that, sequential
+wins and sequential is used. Decoding at the default 4 MiB blocks — 2 blocks for a
+5 MiB file — is therefore unaffected, which is the honest outcome: parallel decode
+only pays when there are many blocks to spread.
+
+**Still unmet:** the 150 MB/s decode target. Parallelism is not the lever for it —
+the decode cost is in the entropy coders, and reaching that number needs the
+interleaved rANS work deferred long ago, not more threads.

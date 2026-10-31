@@ -109,6 +109,7 @@ measured results.
 | 9 | BWT, Brotli, Zstd, LZ4 backends | |
 | 10 | CM backend (`--max-ratio`) | |
 | 11 | PPMd backend | |
+| 16 | Parallel decode | **done** — −17% at 82 blocks; gated at 8 blocks |
 | 15 | Whole-stream CM for `--max-ratio` | **done** — xml −16.2%, reymont −6.9% |
 | 14 | CRC-32 integrity | **done** — format v2, corruption is now detected |
 | 13 | SREP-style dedup stage | **done** — −10.8% on duplicate archives, no regressions |
