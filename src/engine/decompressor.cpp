@@ -13,6 +13,7 @@
 #include "chimera/huffman.hpp"
 #include "entropy/bwt_bsc.hpp"
 #include "entropy/cm_zpaq.hpp"
+#include "entropy/ppmd.hpp"
 #include "entropy/token_coder.hpp"
 #include "precompressors/bcj_x86.hpp"
 #include "precompressors/preflate_wrap.hpp"
@@ -116,10 +117,19 @@ Err decode_body(const BlockHeader& hdr, std::span<const uint8_t> body,
     // separate from any implemented case: grouping CmZpaq with them earlier made
     // three unimplemented modes run the zpaq decoder and report "corrupt"
     // instead of "bad-mode".
+    case Mode::Ppmd: {
+      ByteReader r(body);
+      if (Err e = ppmd_decompress_block(body, static_cast<uint32_t>(hdr.uncompressed_size),
+                                        dst);
+          e != Err::Ok) {
+        return e;
+      }
+      return Err::Ok;
+    }
+
     case Mode::Brotli:
     case Mode::Zstd:
     case Mode::Lz4:
-    case Mode::Ppmd:
       return Err::BadMode;
   }
   return Err::BadMode;

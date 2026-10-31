@@ -155,6 +155,22 @@ if(NOT MSVC)
   target_compile_options(zpaq_vendor PRIVATE -w)
 endif()
 
+
+# ---------------------------------------------------------------------------
+# PPMd (Phase 11) — text backend from the 7-Zip SDK, public domain.
+# Three C files plus the range coder that lives inside them.
+# ---------------------------------------------------------------------------
+set(PPMD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/hcs/old/7z/C)
+add_library(ppmd_vendor STATIC
+  ${PPMD_DIR}/Ppmd7.c
+  ${PPMD_DIR}/Ppmd7Enc.c
+  ${PPMD_DIR}/Ppmd7Dec.c
+)
+target_include_directories(ppmd_vendor PUBLIC ${PPMD_DIR})
+if(NOT MSVC)
+  target_compile_options(ppmd_vendor PRIVATE -w)
+endif()
+
 add_library(chce_core STATIC
   src/engine/block_writer.cpp
   src/engine/compressor.cpp
@@ -164,6 +180,7 @@ add_library(chce_core STATIC
   src/engine/parser.cpp
   src/engine/token_stream.cpp
   src/entropy/bwt_bsc.cpp
+  src/entropy/ppmd.cpp
   src/entropy/huffman.cpp
   src/entropy/rans.cpp
   src/entropy/range_coder.cpp
@@ -178,7 +195,7 @@ target_include_directories(chce_core
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(chce_core PRIVATE liblzma preflate_shim bsc_vendor zpaq_vendor)
+target_link_libraries(chce_core PRIVATE liblzma preflate_shim bsc_vendor zpaq_vendor ppmd_vendor)
 target_include_directories(chce_core PRIVATE ${XZ_DIR}/src/liblzma/api)
 
 if(MSVC)

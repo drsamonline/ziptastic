@@ -34,6 +34,7 @@ the I/O path is a network-backed filesystem. Ratios are the meaningful column.
 | 8 — Preflate | zip subset -28.8% vs `xz -9` | n/a | n/a | **gate passed; full corpus run exceeded the command limit** |
 | 9 — BWT backend | 6-file subset -6.09% vs `xz -9` | n/a | n/a | **done; BWT wins most blocks, but is slow** |
 | 10 — CM (`--max-ratio`) | xml -13.1% vs `xz -9` | n/a | n/a | **done; ratio ceiling, ~3.4x the time** |
+| 11 — PPMd for text | dickens -2.7% vs BWT | n/a | n/a | **done; wins on English text** |
 | 6 — Coarse index | | | | not started |
 | 7 — Huffman modes | | | | not started |
 | 8 — Semantic precompression | | | | not started |
@@ -842,3 +843,24 @@ its input, and rejecting truncated input. 14/14 ctest suites pass.
 **Not measured:** the phase's exit criterion is `--max-ratio` beating `xz -9` across total Silesia. That is out of reach in this sandbox: at 75 s for 5.3 MiB, the 212 MiB corpus is over 50 minutes of compression, against a 300 s per-command limit. The single-file result above is what was measured.
 
 **Tests:** `unit.zpaq`, 2 cases — round-trip at three sizes, and a corrupted payload that must never report success with the wrong bytes. 15/15 ctest suites pass.
+
+## Phase 11 — PPMd for text
+
+- 7-Zip's PPMd var.H (`Ppmd7.c`, `Ppmd7Enc.c`, `Ppmd7Dec.c`), public domain, order 6, 16 MiB model.
+- PPM models *context* rather than position, which is why it beats LZ and BWT on natural language.
+- Offered per block, so binary blocks never pay for it.
+
+**Result:**
+
+- `dickens` (English text): 2,820,882 -> **2,743,444**, i.e. **-2.7%** — the phase's "beat the existing best on text by 2%" gate is met.
+- `reymont` (Polish text): 1,249,670 -> 1,248,492, -0.09%; BWT still wins most blocks there.
+- Round-trip exact.
+
+**Two integration details that were not obvious:**
+
+- `Ppmd7z_EncodeSymbols` emits symbols but does **not** initialise the range encoder or flush it. The caller must set `rc.enc.Low/Range/Cache/CacheSize` and call `Ppmd7z_Flush_RangeEnc` afterwards, or the tail of the stream is lost.
+- The stream interfaces (`IByteOut`/`IByteIn`) are const-qualified pointers to a struct we own, so the callbacks need a `const_cast`, not a plain `reinterpret_cast`.
+
+**Test fragility fixed properly this time.** Adding a backend kept leaving the round-trip stats stale, because each backend had its own named counter and I kept forgetting to add the new one. `CompressStats` now carries `mode_counts[16]`, indexed by mode byte, and the test sums that array. Adding a backend can no longer make the check stale.
+
+**Tests:** `unit.ppmd`, 3 cases — round-trip on text and on binary, and truncation rejection. 16/16 ctest suites pass.

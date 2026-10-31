@@ -12,6 +12,7 @@
 #include "chimera/huffman.hpp"
 #include "entropy/bwt_bsc.hpp"
 #include "entropy/cm_zpaq.hpp"
+#include "entropy/ppmd.hpp"
 #include "entropy/token_coder.hpp"
 #include "precompressors/bcj_x86.hpp"
 #include "precompressors/preflate_wrap.hpp"
@@ -108,6 +109,20 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
       stats.tokens += tokens.size();
       cands.push_back(std::move(pb));
 
+      // PPMd: models context rather than position, which is why it is the text
+      // backend. Offered per block so binary blocks never pay for it.
+      {
+        std::vector<uint8_t> pb;
+        if (ppmd_compress_block(block, pb)) {
+          EncodedBlock pbk;
+          pbk.hdr.mode = Mode::Ppmd;
+          pbk.hdr.uncompressed_size = n;
+          pbk.hdr.compressed_size = pb.size();
+          pbk.body = std::move(pb);
+          cands.push_back(std::move(pbk));
+        }
+      }
+
       // Context mixing, only under --max-ratio: tens of times slower than
       // anything else here, and only worth paying when the caller asks for the
       // ratio ceiling.
@@ -199,6 +214,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
       ++stats.huff_blocks;
     }
     if (best->hdr.mode == Mode::BwtBsc) ++stats.bwt_blocks;
+    ++stats.mode_counts[static_cast<uint8_t>(best->hdr.mode) & 15];
     stats.payload_bytes += best->hdr.compressed_size;
 
     pos += n;

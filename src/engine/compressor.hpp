@@ -48,6 +48,10 @@ struct CompressStats {
   uint64_t parsed_blocks = 0;
   uint64_t huff_blocks = 0;
   uint64_t bwt_blocks = 0;
+  // Blocks per mode byte. The named counters above are kept for the CLI, but
+  // this array is the authoritative one: adding a backend cannot make it stale,
+  // which the named counters repeatedly did.
+  uint64_t mode_counts[16] = {};
   uint64_t tokens = 0;
   uint64_t payload_bytes = 0;
   // True when the LZMA2 fallback won and the stream is one fallback block.
