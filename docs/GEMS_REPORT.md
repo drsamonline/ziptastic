@@ -254,3 +254,32 @@ next.
 3. MP3/GIF/PDF via precomp's contrib.
 4. Word-dictionary as a per-block candidate.
 5. REP's memory tricks, only for multi-GB streams.
+
+## Attempted: our own BWT + CM, to capture bzip3's gain licence-clean
+
+The plan was sound — libsais gives us the BWT (already vendored and linked), and
+the engine already has a binary range coder with adaptive bit models, so
+BWT -> MTF -> RLE -> context-mixing range coder is buildable without touching any
+copyleft code. bzip3's pipeline is exactly that shape.
+
+**It was built and it loses.**
+
+| file | libbsc BWT+QLFC | my BWT+MTF+RLE+CM | delta |
+|---|---|---|---|
+| `dickens` | 2,359,168 | 2,624,609 | **+11.25%** |
+| `mr` | 2,249,498 | 2,365,481 | +5.16% |
+| `x-ray` | 3,798,258 | 3,968,561 | +4.48% |
+
+The model used was a single order-1 context (previous symbol's high nibble) over a
+256-node binary tree, coded with the existing range coder. That is a fair
+"obvious" implementation, and libbsc's QLFC beats it everywhere.
+
+**What this bounds.** bzip3's -4.35% on `mr` is not available from a
+straightforward context model. Getting it licence-clean needs what bzip3 actually
+has: several context orders mixed together, an SSE/APM stage, and LZP
+preprocessing before the BWT. That is a modelling project in its own right — weeks,
+not an afternoon — and its payoff is bounded at roughly 4% on one file class.
+
+**Recommendation changed accordingly:** BWT+CM drops from second place to "only if
+someone wants to do serious modelling work". JPEG via brunsli moves further ahead
+as the next real win, and it is a plumbing problem rather than a research one.
