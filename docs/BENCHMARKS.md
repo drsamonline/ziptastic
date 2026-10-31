@@ -935,3 +935,46 @@ What a proper attempt needs: a quiet machine, a timing harness that runs each
 configuration several times and reports a median, and a ratio budget agreed in
 advance (the 0.2% above may well be an acceptable price for halving the time —
 that judgement needs real numbers).
+
+## Final corpus measurement (the standing result)
+
+All 12 phases are in. This is the whole corpus measured once, at the shipped
+defaults (4 MiB blocks, every backend offered, `-9`), against `xz -9` on the same
+file. Sizes are exact; timings on this shared vCPU are not reliable and are
+omitted deliberately.
+
+| file | raw | `xz -9` | ziptastic | vs `xz -9` |
+|---|---|---|---|---|
+| `reymont` | 6,627,202 | 1,317,152 | 1,024,579 | **-22.213%** |
+| `mr` | 9,970,564 | 2,750,272 | 2,249,532 | **-18.207%** |
+| `osdb` | 10,085,684 | 2,849,908 | 2,347,694 | **-17.622%** |
+| `xml` | 5,345,280 | 453,260 | 374,682 | **-17.336%** |
+| `dickens` | 10,192,446 | 2,830,604 | 2,355,513 | **-16.784%** |
+| `nci` | 33,553,445 | 1,738,884 | 1,449,230 | **-16.657%** |
+| `x-ray` | 8,474,240 | 4,489,868 | 3,798,292 | **-15.403%** |
+| `ooffice` | 6,152,192 | 2,426,816 | 2,083,954 | **-14.128%** |
+| `samba` | 21,606,400 | 3,763,616 | 3,739,486 | **-0.641%** |
+| `sao` | 7,251,944 | 4,415,072 | 4,415,033 | **-0.001%** |
+
+**10 files, 119,259,397 bytes in: 27,035,452 with `xz -9` against 23,837,995 with
+ziptastic — 11.83% smaller.**
+
+Every file is at or below `xz -9`. The spread is worth reading:
+
+- **Text is now far ahead** — `reymont` -22.2%, `dickens` -16.8%, `xml` -17.3%.
+  This is the 4 MiB block size doing the work: PPMd and BWT both build much
+  better models from a large block, and at 256 KiB these same files were -5% to
+  -7%.
+- **Structured binary is close behind** — `mr` -18.2%, `osdb` -17.6%,
+  `x-ray` -15.4%, `ooffice` -14.1%.
+- **`samba` is the weak file at -0.64%** — a tar of mixed content where the LZMA2
+  safety net wins, so we are essentially tied with `xz -9` there.
+- **`sao` is exactly tied (-0.00%)** — the fallback wins outright.
+
+**Two files could not be measured: `webster` (41 MiB) and `mozilla` (51 MiB).**
+Each exceeds the sandbox's 300 s per-command limit at 4 MiB, 1 MiB *and* 512 KiB
+blocks. They are reported as unmeasured rather than estimated: `webster` is
+English text like `dickens` and would be expected to land in the same -15% to
+-20% band, and `mozilla` is a tar of executables where `samba`'s pattern (-0.6%)
+is the closer precedent — but those are expectations, not measurements, and are
+labelled as such.

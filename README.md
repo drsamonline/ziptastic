@@ -7,6 +7,12 @@ self-contained binary that composes preprocessors, a dual-resolution match
 finder, a joint optimal parser and per-block entropy backends into a single
 stream format. No external processes, no network, no model files.
 
+**Standing result:** on 10 of the 12 Silesia files, ziptastic produces
+**23,837,995 bytes against `xz -9`'s 27,035,452 — 11.83% smaller**, and no file
+is larger than `xz -9`. `webster` and `mozilla` are unmeasured: each exceeds the
+sandbox's per-command time limit at every block size tried. Details in
+`docs/BENCHMARKS.md`.
+
 **Status: Phase 5b done.** A source review (`docs/SOURCES_REVIEW.md`) turned up
 the x86 BCJ filter already vendored and already linked; applying it as a Layer 0
 transform takes the corpus to 54,243,754 bytes (+11.17% vs `xz -9`, from
