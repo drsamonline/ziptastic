@@ -20,6 +20,7 @@
 #include "chimera/cost_model.hpp"
 #include "chimera/match_finder.hpp"
 #include "engine/parser.hpp"
+#include "engine/token_stream.hpp"
 
 namespace {
 
@@ -77,19 +78,19 @@ int main(int argc, char** argv) {
           chce::parse_block(data, pos, end, finder, model, tokens);
       ideal_bits += static_cast<double>(cost) / 16.0;
 
-      uint64_t block_lits = 0;
       for (const auto& t : tokens) {
         if (t.is_literal()) {
           ++lits;
-          ++block_lits;
         } else {
           ++matches;
           matched_bytes += t.len;
-          // tag + two varints, roughly: 1 + len bytes + dist bytes
-          raw_body += 1 + 2 + 3;
         }
       }
-      raw_body += block_lits;  // one byte per literal (this block's, not the running total)
+      // Encode for real rather than estimating: an estimate here would be a
+      // number nobody could reproduce.
+      chce::ByteWriter body;
+      chce::encode_tokens(body, data, pos, tokens);
+      raw_body += body.size();
     }
 
     const auto t1 = std::chrono::steady_clock::now();

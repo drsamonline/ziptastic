@@ -279,6 +279,33 @@ approximation (a length slot plus a distance slot plus extra bits) where LZMA
 uses adaptive prices learned from the data. Closing that is Phase 4's job, and
 it is why the model is an object rather than constants.
 
+### Recalibration: the cost model was the gap
+
+The +20.9% modelled gap above was diagnosed and cut by pricing matches the way
+LZMA actually codes them rather than by a generic slot formula. Two errors
+dominated:
+
+| symbol | old price | LZMA's real cost | consequence |
+|---|---|---|---|
+| distance 1–3 | 6 + log2(dist) ≈ 6–8 bits | ~2.5 bits (near distances are cheap) | parser avoided the short matches that are most of a match list |
+| length 3 | 4 + log2(len) = 6 bits | ~3.5 bits (lengths 2–9 are a 3-bit tree) | same |
+
+After the fix (lengths 2–9 at ~3.5 bits, longer at 5 + log2; distances < 4 at
+~2.5 bits, else 5 + log2) the same four files measure **11.18 MiB of ideal bits
+against LZMA2's 10.06 MiB — +11.1%, down from +20.9%**. The parse also changes
+character: literals fall from 64.9% to 43.2% of symbols on `dickens`.
+
+Full corpus: **53.85 MiB modelled vs LZMA2's 46.54 MiB = +15.7%**, pulled up by
+`mozilla` (+27%) and `x-ray` (+19%) — executable data, where LZMA's
+repeat-distance coding matters most and our cost model has no rep state at all.
+Closing that needs rep distances in the DP, which is a Phase 12-class change,
+not a pricing tweak.
+
+One honest consequence: the *uncoded* size got slightly worse, 89.97 MB →
+92.11 MB. More matches means more per-match framing in `LZ_RAW` (about 3 bytes
+each), where a real coder would spend about 3 bits. That is precisely why
+`LZ_RAW` is the wrong yardstick and why Phase 4 is the fix.
+
 **Speed: 0.26–1.5 MB/s encode.** Slow, and expected: the DP relaxes every
 length up to `nice_len` for every match at every position, on a 64 MiB window.
 Decode is 47–88 MB/s. Phase 12 owns this.

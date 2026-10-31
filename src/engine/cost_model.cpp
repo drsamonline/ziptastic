@@ -22,9 +22,9 @@ uint32_t price_of(double p) {
   return static_cast<uint32_t>(units + 0.5);
 }
 
-uint32_t ceil_log2(uint32_t v) {
+uint32_t floor_log2(uint32_t v) {
   uint32_t bits = 0;
-  while ((1u << bits) < v && bits < 32) ++bits;
+  while (v >>= 1) ++bits;
   return bits;
 }
 
@@ -75,12 +75,20 @@ uint32_t StaticCostModel::match_price(uint32_t len, uint32_t dist,
                                       MatchSource src) const {
   if (len < kMinMatchLen) return 16u * 24u;
 
-  // Length: a slot (how many bits the length needs) plus the extra bits.
-  const uint32_t len_bits = 4 + ceil_log2(len - 1 + 1);
-  // Distance: a slot plus the extra bits, which dominate for long distances.
-  const uint32_t dist_bits = 6 + ceil_log2(dist);
+  // Length, priced on LZMA's own layout: lengths 2..9 go through a 3-bit tree
+  // (~3.5 bits), longer ones add a slot plus extra bits.
+  const uint32_t len_units =
+      len < 10 ? 56u : 16u * (5u + floor_log2(len - 9));
 
-  uint32_t price = 16u * (len_bits + dist_bits);
+  // Distance, priced on LZMA's distance slots: the nearest few distances are
+  // cheap, everything else pays a slot tree plus (slot >> 1) - 1 extra bits,
+  // which is about 5 + log2(dist). Charging a flat 6 + log2(dist) — as an
+  // earlier version did — cost 6 bits for dist=1 and made the parser avoid the
+  // short matches that are most of what a match list contains.
+  const uint32_t dist_units =
+      dist < 4 ? 40u : 16u * (5u + floor_log2(dist));
+
+  uint32_t price = len_units + dist_units;
   if (src == MatchSource::Coarse && coarse_discount_ > 0) {
     price = price > coarse_discount_ ? price - coarse_discount_ : kMinPrice;
   }
