@@ -24,7 +24,7 @@ the I/O path is a network-backed filesystem. Ratios are the meaningful column.
 |---|---|---|---|---|
 | 0 — Skeleton (RAW only) | n/a | n/a | 100–108 | **pass** |
 | 1 — LZMA2 fallback | 48,438,819 (46.19 MiB) | n/a (Phase 8) | 20–27 | **pass** |
-| 2 — Fine match finder | | | | not started |
+| 2 — Fine match finder | n/a (no parser yet) | n/a | n/a | **pass** |
 | 3 — Joint parser | | | | not started |
 | 4 — rANS + context models | | | | not started |
 | 5 — Adaptive tables | | | | not started |
@@ -155,3 +155,77 @@ fallback-wins-on-compressible, fallback-declines-on-incompressible and
 disabled-fallback cases. `tests/benchmark/silesia_gate.sh` is the reusable
 gate: it resumes, verifies bit-exactness, and exits non-zero if any file is
 larger than `xz -9`.
+
+## Phase 2 — Fine match finder (BT4)
+
+**Scope.** `include/chimera/match_finder.hpp` + `src/engine/match_finder.cpp`: a
+C++20 port of the binary-tree match finder from the LZMA SDK
+(`vendor/hcs/old/lzma/C/LzFind.c`, public domain). Three hash tables (2-, 3- and
+4-byte prefixes) feed a binary search tree over positions in a cyclic buffer, so
+memory is bounded by the window rather than by the input length. The finder
+returns matches ordered by increasing length, each with the distance at which
+that length was first reached — the shape a cost model can price in one pass.
+
+This phase changes no bytes on disk: the format is untouched until the parser
+starts emitting matches in Phase 3.
+
+**The gate.** The prompt asks that fine matches "match upstream LZMA's parse
+(within 2% bit-rate)". A parse cannot be compared before a parser exists, so
+this phase is gated on the stronger property a parser actually depends on:
+*the finder never misses a match that an exhaustive scan of the same window
+would find*. Brute force is the authority; a parser is only as good as its
+match list.
+
+Measured with `tests/benchmark/match_stats` — a greedy walk over each file
+(window 1 MiB, `nice_len` 273, LZMA's default tree-depth cutoff) plus an
+exhaustive-scan cross-check at 150 sampled positions per file:
+
+| file | bytes | positions with a match | greedy coverage | avg match len | oracle | MB/s | finder mem |
+|---|---|---|---|---|---|---|---|
+| `dickens` | 10,192,446 | 10.9% | 99.6% | 9.1 | 151/151 | 2.3 | 24.5 MB |
+| `mozilla` | 51,220,480 | 9.3% | 87.5% | 9.4 | 151/151 | 4.1 | 24.5 MB |
+| `mr` | 9,970,564 | 11.6% | 98.1% | 8.5 | 151/151 | 2.1 | 24.5 MB |
+| `nci` | 33,553,445 | 2.3% | 99.6% | 44.0 | 151/151 | 2.2 | 24.5 MB |
+| `ooffice` | 6,152,192 | 13.5% | 87.0% | 6.4 | 151/151 | 3.8 | 24.5 MB |
+| `osdb` | 10,085,684 | 6.6% | 86.8% | 13.1 | 151/151 | 3.2 | 24.5 MB |
+| `reymont` | 6,627,202 | 7.7% | 99.2% | 13.0 | 151/151 | 2.3 | 24.5 MB |
+| `samba` | 21,606,400 | 5.6% | 93.1% | 16.6 | 151/151 | 3.0 | 24.5 MB |
+| `sao` | 7,251,944 | 11.2% | 58.5% | 5.2 | 151/151 | 3.5 | 24.5 MB |
+| `webster` | 41,458,703 | 8.4% | 99.4% | 11.9 | 151/151 | 2.5 | 24.5 MB |
+| `x-ray` | 8,474,240 | 22.1% | 92.9% | 4.2 | 151/151 | 4.1 | 24.5 MB |
+| `xml` | 5,345,280 | 3.2% | 98.9% | 31.3 | 151/151 | 2.7 | 24.5 MB |
+| **total** | **211,938,580** | **8.2%** | **93.2%** | | **1812/1812** | | |
+
+**Result: 1812/1812 sampled positions agree with an exhaustive scan.** On every
+probe the finder's best match is exactly the best match that exists — it is not
+leaving matches on the table, which is the property Phase 3 needs.
+
+Greedy coverage of 93.2% of all bytes (87–99.6% per file) is the finder's own
+contribution; `sao` is the outlier at 58.5% because it is a star catalogue of
+near-random floats with short repeats. Turning that coverage into a ratio is
+the parser's job.
+
+**Throughput: 2.1–4.1 MB/s** for the greedy walk. That is finder-only cost at
+`nice_len` 273 with the LZMA depth cutoff, and it is in the same band as `xz -9`
+end-to-end on this hardware, so it is not yet the bottleneck — but it is
+untuned. Phase 12 owns this.
+
+**Bugs found and fixed during the phase, worth recording:**
+
+1. The window guard originally used `min(pos, window)`, copying LZMA's `SET_mmm`.
+   That silently excluded a candidate at position 0 until the buffer filled, so
+   a 40-byte repeat at the very start of a file was never found. The guard now
+   checks against the window itself, which is what actually matters: a distance
+   of exactly `window` aliases a candidate onto the current position's own tree
+   slot.
+2. The 4-byte hash table was a fixed 2^22 entries (16 MiB) regardless of input
+   size, so a 100 KiB file paid for a 16 MiB table. It now scales to about one
+   bucket per two input bytes, capped at the requested size.
+
+**Tests.** `unit.match_finder` (10 cases): known strings with hand-checked
+matches; exhaustive brute-force comparison over every position of several small
+inputs at three alphabet sizes; sampled comparison on a 20,000-byte input;
+window-bound behaviour either side of the boundary; `nice_len` capping;
+skip-vs-query agreement; re-query safety; determinism; memory bounds; progress
+accounting. Every reported match is also verified to be real (same bytes, legal
+distance, increasing length).

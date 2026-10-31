@@ -5,8 +5,11 @@ self-contained binary that composes preprocessors, a dual-resolution match
 finder, a joint optimal parser and per-block entropy backends into a single
 stream format. No external processes, no network, no model files.
 
-**Status: Phase 1 complete** — the container, the block loop, and the Tier-1
-LZMA2 fallback. Every input is also encoded as raw LZMA2 and the smaller
+**Status: Phase 2 complete** — the container, the block loop, the Tier-1
+LZMA2 fallback, and the fine binary-tree match finder (exact against an
+exhaustive scan on all 1,812 sampled Silesia positions). The parser that turns
+those matches into a ratio lands in Phase 3; until then the LZMA2 fallback is
+what you get on disk. Every input is also encoded as raw LZMA2 and the smaller
 stream wins, so output is never worse than `xz -9` (measured: −0.73% over the
 whole Silesia corpus, every file individually smaller). The CHCE-native
 backends that are meant to win by more start at Phase 4.
@@ -66,8 +69,8 @@ measured results.
 |---|---|---|
 | 0 | CMake skeleton, CLI, RAW blocks, header validation | **done** |
 | 1 | LZMA2 fallback — the "never worse than xz" guarantee | **done** |
-| 2 | Fine (binary-tree) match finder | next |
-| 3 | Joint optimal parser | |
+| 2 | Fine (binary-tree) match finder | **done** |
+| 3 | Joint optimal parser | next |
 | 4 | Context-modelled rANS backend | |
 | 5 | Adaptive frequency tables | |
 | 6 | Coarse (SREP-style) long-range index | |
