@@ -26,7 +26,7 @@ the I/O path is a network-backed filesystem. Ratios are the meaningful column.
 | 1 — LZMA2 fallback | 48,438,819 (46.19 MiB) | n/a (Phase 8) | 20–27 | **pass** |
 | 2 — Fine match finder | n/a (no parser yet) | n/a | n/a | **pass** |
 | 3 — Joint parser | 89,970,960 parse-only (see below) | n/a | 47–88 | **gate NOT met** |
-| 4 — rANS + context models | | | | not started |
+| 4 — rANS + context models | 57,930,807 (+18.7%) | n/a | 26–70 | **ratio pass, speed gate NOT met** |
 | 5 — Adaptive tables | | | | not started |
 | 6 — Coarse index | | | | not started |
 | 7 — Huffman modes | | | | not started |
@@ -334,3 +334,81 @@ partial trailing block.
 token-stream round-trip, cross-block carry, optimal-vs-greedy, incompressible
 input, partial trailing block, cost-model monotonicity). `unit.match_finder`
 grew to 12 cases with the two regressions above. 8/8 ctest suites pass.
+
+## Phase 4 — rANS + context models
+
+**Scope.** `src/entropy/rans.cpp` (byte-renormalised rANS, 12-bit tables),
+`src/entropy/token_coder.cpp` (the context model and the block body). The parse
+from Phase 3 is unchanged; only the entropy stage is new, and `RANS_CTX`
+replaces `LZ_RAW` as the parsed candidate.
+
+Contexts: match flag on position&3, literals on the previous byte's high
+nibble, length slots on position&3, distance slots on the length slot. Tables
+are measured on the block and written into it.
+
+### Gates
+
+| gate | target | measured | verdict |
+|---|---|---|---|
+| ratio equals or beats Phase 3 | ≤ 89,970,960 | **57,930,807** | **pass** (−35.6%) |
+| round-trip on Silesia | bit-exact | bit-exact, all 12 files | **pass** |
+| rANS decode throughput | ≥ 150 MB/s | 26–70 MB/s in memory | **NOT met** |
+
+The ratio gate is the one that matters here and it passed decisively: the
+corpus went from **+84.4% vs `xz -9` to +18.7%** — the coder recovered most of
+the gap the parse had exposed. Per file:
+
+| file | raw | `xz -9` | rANS | delta |
+|---|---|---|---|---|
+| `webster` | 41,458,703 | 8,385,868 | 8,747,813 | +4.32% |
+| `dickens` | 10,192,446 | 2,830,604 | 2,963,280 | +4.69% |
+| `reymont` | 6,627,202 | 1,317,152 | 1,415,229 | +7.45% |
+| `nci` | 33,553,445 | 1,738,884 | 1,928,571 | +10.91% |
+| `xml` | 5,345,280 | 453,260 | 505,719 | +11.57% |
+| `samba` | 21,606,400 | 3,763,616 | 4,366,310 | +16.01% |
+| `mr` | 9,970,564 | 2,750,272 | 3,213,078 | +16.83% |
+| `x-ray` | 8,474,240 | 4,489,868 | 5,252,101 | +16.98% |
+| `sao` | 7,251,944 | 4,415,072 | 5,264,258 | +19.23% |
+| `osdb` | 10,085,684 | 2,849,908 | 3,400,189 | +19.31% |
+| `ooffice` | 6,152,192 | 2,426,816 | 2,914,412 | +20.09% |
+| `mozilla` | 51,220,480 | 13,374,160 | 17,959,847 | +34.29% |
+| **total** | **211,938,580** | **48,795,480** | **57,930,807** | **+18.72%** |
+
+The remaining gap is what Phase 5 (adaptive tables) and Phase 6 (coarse index)
+are for. Two known contributors: static tables pay for themselves per block,
+and the cost model still has no repeat-distance state, which is exactly what
+`mozilla` and `x-ray` — executable data — punish hardest.
+
+**Decode speed: 26–70 MB/s in memory**, 16–72 MB/s through the CLI with file
+I/O. The 150 MB/s target is not met. The decoder is single-stream and processes
+one symbol at a time; reaching 150 MB/s needs interleaved rANS streams
+(2–4 states decoded in parallel), which is a Phase 12 change. Halving the gap
+came from replacing the byte-at-a-time match copy with a bulk `memcpy` when a
+match does not overlap its own output (`webster` 39→50, `samba` 51→70 MB/s).
+
+### Bugs found
+
+Three, all in the coder, all caught by the unit tests before the corpus run:
+
+1. **rANS is a stack.** The decoder pops symbols in the *reverse* of the order
+   they were encoded, so the encoder must emit the symbol sequence backwards.
+   Encoding forwards round-tripped only when the data happened to be
+   palindromic — my first 6-symbol test was, which is why it passed.
+2. **Renormalisation is a loop, not a single read.** With a skewed table the
+   encoder can emit several bytes at one `put`, and the decoder must consume
+   them all. Reading one byte desynchronised the stream on highly skewed data.
+   (I "fixed" this in the wrong direction first: the original loop was right,
+   the ordering was the bug.)
+3. **Normalisation could overrun its own table.** The rounding repair subtracted
+   the whole difference from the largest frequency and clamped it at 1, which
+   left the total wrong; the slot-filling loop then wrote past the 4096-entry
+   decode table. That is a heap overwrite — it aborted the process on `mozilla`
+   with SIGABRT. The repair now moves one unit at a time and never takes a
+   symbol below 1, and the fill refuses to write past the end even if it is.
+
+**Tests.** New `unit.rans` (9 cases): table normalisation and serialisation,
+rejection of bad frequencies, coder round-trip over 5000 random symbols across
+five differently-shaped contexts, compression of skewed data, slot mapping
+consistency across the whole length and distance range, token-stream round-trip
+at three alphabets, coded-vs-uncoded size, and corruption rejection. 9/9 ctest
+suites pass.

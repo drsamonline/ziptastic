@@ -5,7 +5,12 @@ self-contained binary that composes preprocessors, a dual-resolution match
 finder, a joint optimal parser and per-block entropy backends into a single
 stream format. No external processes, no network, no model files.
 
-**Status: Phase 3 complete, with a caveat.** The optimal parser works and
+**Status: Phase 4 complete.** The parse is now coded with context-modelled
+rANS: Silesia lands at 57.9 MB against `xz -9`'s 48.8 MB (+18.7%), down from
++84% when the parse had no coder at all. Decode speed is 26–70 MB/s, short of
+the 150 MB/s target — that needs interleaved streams (Phase 12).
+
+**Phase 3, for the record:** The optimal parser works and
 round-trips all 12 Silesia files bit-exactly, but the phase's ratio gate is
 **not met**: the parse path stores literals as raw bytes (no entropy coder
 until Phase 4), so it lands 84% larger than `xz -9` rather than within 5%.
@@ -74,8 +79,8 @@ measured results.
 | 1 | LZMA2 fallback — the "never worse than xz" guarantee | **done** |
 | 2 | Fine (binary-tree) match finder | **done** |
 | 3 | Joint optimal parser | **done, ratio gate not met** |
-| 4 | Context-modelled rANS backend | next |
-| 5 | Adaptive frequency tables | |
+| 4 | Context-modelled rANS backend | **done** (ratio pass, speed gate not met) |
+| 5 | Adaptive frequency tables | next |
 | 6 | Coarse (SREP-style) long-range index | |
 | 7 | Static + adaptive Huffman | |
 | 8 | Semantic precompression (Preflate) | |

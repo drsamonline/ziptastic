@@ -10,6 +10,7 @@
 #include "chimera/block.hpp"
 #include "codecs/lzma2_fallback.hpp"
 #include "token_stream.hpp"
+#include "entropy/token_coder.hpp"
 
 namespace chce {
 namespace {
@@ -59,8 +60,17 @@ Err decode_body(const BlockHeader& hdr, std::span<const uint8_t> body,
       return Err::Ok;
     }
 
+    case Mode::RansCtx: {
+      ByteReader r(body);
+      if (Err e = decode_tokens_rans(r, static_cast<uint32_t>(hdr.uncompressed_size),
+                                     dst);
+          e != Err::Ok) {
+        return e;
+      }
+      return Err::Ok;
+    }
+
     // Defined in the format but not yet implemented in this engine build.
-    case Mode::RansCtx:
     case Mode::HuffStatic:
     case Mode::HuffAdapt:
     case Mode::BwtBsc:
@@ -84,8 +94,10 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   if (Err e = read_file_header(r, fh); e != Err::Ok) return e;
 
   std::vector<uint8_t> dst;
-  // Reserve at most 64 MiB up front; the rest grows as blocks are verified.
-  dst.reserve(static_cast<size_t>(std::min<uint64_t>(fh.original_size, 64ull << 20)));
+  // Reserve the declared size up front (capped at 256 MiB so a corrupt header
+  // cannot force a huge allocation); the block loop still validates every byte
+  // it produces against that declaration.
+  dst.reserve(static_cast<size_t>(std::min<uint64_t>(fh.original_size, 256ull << 20)));
 
   uint64_t blocks = 0;
   while (blocks < fh.block_count) {

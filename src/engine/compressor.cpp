@@ -8,6 +8,7 @@
 #include "codecs/lzma2_fallback.hpp"
 #include "parser.hpp"
 #include "token_stream.hpp"
+#include "entropy/token_coder.hpp"
 
 namespace chce {
 namespace {
@@ -83,9 +84,9 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
           parse_block(input, pos, pos + n, finder, model, tokens);
       (void)cost;
       ByteWriter body;
-      encode_tokens(body, input, pos, tokens);
+      encode_tokens_rans(body, input, pos, pos + n, tokens);
       EncodedBlock pb;
-      pb.hdr.mode = Mode::LzRaw;
+      pb.hdr.mode = Mode::RansCtx;
       pb.hdr.uncompressed_size = n;
       pb.hdr.compressed_size = body.size();
       pb.body = body.take();
@@ -103,7 +104,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
     ++stats.blocks;
     if (best->hdr.mode == Mode::Raw) ++stats.raw_blocks;
     if (best->hdr.mode == Mode::Lzma2Fallback) ++stats.lzma2_blocks;
-    if (best->hdr.mode == Mode::LzRaw) ++stats.parsed_blocks;
+    if (best->hdr.mode == Mode::RansCtx) ++stats.parsed_blocks;
     stats.payload_bytes += best->hdr.compressed_size;
 
     pos += n;

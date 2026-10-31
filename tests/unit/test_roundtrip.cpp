@@ -197,7 +197,8 @@ TEST(unimplemented_modes_rejected) {
   CHECK_ERR(compress(data, compressed, opt, nullptr), Err::Ok);
 
   for (uint8_t m = 1; m <= mode_byte(Mode::Ppmd); ++m) {
-    if (m == mode_byte(Mode::Lzma2Fallback)) continue;  // implemented
+    // Skip the modes this build actually implements.
+    if (m == mode_byte(Mode::Lzma2Fallback) || m == mode_byte(Mode::RansCtx)) continue;
     // Rewrite the single block's mode byte.
     ByteReader r(compressed);
     FileHeader fh;

@@ -96,7 +96,7 @@ actually produced match `uncompressed_size`.
 | byte | name | metadata | status |
 |---|---|---|---|
 | `0x00` | `RAW` | none | **implemented** (Phase 0) |
-| `0x01` | `RANS_CTX` | Phase 4 | reserved |
+| `0x01` | `RANS_CTX` | see below | **implemented** (Phase 4) |
 | `0x02` | `HUFF_STATIC` | Phase 7 | reserved |
 | `0x03` | `HUFF_ADAPT` | Phase 7 | reserved |
 | `0x04` | `BWT_BSC` | Phase 9 | reserved |
@@ -109,6 +109,32 @@ actually produced match `uncompressed_size`.
 | `0x0B` | `LZ_RAW` | see below | **implemented** (Phase 3, transitional) |
 
 Bytes `0x0C`–`0xFF` are undefined and rejected as `bad-mode`.
+
+### `0x01` — RANS_CTX
+
+The parse, coded with context-modelled rANS. The body is 28 frequency tables
+followed by the coded payload:
+
+```
+| 4  flag tables   | ctx = position & 3                        | 2 symbols  |
+| 16 literal tables| ctx = previous byte >> 4                  | 256 symbols|
+| 4  len tables    | ctx = position & 3                        | 32 symbols |
+| 4  dist tables   | ctx = min(3, len_slot >> 2)               | 64 symbols |
+| payload          | everything remaining                      |            |
+```
+
+Each table is written as `varint n_nonzero`, then `n_nonzero` pairs of
+`varint symbol, varint frequency`. The frequencies must sum to exactly 4096
+(12-bit scale); a decoder rejects any table that does not, because a wrong total
+would desynchronise the arithmetic and silently produce garbage.
+
+Lengths: 2..9 map to slots 0..7; longer lengths take a slot plus extra bits.
+Distances: the three nearest take slots 1..3; the rest use LZMA's slot pairing.
+Remainders are coded as individual bits through a uniform two-symbol table, so
+they cost exactly one bit each.
+
+Tables are measured on the block (a static coder). Phase 5 replaces the
+measurement with adaptation, which removes the table bytes entirely.
 
 ### `0x0B` — LZ_RAW (transitional)
 
