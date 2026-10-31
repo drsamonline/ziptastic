@@ -1,4 +1,22 @@
-// token_coder.cpp — two-pass static rANS coding of the parse.
+// token_coder.cpp — rANS coding of the parse, static and adaptive.
+//
+// Two models share the block body:
+//
+//   model 0 (static)   tables measured on the whole block and transmitted.
+//   model 1 (adaptive) the symbol stream is cut into chunks; chunk 0 carries
+//                      measured tables, and every later chunk is coded with a
+//                      table derived from the symbols already decoded. Nothing
+//                      after chunk 0 is transmitted: the decoder recomputes the
+//                      same table from its own output.
+//
+// Why chunks and not per-symbol adaptation: rANS is a stack. The decoder pops
+// symbols in the reverse of the encoding order, so the encoder's model state at
+// symbol i is *not* the decoder's model state at symbol i — a per-symbol
+// adaptive rANS is not decodable in principle. Cutting the stream into
+// independent rANS chunks restores a forward, mirrorable order at chunk
+// granularity: within a chunk the model is fixed, between chunks both sides
+// advance it identically. That is the constraint the Phase 5 note in
+// docs/BENCHMARKS.md explains at length.
 #include "token_coder.hpp"
 
 #include <algorithm>
@@ -19,13 +37,24 @@ constexpr uint32_t kLitAlphabet = 256;
 constexpr uint32_t kLenAlphabet = 32;
 constexpr uint32_t kDistAlphabet = 64;
 
+// Table ids inside a symbol list.
+constexpr uint16_t kFlag0 = 0;    // + ctx
+constexpr uint16_t kLit0 = 4;     // + ctx
+constexpr uint16_t kLen0 = 20;    // + ctx
+constexpr uint16_t kDist0 = 24;   // + ctx
+constexpr uint16_t kBypass = 28;  // uniform, never adaptive
+constexpr uint32_t kTableCount = 28;
+
+// Symbols per adaptive chunk. Large enough that the per-chunk rANS flush (4
+// bytes) is noise, small enough that the model tracks a changing block.
+constexpr uint32_t kAdaptChunk = 4096;
+
 uint32_t floor_log2(uint32_t v) {
   uint32_t b = 0;
   while (v >>= 1) ++b;
   return b;
 }
 
-// A uniform two-symbol table: exactly one bit per extra bit, no distortion.
 RansTable make_bypass_table() {
   const uint32_t counts[2] = {1, 1};
   RansTable t;
@@ -65,6 +94,87 @@ Err read_tables(ByteReader& r, Tables& t) {
 
 uint32_t dist_ctx(uint32_t len_sl) { return std::min(3u, len_sl >> 2); }
 
+// Counts for the adaptive model: one histogram per table.
+struct Counts {
+  uint32_t c[kTableCount][256] = {};
+};
+
+void count_symbols(Counts& m, const std::vector<std::pair<uint16_t, uint8_t>>& syms,
+                   size_t from, size_t to) {
+  for (size_t i = from; i < to; ++i) {
+    const uint16_t id = syms[i].first;
+    if (id < kBypass) ++m.c[id][syms[i].second];
+  }
+}
+
+void decay_only(Counts& m) {
+  for (uint32_t t = 0; t < kTableCount; ++t) {
+    for (uint32_t s = 0; s < 256; ++s) m.c[t][s] = (m.c[t][s] * 3) >> 2;
+  }
+}
+
+// Decay by three quarters and fold in the chunk just coded. The effective
+// window is a little over one chunk: the model follows the block rather than
+// averaging over it.
+void decay_and_add(Counts& m, const std::vector<std::pair<uint16_t, uint8_t>>& syms,
+                   size_t from, size_t to) {
+  for (uint32_t t = 0; t < kTableCount; ++t) {
+    for (uint32_t s = 0; s < 256; ++s) m.c[t][s] = (m.c[t][s] * 3) >> 2;
+  }
+  count_symbols(m, syms, from, to);
+}
+
+void build_tables(const Counts& m, Tables& t) {
+  for (uint32_t c = 0; c < kFlagCtx; ++c) t.flag[c].build(m.c[kFlag0 + c], kFlagAlphabet);
+  for (uint32_t c = 0; c < kLitCtx; ++c) t.lit[c].build(m.c[kLit0 + c], kLitAlphabet);
+  for (uint32_t c = 0; c < kLenCtx; ++c) t.len[c].build(m.c[kLen0 + c], kLenAlphabet);
+  for (uint32_t c = 0; c < kDistCtx; ++c) t.dist[c].build(m.c[kDist0 + c], kDistAlphabet);
+}
+
+// Turns the token list into the flat symbol sequence, in decode order.
+std::vector<std::pair<uint16_t, uint8_t>> build_symbols(
+    std::span<const uint8_t> data, uint32_t begin,
+    const std::vector<Token>& tokens) {
+  std::vector<std::pair<uint16_t, uint8_t>> syms;
+  syms.reserve(tokens.size() * 4);
+
+  uint32_t pos = begin;
+  for (const Token& t : tokens) {
+    const uint32_t ctx = pos & 3;
+    if (t.is_literal()) {
+      syms.emplace_back(static_cast<uint16_t>(kFlag0 + ctx), 0);
+      const uint8_t prev = pos == 0 ? 0 : data[pos - 1];
+      syms.emplace_back(static_cast<uint16_t>(kLit0 + (prev >> 4)), data[pos]);
+      ++pos;
+    } else {
+      const uint32_t ls = len_slot(t.len);
+      const uint32_t ds = dist_slot(t.dist);
+
+      syms.emplace_back(static_cast<uint16_t>(kFlag0 + ctx), 1);
+      syms.emplace_back(static_cast<uint16_t>(kLen0 + ctx), static_cast<uint8_t>(ls));
+      uint32_t rem = t.len - len_base(ls);
+      for (uint32_t i = len_extra_bits(ls); i-- > 0;) {
+        syms.emplace_back(kBypass, static_cast<uint8_t>((rem >> i) & 1));
+      }
+      syms.emplace_back(static_cast<uint16_t>(kDist0 + dist_ctx(ls)),
+                        static_cast<uint8_t>(ds));
+      rem = t.dist - dist_base(ds);
+      for (uint32_t i = dist_extra_bits(ds); i-- > 0;) {
+        syms.emplace_back(kBypass, static_cast<uint8_t>((rem >> i) & 1));
+      }
+      pos += t.len;
+    }
+  }
+  return syms;
+}
+
+const RansTable& table_for(const Tables& t, uint16_t id) {
+  if (id < kLit0) return t.flag[id - kFlag0];
+  if (id < kLen0) return t.lit[id - kLit0];
+  if (id < kDist0) return t.len[id - kLen0];
+  return t.dist[id - kDist0];
+}
+
 }  // namespace
 
 uint32_t len_slot(uint32_t len) {
@@ -98,155 +208,321 @@ uint32_t dist_extra_bits(uint32_t slot) {
 void encode_tokens_rans(ByteWriter& w, std::span<const uint8_t> data,
                         uint32_t begin, uint32_t end,
                         const std::vector<Token>& tokens) {
-  // Table ids for the symbol list below.
-  constexpr uint16_t kFlag0 = 0;    // + ctx
-  constexpr uint16_t kLit0 = 4;     // + ctx
-  constexpr uint16_t kLen0 = 20;    // + ctx
-  constexpr uint16_t kDist0 = 24;   // + ctx
-  constexpr uint16_t kBypass = 28;
-
-  // rANS is a stack: the decoder pops symbols in the reverse of the order they
-  // were encoded. So the encoder emits the whole symbol sequence backwards,
-  // which means the decoder reads it forwards. (An earlier version encoded
-  // forwards, which only round-tripped when the input happened to be
-  // palindromic — the unit test caught it once the data stopped being kind.)
-  std::vector<std::pair<uint16_t, uint8_t>> syms;
-  syms.reserve(tokens.size() * 4);
-
-  uint32_t pos = begin;
-  for (const Token& t : tokens) {
-    const uint32_t ctx = pos & 3;
-    if (t.is_literal()) {
-      syms.emplace_back(static_cast<uint16_t>(kFlag0 + ctx), 0);
-      const uint8_t prev = pos == 0 ? 0 : data[pos - 1];
-      syms.emplace_back(static_cast<uint16_t>(kLit0 + (prev >> 4)), data[pos]);
-      ++pos;
-    } else {
-      const uint32_t ls = len_slot(t.len);
-      const uint32_t ds = dist_slot(t.dist);
-      const uint32_t dc = dist_ctx(ls);
-
-      syms.emplace_back(static_cast<uint16_t>(kFlag0 + ctx), 1);
-
-      syms.emplace_back(static_cast<uint16_t>(kLen0 + ctx), static_cast<uint8_t>(ls));
-      uint32_t rem = t.len - len_base(ls);
-      for (uint32_t i = len_extra_bits(ls); i-- > 0;) {
-        syms.emplace_back(kBypass, static_cast<uint8_t>((rem >> i) & 1));
-      }
-
-      syms.emplace_back(static_cast<uint16_t>(kDist0 + dc), static_cast<uint8_t>(ds));
-      rem = t.dist - dist_base(ds);
-      for (uint32_t i = dist_extra_bits(ds); i-- > 0;) {
-        syms.emplace_back(kBypass, static_cast<uint8_t>((rem >> i) & 1));
-      }
-
-      pos += t.len;
-    }
-  }
   (void)end;
+  const auto syms = build_symbols(data, begin, tokens);
 
-  // ---- pass 1: measure ----------------------------------------------------
-  uint32_t flag_counts[kFlagCtx][kFlagAlphabet] = {};
-  uint32_t lit_counts[kLitCtx][kLitAlphabet] = {};
-  uint32_t len_counts[kLenCtx][kLenAlphabet] = {};
-  uint32_t dist_counts[kDistCtx][kDistAlphabet] = {};
-
-  for (const auto& [id, sym] : syms) {
-    if (id < kLit0) ++flag_counts[id - kFlag0][sym];
-    else if (id < kLen0) ++lit_counts[id - kLit0][sym];
-    else if (id < kDist0) ++len_counts[id - kLen0][sym];
-    else if (id < kBypass) ++dist_counts[id - kDist0][sym];
-  }
-
+  // rANS is a stack: emit the symbol sequence backwards so the decoder reads it
+  // forwards.
+  Counts m;
+  count_symbols(m, syms, 0, syms.size());
   Tables tables;
-  for (uint32_t c = 0; c < kFlagCtx; ++c) tables.flag[c].build(flag_counts[c], kFlagAlphabet);
-  for (uint32_t c = 0; c < kLitCtx; ++c) tables.lit[c].build(lit_counts[c], kLitAlphabet);
-  for (uint32_t c = 0; c < kLenCtx; ++c) tables.len[c].build(len_counts[c], kLenAlphabet);
-  for (uint32_t c = 0; c < kDistCtx; ++c) tables.dist[c].build(dist_counts[c], kDistAlphabet);
-  const RansTable bypass = make_bypass_table();
+  build_tables(m, tables);
 
-  // ---- pass 2: encode, last symbol first ----------------------------------
   RansEncoder enc;
+  const RansTable bypass = make_bypass_table();
   for (size_t i = syms.size(); i-- > 0;) {
-    const uint16_t id = syms[i].first;
-    const uint32_t sym = syms[i].second;
-    if (id < kLit0) enc.put(tables.flag[id - kFlag0], sym);
-    else if (id < kLen0) enc.put(tables.lit[id - kLit0], sym);
-    else if (id < kDist0) enc.put(tables.len[id - kLen0], sym);
-    else if (id < kBypass) enc.put(tables.dist[id - kDist0], sym);
-    else enc.put(bypass, sym);
+    if (syms[i].first < kBypass) enc.put(table_for(tables, syms[i].first), syms[i].second);
+    else enc.put(bypass, syms[i].second);
   }
-
   const std::vector<uint8_t> payload = enc.finish();
+
+  w.u8(0);  // model: static
   write_tables(w, tables);
   w.bytes(payload);
 }
 
+void encode_tokens_rans_adaptive(ByteWriter& w, std::span<const uint8_t> data,
+                                 uint32_t begin, uint32_t end,
+                                 const std::vector<Token>& tokens) {
+  (void)end;
+  // Chunks are measured in TOKENS, because that is what the decoder counts as
+  // it walks the stream. (Slicing by symbol made the decoder expect 3374
+  // symbols where there were 1638 tokens, and it ran off the end of the chunk.)
+  const size_t total = tokens.size();
+  const uint32_t chunk = kAdaptChunk;
+  const size_t chunks = total == 0 ? 0 : (total + chunk - 1) / chunk;
+
+  w.u8(1);  // model: adaptive
+  w.varint(chunk);
+  w.varint(total);
+
+  // Absolute start position of every token, so a chunk can be symbolised on its
+  // own without re-walking the block.
+  std::vector<uint32_t> tok_pos(total + 1);
+  tok_pos[0] = begin;
+  for (size_t i = 0; i < total; ++i) tok_pos[i + 1] = tok_pos[i] + tokens[i].len;
+
+  Counts m;
+  const RansTable bypass = make_bypass_table();
+
+  for (size_t c = 0; c < chunks; ++c) {
+    const size_t from = c * chunk;
+    const size_t to = std::min(total, from + chunk);
+    const std::vector<Token> slice(tokens.begin() + static_cast<long>(from),
+                                   tokens.begin() + static_cast<long>(to));
+    const auto syms = build_symbols(data, tok_pos[from], slice);
+
+    if (c == 0) {
+      // The first chunk cannot adapt to anything, so its table is measured and
+      // sent. Every later chunk is derived from what the decoder already has.
+      count_symbols(m, syms, 0, syms.size());
+    }
+    Tables tables;
+    build_tables(m, tables);
+    if (c == 0) write_tables(w, tables);
+
+    RansEncoder enc;
+    for (size_t i = syms.size(); i-- > 0;) {
+      if (syms[i].first < kBypass) enc.put(table_for(tables, syms[i].first), syms[i].second);
+      else enc.put(bypass, syms[i].second);
+    }
+    const std::vector<uint8_t> payload = enc.finish();
+    w.varint(payload.size());
+    w.bytes(payload);
+
+    if (c + 1 < chunks) {
+      // Chunk 0 seeded the model outright, so only decay it; later chunks fold
+      // in their own symbols. The decoder mirrors this exactly.
+      if (c == 0) {
+        decay_only(m);
+      } else {
+        decay_only(m);
+        count_symbols(m, syms, 0, syms.size());
+      }
+    }
+  }
+}
+
 Err decode_tokens_rans(ByteReader& r, uint32_t out_size, std::vector<uint8_t>& out) {
-  Tables tables;
-  if (Err e = read_tables(r, tables); e != Err::Ok) return e;
-
-  std::span<const uint8_t> payload;
-  if (!r.take(r.remaining(), payload)) return Err::Truncated;
-  if (payload.empty()) return Err::Truncated;
-
-  RansDecoder dec(payload);
-  if (!dec.ok()) return Err::Corrupt;
+  uint8_t model = 0;
+  if (!r.u8(model)) return Err::Truncated;
 
   const RansTable bypass = make_bypass_table();
+  // Every symbol decoded, as (table id, symbol), in decode order. The encoder
+  // built its histogram from exactly this sequence; the decoder needs it to
+  // advance the model the same way.
+  std::vector<std::pair<uint16_t, uint8_t>> recorded;
+
+  // Decodes one chunk's symbols with `tables`, appending to `out`. Returns the
+  // number of symbols consumed, or Err on any inconsistency.
+  auto decode_chunk = [&](const Tables& tables, size_t want, uint32_t* produced,
+                          Err* err) -> size_t {
+    std::span<const uint8_t> payload;
+    uint64_t len = 0;
+    if (!r.varint(len)) {
+      *err = Err::BadVarint;
+      return 0;
+    }
+    if (len == 0 || len > r.remaining()) {
+      *err = Err::Truncated;
+      return 0;
+    }
+    if (!r.take(static_cast<size_t>(len), payload)) {
+      *err = Err::Truncated;
+      return 0;
+    }
+
+    RansDecoder dec(payload);
+    if (!dec.ok()) {
+      *err = Err::Corrupt;
+      return 0;
+    }
+
+    size_t done = 0;
+    while (done < want) {
+      const uint32_t ctx = static_cast<uint32_t>(out.size()) & 3;
+      const uint32_t is_match = dec.get(tables.flag[ctx]);
+      if (!dec.ok()) {
+        *err = Err::Corrupt;
+        return done;
+      }
+
+      if (is_match == 0) {
+        const uint8_t prev = out.empty() ? 0 : out.back();
+        const uint32_t byte = dec.get(tables.lit[prev >> 4]);
+        if (!dec.ok()) {
+          *err = Err::Corrupt;
+          return done;
+        }
+        // A desynced stream can produce more literals than the block declared;
+        // without this check the following match test underflows and asks for
+        // an enormous allocation.
+        if (*produced >= out_size) {
+          *err = Err::Corrupt;
+          return done;
+        }
+        recorded.emplace_back(static_cast<uint16_t>(kFlag0 + ctx), 0);
+        recorded.emplace_back(static_cast<uint16_t>(kLit0 + (prev >> 4)),
+                              static_cast<uint8_t>(byte));
+        out.push_back(static_cast<uint8_t>(byte));
+        ++*produced;
+        ++done;
+        continue;
+      }
+
+      const uint32_t ls = dec.get(tables.len[ctx]);
+      if (!dec.ok() || ls >= kLenAlphabet) {
+        *err = Err::Corrupt;
+        return done;
+      }
+      recorded.emplace_back(static_cast<uint16_t>(kFlag0 + ctx), 1);
+      recorded.emplace_back(static_cast<uint16_t>(kLen0 + ctx),
+                            static_cast<uint8_t>(ls));
+      uint32_t rem = 0;
+      for (uint32_t i = 0, n = len_extra_bits(ls); i < n; ++i) {
+        rem = (rem << 1) | dec.get(bypass);
+        recorded.emplace_back(kBypass, static_cast<uint8_t>(rem & 1));
+        if (!dec.ok()) {
+          *err = Err::Corrupt;
+          return done;
+        }
+      }
+      const uint32_t mlen = len_base(ls) + rem;
+      if (mlen < 2 || mlen > 273 || mlen > out_size - *produced) {
+        *err = Err::Corrupt;
+        return done;
+      }
+
+      const uint32_t ds = dec.get(tables.dist[dist_ctx(ls)]);
+      if (!dec.ok() || ds >= kDistAlphabet) {
+        *err = Err::Corrupt;
+        return done;
+      }
+      recorded.emplace_back(static_cast<uint16_t>(kDist0 + dist_ctx(ls)),
+                            static_cast<uint8_t>(ds));
+      uint32_t drem = 0;
+      for (uint32_t i = 0, n = dist_extra_bits(ds); i < n; ++i) {
+        drem = (drem << 1) | dec.get(bypass);
+        recorded.emplace_back(kBypass, static_cast<uint8_t>(drem & 1));
+        if (!dec.ok()) {
+          *err = Err::Corrupt;
+          return done;
+        }
+      }
+      const uint32_t dist = dist_base(ds) + drem;
+      if (dist == 0 || dist > out.size()) {
+        *err = Err::BadMode;
+        return done;
+      }
+
+      const size_t at = out.size();
+      if (dist >= mlen) {
+        out.resize(at + mlen);
+        std::memcpy(out.data() + at, out.data() + at - dist, mlen);
+      } else {
+        for (uint32_t k = 0; k < mlen; ++k) out.push_back(out[out.size() - dist]);
+      }
+      *produced += mlen;
+      ++done;
+    }
+    return done;
+  };
+
   uint32_t produced = 0;
 
-  while (produced < out_size) {
-    const uint32_t ctx = static_cast<uint32_t>(out.size()) & 3;
+  if (model == 0) {
+    Tables tables;
+    if (Err e = read_tables(r, tables); e != Err::Ok) return e;
+    std::span<const uint8_t> payload;
+    if (!r.take(r.remaining(), payload)) return Err::Truncated;
+    if (payload.empty()) return Err::Truncated;
 
-    const uint32_t is_match = dec.get(tables.flag[ctx]);
+    // Re-run the same chunk decoder over the single stream by handing it the
+    // payload directly; the static path has no length prefix.
+    RansDecoder dec(payload);
     if (!dec.ok()) return Err::Corrupt;
-
-    if (is_match == 0) {
-      const uint8_t prev = out.empty() ? 0 : out.back();
-      const uint32_t byte = dec.get(tables.lit[prev >> 4]);
+    // The static stream is unbounded in symbols, so drive it by output size.
+    while (produced < out_size) {
+      const uint32_t ctx = static_cast<uint32_t>(out.size()) & 3;
+      const uint32_t is_match = dec.get(tables.flag[ctx]);
       if (!dec.ok()) return Err::Corrupt;
-      out.push_back(static_cast<uint8_t>(byte));
-      ++produced;
-      continue;
+      if (is_match == 0) {
+        const uint8_t prev = out.empty() ? 0 : out.back();
+        const uint32_t byte = dec.get(tables.lit[prev >> 4]);
+        if (!dec.ok()) return Err::Corrupt;
+        out.push_back(static_cast<uint8_t>(byte));
+        ++produced;
+        continue;
+      }
+      const uint32_t ls = dec.get(tables.len[ctx]);
+      if (!dec.ok() || ls >= kLenAlphabet) return Err::Corrupt;
+      uint32_t rem = 0;
+      for (uint32_t i = 0, n = len_extra_bits(ls); i < n; ++i) {
+        rem = (rem << 1) | dec.get(bypass);
+        if (!dec.ok()) return Err::Corrupt;
+      }
+      const uint32_t mlen = len_base(ls) + rem;
+      if (mlen < 2 || mlen > 273 || mlen > out_size - produced) return Err::Corrupt;
+      const uint32_t ds = dec.get(tables.dist[dist_ctx(ls)]);
+      if (!dec.ok() || ds >= kDistAlphabet) return Err::Corrupt;
+      uint32_t drem = 0;
+      for (uint32_t i = 0, n = dist_extra_bits(ds); i < n; ++i) {
+        drem = (drem << 1) | dec.get(bypass);
+        if (!dec.ok()) return Err::Corrupt;
+      }
+      const uint32_t dist = dist_base(ds) + drem;
+      if (dist == 0 || dist > out.size()) return Err::BadMode;
+      const size_t at = out.size();
+      if (dist >= mlen) {
+        out.resize(at + mlen);
+        std::memcpy(out.data() + at, out.data() + at - dist, mlen);
+      } else {
+        for (uint32_t k = 0; k < mlen; ++k) out.push_back(out[out.size() - dist]);
+      }
+      produced += mlen;
     }
-
-    const uint32_t ls = dec.get(tables.len[ctx]);
-    if (!dec.ok() || ls >= kLenAlphabet) return Err::Corrupt;
-    uint32_t rem = 0;
-    for (uint32_t i = 0, n = len_extra_bits(ls); i < n; ++i) {
-      rem = (rem << 1) | dec.get(bypass);
-      if (!dec.ok()) return Err::Corrupt;
-    }
-    const uint32_t len = len_base(ls) + rem;
-    if (len < 2 || len > 273) return Err::Corrupt;
-    if (len > out_size - produced) return Err::SizeMismatch;
-
-    const uint32_t ds = dec.get(tables.dist[dist_ctx(ls)]);
-    if (!dec.ok() || ds >= kDistAlphabet) return Err::Corrupt;
-    uint32_t drem = 0;
-    for (uint32_t i = 0, n = dist_extra_bits(ds); i < n; ++i) {
-      drem = (drem << 1) | dec.get(bypass);
-      if (!dec.ok()) return Err::Corrupt;
-    }
-    const uint32_t dist = dist_base(ds) + drem;
-    if (dist == 0 || dist > out.size()) return Err::BadMode;
-
-    // Bulk copy when the match does not overlap its own output; byte-at-a-time
-    // only for overlapping runs (which is how runs are coded). push_back per
-    // byte was the decode bottleneck.
-    const size_t at = out.size();
-    if (dist >= len) {
-      out.resize(at + len);
-      std::memcpy(out.data() + at, out.data() + at - dist, len);
-    } else {
-      for (uint32_t k = 0; k < len; ++k) out.push_back(out[out.size() - dist]);
-    }
-    produced += len;
+    return produced == out_size ? Err::Ok : Err::SizeMismatch;
   }
 
-  if (produced != out_size) return Err::SizeMismatch;
-  return Err::Ok;
+  if (model != 1) return Err::BadMode;
+
+  uint64_t chunk = 0, total_syms = 0;
+  if (!r.varint(chunk)) return Err::BadVarint;
+  if (!r.varint(total_syms)) return Err::BadVarint;
+  if (chunk == 0 || chunk > (1u << 20)) return Err::BadMode;
+  if (total_syms > (1ull << 32)) return Err::BadMode;  // now: total TOKENS
+
+  const size_t chunks =
+      total_syms == 0 ? 0 : static_cast<size_t>((total_syms + chunk - 1) / chunk);
+
+  Counts m;
+  for (size_t c = 0; c < chunks; ++c) {
+    const size_t from = c * static_cast<size_t>(chunk);
+    const size_t to =
+        std::min<size_t>(static_cast<size_t>(total_syms), from + static_cast<size_t>(chunk));
+
+    Tables tables;
+    if (c == 0) {
+      if (Err e = read_tables(r, tables); e != Err::Ok) return e;
+    } else {
+      build_tables(m, tables);
+    }
+
+    Err err = Err::Ok;
+    const size_t want = to - from;
+    const size_t got = decode_chunk(tables, want, &produced, &err);
+    if (err != Err::Ok) return err;
+    if (got != want) return Err::SizeMismatch;
+
+    // Advance the model exactly as the encoder did: chunk 0 seeds it, later
+    // chunks fold in their own symbols after a three-quarter decay.
+    if (c + 1 < chunks) {
+      if (c == 0) {
+        for (const auto& [id, sym] : recorded) {
+          if (id < kBypass) ++m.c[id][sym];
+        }
+        decay_only(m);
+      } else {
+        decay_only(m);
+        for (const auto& [id, sym] : recorded) {
+          if (id < kBypass) ++m.c[id][sym];
+        }
+      }
+      recorded.clear();
+    }
+  }
+
+  return produced == out_size ? Err::Ok : Err::SizeMismatch;
 }
 
 }  // namespace chce

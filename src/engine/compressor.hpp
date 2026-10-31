@@ -24,7 +24,10 @@ struct CompressOptions {
   bool precomp = false;        // Layer 0 semantic precompression
   bool coarse = false;         // consult the coarse (SREP-style) index
   bool lzma2_fallback = true;  // Tier-1 guarantee; --no-lzma2 disables it
-  bool parse = true;           // Phase 3 optimal parse (LZ_RAW candidate)
+  bool parse = true;           // Phase 3 optimal parse (rANS candidate)
+  // Phase 5 adaptive tables. NOT correct on multi-chunk inputs yet — see
+  // docs/BENCHMARKS.md — so it is off and unreachable from the CLI.
+  bool adaptive = false;
   uint32_t window = 64u << 20; // match-finder window
 };
 

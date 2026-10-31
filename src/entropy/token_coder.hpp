@@ -35,6 +35,13 @@ void encode_tokens_rans(ByteWriter& w, std::span<const uint8_t> data,
                         uint32_t begin, uint32_t end,
                         const std::vector<Token>& tokens);
 
+// Encodes with the chunked adaptive model: chunk 0 carries measured tables and
+// every later chunk is coded with a table derived from the symbols already
+// decoded. Nothing after chunk 0 is transmitted.
+void encode_tokens_rans_adaptive(ByteWriter& w, std::span<const uint8_t> data,
+                                 uint32_t begin, uint32_t end,
+                                 const std::vector<Token>& tokens);
+
 // Decodes a RANS_CTX body, appending exactly `out_size` bytes to `out`.
 // Matches may reference bytes from earlier blocks: the window carries.
 Err decode_tokens_rans(ByteReader& r, uint32_t out_size, std::vector<uint8_t>& out);

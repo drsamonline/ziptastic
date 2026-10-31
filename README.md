@@ -80,8 +80,8 @@ measured results.
 | 2 | Fine (binary-tree) match finder | **done** |
 | 3 | Joint optimal parser | **done, ratio gate not met** |
 | 4 | Context-modelled rANS backend | **done** (ratio pass, speed gate not met) |
-| 5 | Adaptive frequency tables | next |
-| 6 | Coarse (SREP-style) long-range index | |
+| 5 | Adaptive frequency tables | **FAILED** — written, disabled (see docs) |
+| 6 | Coarse (SREP-style) long-range index | next |
 | 7 | Static + adaptive Huffman | |
 | 8 | Semantic precompression (Preflate) | |
 | 9 | BWT, Brotli, Zstd, LZ4 backends | |

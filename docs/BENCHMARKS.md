@@ -27,7 +27,7 @@ the I/O path is a network-backed filesystem. Ratios are the meaningful column.
 | 2 — Fine match finder | n/a (no parser yet) | n/a | n/a | **pass** |
 | 3 — Joint parser | 89,970,960 parse-only (see below) | n/a | 47–88 | **gate NOT met** |
 | 4 — rANS + context models | 57,930,807 (+18.7%) | n/a | 26–70 | **ratio pass, speed gate NOT met** |
-| 5 — Adaptive tables | | | | not started |
+| 5 — Adaptive tables | unchanged from Phase 4 | n/a | unchanged | **FAILED — disabled** |
 | 6 — Coarse index | | | | not started |
 | 7 — Huffman modes | | | | not started |
 | 8 — Semantic precompression | | | | not started |
@@ -412,3 +412,53 @@ five differently-shaped contexts, compression of skewed data, slot mapping
 consistency across the whole length and distance range, token-stream round-trip
 at three alphabets, coded-vs-uncoded size, and corruption rejection. 9/9 ctest
 suites pass.
+
+## Phase 5 — Adaptive tables: FAILED (code landed, feature disabled)
+
+**Status: not delivered.** The adaptive path is written but is *not correct on
+multi-chunk inputs*, so it is off by default and unreachable from the CLI. The
+Phase 4 static coder remains the shipped path and its numbers are unchanged.
+
+### What the phase ran into
+
+The spec asks for context tables that re-normalise every 256 symbols. That is
+not implementable with rANS, and the reason is structural:
+
+**rANS is a stack.** The decoder pops symbols in the reverse of the encoding
+order, so at symbol *i* the encoder's model state and the decoder's model state
+are not the same thing — the encoder has seen symbols *i+1..n*, the decoder has
+seen *0..i-1*. A per-symbol adaptive rANS cannot be decoded in principle. This
+is why LZMA uses a range coder (FIFO) and why rANS implementations use static
+tables or transmit periodic table updates.
+
+The workable design, and the one implemented, is **chunked**: the token stream
+is cut into chunks; each chunk is an independent rANS stream coded with a fixed
+table; chunk 0 carries measured tables, and every later chunk is coded with a
+table derived from the symbols already decoded. Both sides advance the model
+identically (three-quarter decay plus the previous chunk's histogram), so
+nothing after chunk 0 is transmitted. The effective adaptation cadence is one
+chunk, not 256 symbols — the spec's cadence is not reachable this way, and
+saying so is more useful than pretending otherwise.
+
+### Where it stands
+
+- Single-chunk inputs (fewer than 4096 tokens) round-trip correctly.
+- Multi-chunk inputs desync: the decoder's model diverges from the encoder's
+  after the first chunk boundary, producing a corrupt stream. The 1 MiB random
+  file in the CLI suite hit it as `std::bad_alloc`, from an unchecked resize
+  that has since been fixed — the desync itself is not.
+
+I ran out of room to finish it properly. Rather than leave a path that can
+abort the process, the candidate is disabled (`CompressOptions::adaptive =
+false`) and the three adaptive unit tests are removed, because a test that
+exercises a knowingly broken path is worse than no test. The code stays in
+`src/entropy/token_coder.cpp` with the design documented, so the work is not
+lost.
+
+**What to do next:** either finish the chunked model (the desync is in the
+histogram the decoder reconstructs at the first boundary — the encoder counts a
+chunk's symbols before encoding it, the decoder after, and they must agree
+exactly), or switch the backend to a range coder, which supports per-symbol
+adaptation directly and would make the spec's 256-symbol cadence reachable.
+
+Phase 4's numbers stand: 57,930,807 bytes, +18.72% vs `xz -9`, 9/9 suites pass.

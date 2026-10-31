@@ -83,6 +83,8 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
       const uint64_t cost =
           parse_block(input, pos, pos + n, finder, model, tokens);
       (void)cost;
+      // Static and adaptive rANS both live in RANS_CTX; the body's first byte
+      // says which model it is, so the smaller candidate can be taken freely.
       ByteWriter body;
       encode_tokens_rans(body, input, pos, pos + n, tokens);
       EncodedBlock pb;
@@ -92,6 +94,17 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
       pb.body = body.take();
       stats.tokens += tokens.size();
       cands.push_back(std::move(pb));
+
+      if (opt.adaptive) {
+        ByteWriter abody;
+        encode_tokens_rans_adaptive(abody, input, pos, pos + n, tokens);
+        EncodedBlock ab;
+        ab.hdr.mode = Mode::RansCtx;
+        ab.hdr.uncompressed_size = n;
+        ab.hdr.compressed_size = abody.size();
+        ab.body = abody.take();
+        cands.push_back(std::move(ab));
+      }
     }
     auto best = std::min_element(
         cands.begin(), cands.end(), [](const EncodedBlock& a, const EncodedBlock& b) {
