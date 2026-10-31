@@ -283,3 +283,59 @@ not an afternoon — and its payoff is bounded at roughly 4% on one file class.
 **Recommendation changed accordingly:** BWT+CM drops from second place to "only if
 someone wants to do serious modelling work". JPEG via brunsli moves further ahead
 as the next real win, and it is a plumbing problem rather than a research one.
+
+## JPEG via brunsli — proven, and it is the biggest win available
+
+brunsli (Google, **MIT**) re-encodes a JPEG's DCT coefficients instead of
+re-compressing its entropy-coded bytes. It is vendored inside precomp-cpp, and it
+works.
+
+**Round-trip is bit-exact on every test JPEG** (five in packJPG's test-files, plus
+generated ones). That is the property everything else depends on.
+
+**Measured end-to-end, through this engine:**
+
+| image | JPEG | our engine alone | brunsli -> our engine | gain |
+|---|---|---|---|---|
+| `color_photo.jpg` (real photo) | 21,797 | 21,342 | **17,202** | **-19.4%** |
+| synthetic gradient 900x900 | 66,744 | 53,723 | **22,664** | **-57.8%** |
+
+The real-photo number is the one to trust: **-19.4%**, in line with the 20-25% that
+JPEG recompression usually delivers. The synthetic image gains far more (-57.8%)
+because a smooth gradient is nearly free in DCT space — useful as an upper bound,
+not as a representative figure.
+
+Note that brunsli's output does **not** compress further through our engine
+(22,643 -> 22,664, i.e. a rounding loss): it is already entropy-coded. The entire
+gain comes from replacing the JPEG with a better representation, which is exactly
+what a Layer 0 transform should do.
+
+### Build notes — the vendored copy needs two one-line patches
+
+The brunsli copy inside precomp-cpp is **internally inconsistent**: its headers
+declare `BrunsliDecodeJpeg(data, len, jpg, use_brotli)` and
+`BrunsliEncodeJpeg(jpg, data, len, use_brotli)` (four arguments), but its own
+`decode.cc` and `encode.cc` call them with three. It does not compile as vendored.
+Adding the missing `false` argument at both call sites is enough — the parameter is
+a brotli toggle and `false` matches what those call sites expect.
+
+Second: brotli's sources are C, and must be compiled with the C compiler and linked
+in. Passing them to the C++ driver fails with `-std=c++17 not allowed with C`.
+
+With those two fixes: 24 brotli objects, 25 brunsli sources, one static binary, and
+every JPEG round-trips exactly.
+
+### What integration would involve
+
+The same shape as preflate: detect a JPEG at a Layer 0 stage, encode with brunsli,
+compress that with the normal pipeline, store the recipe, and verify the round trip
+*before* committing to the transform. A new header flag bit, a mode-independent
+container record, and the JPEG magic check (`FF D8 FF`) plus a brunsli success
+test.
+
+Cost is real but bounded: brunsli is ~25 files plus brotli, and it is C++11-era
+code so it belongs in the C++17 shim target the way preflate and zpaq already do.
+
+**This is the recommendation to act on.** It is the only item in the whole scan
+that is simultaneously permissively licensed, measured, large, and a plumbing
+problem rather than a research one.
