@@ -55,11 +55,15 @@ enum class Mode : uint8_t {
   Lz4 = 0x08,
   CmZpaq = 0x09,  // libzpaq, only with --max-ratio
   Ppmd = 0x0A,
+  // Phase 3 transitional mode: an LZ token stream with 8-bit literals and no
+  // entropy coding. It exists so the optimal parse can be round-tripped and
+  // measured before Phase 4 gives it a real backend; RANS_CTX supersedes it.
+  LzRaw = 0x0B,
 };
 
 constexpr uint8_t mode_byte(Mode m) { return static_cast<uint8_t>(m); }
 
-constexpr bool mode_is_known(uint8_t b) { return b <= mode_byte(Mode::Ppmd); }
+constexpr bool mode_is_known(uint8_t b) { return b <= mode_byte(Mode::LzRaw); }
 
 constexpr const char* mode_name(Mode m) {
   switch (m) {
@@ -74,6 +78,7 @@ constexpr const char* mode_name(Mode m) {
     case Mode::Lz4: return "LZ4";
     case Mode::CmZpaq: return "CM_ZPAQ";
     case Mode::Ppmd: return "PPMD";
+    case Mode::LzRaw: return "LZ_RAW";
   }
   return "UNKNOWN";
 }

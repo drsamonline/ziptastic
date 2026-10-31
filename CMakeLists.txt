@@ -52,7 +52,10 @@ add_library(chce_core STATIC
   src/engine/block_writer.cpp
   src/engine/compressor.cpp
   src/engine/decompressor.cpp
+  src/engine/cost_model.cpp
   src/engine/match_finder.cpp
+  src/engine/parser.cpp
+  src/engine/token_stream.cpp
   src/codecs/lzma2_fallback.cpp
 )
 

@@ -6,6 +6,8 @@
 #include <cstring>
 
 #include "codecs/lzma2_fallback.hpp"
+#include "parser.hpp"
+#include "token_stream.hpp"
 
 namespace chce {
 namespace {
@@ -44,9 +46,21 @@ uint8_t header_flags(const CompressOptions& opt) {
   return f;
 }
 
-// The CHCE-native encoding: one block per `block_size` chunk.
+// The CHCE-native encoding: one block per `block_size` chunk, each block
+// optimally parsed against the fine match finder.
 Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
                   std::vector<uint8_t>& out, CompressStats& stats) {
+  // The finder and the cost model live for the whole stream: the dictionary
+  // carries across blocks, and the model is fitted to the whole input rather
+  // than re-learned per block.
+  MatchFinder::Options mf_opt;
+  mf_opt.window = opt.window;
+  mf_opt.nice_len = kMaxMatchLen;
+  MatchFinder finder(input, mf_opt);
+  StaticCostModel model(input);
+
+  std::vector<Token> tokens;
+
   FileHeader fh;
   fh.version = kFormatVersion;
   fh.flags = header_flags(opt);
@@ -64,6 +78,20 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
     const std::span<const uint8_t> block = input.subspan(pos, n);
 
     std::vector<EncodedBlock> cands = encode_candidates(block, opt);
+    if (opt.parse && n > 0) {
+      const uint64_t cost =
+          parse_block(input, pos, pos + n, finder, model, tokens);
+      (void)cost;
+      ByteWriter body;
+      encode_tokens(body, input, pos, tokens);
+      EncodedBlock pb;
+      pb.hdr.mode = Mode::LzRaw;
+      pb.hdr.uncompressed_size = n;
+      pb.hdr.compressed_size = body.size();
+      pb.body = body.take();
+      stats.tokens += tokens.size();
+      cands.push_back(std::move(pb));
+    }
     auto best = std::min_element(
         cands.begin(), cands.end(), [](const EncodedBlock& a, const EncodedBlock& b) {
           return a.hdr.compressed_size < b.hdr.compressed_size;
@@ -75,6 +103,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
     ++stats.blocks;
     if (best->hdr.mode == Mode::Raw) ++stats.raw_blocks;
     if (best->hdr.mode == Mode::Lzma2Fallback) ++stats.lzma2_blocks;
+    if (best->hdr.mode == Mode::LzRaw) ++stats.parsed_blocks;
     stats.payload_bytes += best->hdr.compressed_size;
 
     pos += n;

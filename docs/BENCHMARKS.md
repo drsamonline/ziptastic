@@ -25,7 +25,7 @@ the I/O path is a network-backed filesystem. Ratios are the meaningful column.
 | 0 — Skeleton (RAW only) | n/a | n/a | 100–108 | **pass** |
 | 1 — LZMA2 fallback | 48,438,819 (46.19 MiB) | n/a (Phase 8) | 20–27 | **pass** |
 | 2 — Fine match finder | n/a (no parser yet) | n/a | n/a | **pass** |
-| 3 — Joint parser | | | | not started |
+| 3 — Joint parser | 89,970,960 parse-only (see below) | n/a | 47–88 | **gate NOT met** |
 | 4 — rANS + context models | | | | not started |
 | 5 — Adaptive tables | | | | not started |
 | 6 — Coarse index | | | | not started |
@@ -229,3 +229,81 @@ window-bound behaviour either side of the boundary; `nice_len` capping;
 skip-vs-query agreement; re-query safety; determinism; memory bounds; progress
 accounting. Every reported match is also verified to be real (same bytes, legal
 distance, increasing length).
+
+## Phase 3 — Joint optimal parser
+
+**Scope.** `include/chimera/cost_model.hpp`, `src/engine/parser.cpp`,
+`src/engine/token_stream.cpp`. A shortest-path parse over each block: `cost[j]`
+is the cheapest way to reach position `j`, every literal and every available
+match relaxes the position it lands on, and the price function is an object
+(`CostModel`) rather than a special case per token kind. Matches come from the
+Phase 2 finder, which carries its window across blocks.
+
+New transitional mode `0x0B LZ_RAW` stores the parse with 8-bit literals and no
+entropy coding, so it can be round-tripped and measured. `docs/FORMAT.md`
+documents the body.
+
+### Gate: NOT met
+
+The prompt asks that the ratio be "within 5% of LZMA2". Measured with the
+fallback disabled, so the parse path is what is being weighed
+(`ziptastic --no-lzma2 -9`, all 12 Silesia files, bit-exact round-trip on
+every one):
+
+| | bytes | vs `xz -9` |
+|---|---|---|
+| `xz -9` (preset 9, same liblzma) | 48,795,480 | — |
+| parse path (`LZ_RAW`) | 89,970,960 | **+84.4%** |
+| per-file range | | +53.9% (`osdb`) to +110.0% (`mr`) |
+
+This is not a parse failure, it is a missing entropy coder: `LZ_RAW` stores
+every literal as 8 bits where LZMA2 spends about 4–5, and with 36% of symbols
+being literals on text that alone accounts for most of the gap. **The 5% target
+is only meaningful once Phase 4 supplies the coder**, and it is measured there.
+
+What this phase can and does demonstrate:
+
+| property | result |
+|---|---|
+| Parse is optimal for its cost model | **agrees exactly** with an independently written memoised-recursion oracle on every small input tested (3 alphabets x 3 seeds) |
+| Optimal beats greedy | never worse; >1% better on 4-letter synthetic data (unit test) |
+| Round-trip on the corpus | bit-exact on all 12 Silesia files, including a 51 MB `mozilla` |
+| Cross-block window carry | verified: a block whose data only exists in the previous block codes by reference (unit test) |
+
+**Parse quality, isolated from the coder** (`tests/benchmark/parse_stats`, four
+files, 32.9 MB): the parse's modelled cost is **12.16 MiB of ideal bits**
+against LZMA2's actual 10.06 MiB on the same four files — **+20.9%**. That gap
+is the *cost model*, not the search: the search is provably optimal for the
+model it is given, and the model prices matches with a static slot
+approximation (a length slot plus a distance slot plus extra bits) where LZMA
+uses adaptive prices learned from the data. Closing that is Phase 4's job, and
+it is why the model is an object rather than constants.
+
+**Speed: 0.26–1.5 MB/s encode.** Slow, and expected: the DP relaxes every
+length up to `nice_len` for every match at every position, on a 64 MiB window.
+Decode is 47–88 MB/s. Phase 12 owns this.
+
+### Bug found: a corrupted match tree
+
+`mozilla` failed to round-trip. Bisection on prefixes found the first bogus
+match at byte 982,311: the finder reported a 55-byte match where only 13 bytes
+matched. The cause was a faithful-porting error in the BT4 walk — on hitting the
+tree-depth cutoff I adopted the candidate's subtree, where LZMA sets both
+children to *empty*. Adopting is only sound when the match reached `len_limit`
+(only then does the position occupy the same place in the ordering); with
+`len < len_limit` the adopted children can sit on the wrong side, which breaks
+the "shares `min(len0, len1)` bytes" invariant that lets the walk skip
+re-comparing bytes. The walk then starts from a length it never verified and
+invents a match.
+
+This is the failure mode worth remembering: it is silent, it needs a large
+input with busy hash buckets, and it corrupts data rather than erroring. Two
+regression tests now pin it: `depth_cutoff_never_invents_matches` (depth 1/2/4
+on a 3-letter alphabet, every reported match verified byte for byte) and
+`tail_of_buffer_matches_are_real`. A third covers multi-block round-trip with a
+partial trailing block.
+
+**Tests.** New `unit.parser` (8 cases: oracle agreement, token validity,
+token-stream round-trip, cross-block carry, optimal-vs-greedy, incompressible
+input, partial trailing block, cost-model monotonicity). `unit.match_finder`
+grew to 12 cases with the two regressions above. 8/8 ctest suites pass.

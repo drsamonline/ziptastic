@@ -9,6 +9,7 @@
 
 #include "chimera/block.hpp"
 #include "codecs/lzma2_fallback.hpp"
+#include "token_stream.hpp"
 
 namespace chce {
 namespace {
@@ -44,6 +45,17 @@ Err decode_body(const BlockHeader& hdr, std::span<const uint8_t> body,
         return e;
       }
       dst.insert(dst.end(), block.begin(), block.end());
+      return Err::Ok;
+    }
+
+    case Mode::LzRaw: {
+      ByteReader r(body);
+      if (Err e = decode_tokens(r, static_cast<uint32_t>(hdr.uncompressed_size),
+                                dst);
+          e != Err::Ok) {
+        return e;
+      }
+      if (!r.at_end()) return Err::TrailingData;
       return Err::Ok;
     }
 

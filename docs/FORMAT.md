@@ -106,8 +106,31 @@ actually produced match `uncompressed_size`.
 | `0x08` | `LZ4` | Phase 9 | reserved |
 | `0x09` | `CM_ZPAQ` | Phase 10 | reserved |
 | `0x0A` | `PPMD` | Phase 11 | reserved |
+| `0x0B` | `LZ_RAW` | see below | **implemented** (Phase 3, transitional) |
 
-Bytes `0x0B`–`0xFF` are undefined and rejected as `bad-mode`.
+Bytes `0x0C`–`0xFF` are undefined and rejected as `bad-mode`.
+
+### `0x0B` — LZ_RAW (transitional)
+
+The output of the optimal parse with no entropy coding: literal runs as raw
+bytes, matches as a length and a distance.
+
+```
+| repeated until uncompressed_size bytes are produced: |
+|   0x00  varint count   count bytes |  literal run
+|   0x01  varint len     varint dist |  match
+```
+
+A match may reference bytes produced by **earlier blocks** — the LZ window
+carries across the stream — so the decoder expands into one growing buffer
+rather than per block. Overlapping matches (`dist < len`) are legal and are how
+runs are expressed.
+
+This mode exists so the Phase 3 parse could be round-tripped and measured
+before Phase 4 supplied a coder. It is expected to be **much larger** than
+LZMA2 (literals cost 8 bits instead of ~4-5), and Phase 4's `RANS_CTX`
+supersedes it. It is kept rather than removed because it is the only mode whose
+size isolates the parse from the coder.
 
 ### `0x05` — LZMA2_FALLBACK
 

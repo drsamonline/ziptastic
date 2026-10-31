@@ -5,11 +5,13 @@ self-contained binary that composes preprocessors, a dual-resolution match
 finder, a joint optimal parser and per-block entropy backends into a single
 stream format. No external processes, no network, no model files.
 
-**Status: Phase 2 complete** — the container, the block loop, the Tier-1
-LZMA2 fallback, and the fine binary-tree match finder (exact against an
-exhaustive scan on all 1,812 sampled Silesia positions). The parser that turns
-those matches into a ratio lands in Phase 3; until then the LZMA2 fallback is
-what you get on disk. Every input is also encoded as raw LZMA2 and the smaller
+**Status: Phase 3 complete, with a caveat.** The optimal parser works and
+round-trips all 12 Silesia files bit-exactly, but the phase's ratio gate is
+**not met**: the parse path stores literals as raw bytes (no entropy coder
+until Phase 4), so it lands 84% larger than `xz -9` rather than within 5%.
+The stream you actually get on disk is still never worse than `xz -9`, because
+the Tier-1 LZMA2 fallback wins whenever the parse path is larger. See
+`docs/BENCHMARKS.md` for the measurements and the reasoning. Every input is also encoded as raw LZMA2 and the smaller
 stream wins, so output is never worse than `xz -9` (measured: −0.73% over the
 whole Silesia corpus, every file individually smaller). The CHCE-native
 backends that are meant to win by more start at Phase 4.
@@ -53,6 +55,7 @@ ziptastic --help
 |---|---|
 | `-9` | maximum effort preset (no CM backend) |
 | `--no-lzma2` | disable the LZMA2 fallback (removes the Tier-1 guarantee) |
+| `--no-parse` | disable the optimal parse (RAW blocks only) |
 | `--max-ratio` | allow the CM backend — slowest, smallest (Phase 10) |
 | `-b N` | block size in KiB (default 256) |
 | `-o FILE` | output file |
@@ -70,8 +73,8 @@ measured results.
 | 0 | CMake skeleton, CLI, RAW blocks, header validation | **done** |
 | 1 | LZMA2 fallback — the "never worse than xz" guarantee | **done** |
 | 2 | Fine (binary-tree) match finder | **done** |
-| 3 | Joint optimal parser | next |
-| 4 | Context-modelled rANS backend | |
+| 3 | Joint optimal parser | **done, ratio gate not met** |
+| 4 | Context-modelled rANS backend | next |
 | 5 | Adaptive frequency tables | |
 | 6 | Coarse (SREP-style) long-range index | |
 | 7 | Static + adaptive Huffman | |

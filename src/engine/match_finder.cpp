@@ -136,25 +136,14 @@ void MatchFinder::insert(uint32_t pos, bool collect) {
       const uint8_t* other = cur - dist_cap;
       while (len < len_limit && other[len] == cur[len]) ++len;
       add_match(len, dist_cap);
-      if (len == len_limit) {
-        // Nothing can beat a match that already reaches the limit; still
-        // insert the position so the tree stays complete.
-        const uint32_t h = hash4(pos);
-        uint32_t cur_match = hash4_[h];
-        hash4_[h] = pos;
-        uint32_t* slot = &son_[2 * (pos & mask_)];
-        if (cur_match == kEmpty || pos - cur_match >= max_dist) {
-          slot[0] = kEmpty;
-          slot[1] = kEmpty;
-        } else {
-          // Graft the old subtree in rather than walking it.
-          const uint32_t* other_slot = &son_[2 * (cur_match & mask_)];
-          slot[0] = other_slot[0];
-          slot[1] = other_slot[1];
-        }
-        ++inserted_;
-        return;
-      }
+      // Do NOT short-circuit when the short candidate already reaches
+      // len_limit. An earlier version grafted the 4-byte hash head's subtree
+      // here, but that head is a different position and nothing has verified
+      // that it matches this far — the graft corrupted the tree's ordering
+      // invariant and the walk later reported matches that do not exist. The
+      // tree walk below handles this case correctly on its own: add_match
+      // ignores anything not longer than len_limit, and the walk's own
+      // len == len_limit branch grafts from a candidate it has just compared.
     }
   }
 
@@ -202,9 +191,16 @@ void MatchFinder::insert(uint32_t pos, bool collect) {
       break;
     }
     if (--depth == 0) {
-      const uint32_t* other_slot = &son_[2 * (cur_match & mask_)];
-      *ptr0 = other_slot[0];
-      *ptr1 = other_slot[1];
+      // Depth exhausted: stop here and leave no children. LZMA does exactly
+      // this (*ptr0 = *ptr1 = kEmptyHashValue). Adopting the candidate's
+      // subtree instead — as an earlier version of this file did — is only
+      // sound when the match reached len_limit, because only then does this
+      // position occupy the same place in the ordering. With len < len_limit
+      // the children can sit on the wrong side of us, which breaks the
+      // "shares min(len0, len1) bytes" invariant the walk relies on and
+      // makes it report matches that do not exist.
+      *ptr0 = kEmpty;
+      *ptr1 = kEmpty;
       break;
     }
 

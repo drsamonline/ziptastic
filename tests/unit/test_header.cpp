@@ -153,7 +153,8 @@ TEST(block_header_roundtrip) {
 }
 
 TEST(block_header_bad_mode) {
-  for (uint8_t mode : {uint8_t{0x0B}, uint8_t{0x7F}, uint8_t{0xFF}}) {
+  // 0x0B (LZ_RAW) is a real mode; the first undefined byte is 0x0C.
+  for (uint8_t mode : {uint8_t{0x0C}, uint8_t{0x7F}, uint8_t{0xFF}}) {
     ByteWriter w;
     w.u8(mode);
     w.varint(10);

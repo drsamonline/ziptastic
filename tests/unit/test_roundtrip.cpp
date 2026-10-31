@@ -39,10 +39,14 @@ std::vector<uint8_t> make_data(chce_test::Rng& rng, size_t n, int flavour) {
 }
 
 void check_roundtrip(const std::vector<uint8_t>& data, size_t block_size,
-                     bool use_fallback = true) {
+                     bool use_fallback = true, bool use_parse = false) {
   CompressOptions opt;
   opt.block_size = block_size;
   opt.lzma2_fallback = use_fallback;
+  // The parser runs at a few MB/s; the container sweeps below cover tens of
+  // megabytes, so they exercise the block loop with it off and the parse path
+  // has its own cases (and its own unit suite).
+  opt.parse = use_parse;
 
   std::vector<uint8_t> compressed;
   CompressStats stats;
@@ -73,7 +77,8 @@ void check_roundtrip(const std::vector<uint8_t>& data, size_t block_size,
                                   " bytes, block " + std::to_string(block_size));
 
   // Only implemented modes may appear in a stream.
-  CHECK_EQ(stats.raw_blocks + stats.lzma2_blocks, stats.blocks);
+  CHECK_EQ(stats.raw_blocks + stats.lzma2_blocks + stats.parsed_blocks,
+           stats.blocks);
 
   // Compression must be deterministic (same bytes out on a second pass).
   std::vector<uint8_t> again;
@@ -163,6 +168,15 @@ TEST(fallback_declines_on_incompressible_data) {
   CHECK_MSG(out.size() > data.size() && out.size() - data.size() < 64,
             "unexpected framing overhead " +
                 std::to_string(out.size() - data.size()));
+}
+
+TEST(parse_path_roundtrips) {
+  chce_test::Rng rng(45);
+  for (size_t n : {size_t{0}, size_t{1}, size_t{2}, size_t{5000}, size_t{300 * 1024}}) {
+    for (int flavour = 0; flavour < 4; ++flavour) {
+      check_roundtrip(make_data(rng, n, flavour), kDefaultBlockSize, false, true);
+    }
+  }
 }
 
 TEST(disabled_fallback_still_roundtrips) {

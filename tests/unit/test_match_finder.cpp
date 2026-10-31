@@ -280,6 +280,45 @@ TEST(memory_is_bounded_by_window) {
   CHECK(mf2.memory_bytes() <= (1u << 26));
 }
 
+TEST(depth_cutoff_never_invents_matches) {
+  // Regression: the tree walk may start comparing from min(len0, len1) without
+  // re-checking those bytes, which is only sound while the tree stays ordered.
+  // An earlier version adopted the candidate's subtree when the depth cutoff
+  // was hit, which broke that ordering and made the walk report matches that
+  // did not exist — silently, and only on large inputs with busy hash buckets.
+  // A tiny cutoff on a 3-letter alphabet exercises that path at every position.
+  for (uint32_t depth : {1u, 2u, 4u}) {
+    auto d = make(20000, 3, 5);
+    MatchFinder::Options opt;
+    opt.window = 8192;
+    opt.nice_len = 273;
+    opt.depth = depth;
+    MatchFinder mf(d, opt);
+    for (uint32_t p = 0; p < d.size(); ++p) {
+      auto ms = mf.query(p);
+      const uint32_t len_limit =
+          std::min<uint32_t>(273, static_cast<uint32_t>(d.size() - p));
+      check_valid(d, p, ms, len_limit);
+    }
+  }
+}
+
+TEST(tail_of_buffer_matches_are_real) {
+  // Near the end of a buffer len_limit shrinks to a handful of bytes, so the
+  // "match already reaches the limit" path fires constantly. Everything
+  // reported there must still be a real match.
+  auto d = make(40000, 4, 17);
+  MatchFinder::Options opt;
+  opt.window = 4096;
+  opt.nice_len = 273;
+  MatchFinder mf(d, opt);
+  for (uint32_t p = static_cast<uint32_t>(d.size()) - 600; p < d.size(); ++p) {
+    auto ms = mf.query(p);
+    const uint32_t len_limit = static_cast<uint32_t>(d.size() - p);
+    check_valid(d, p, ms, len_limit);
+  }
+}
+
 TEST(positions_inserted_tracks_progress) {
   auto d = make(1000, 4, 3);
   MatchFinder mf(d);

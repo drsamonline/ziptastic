@@ -24,12 +24,16 @@ struct CompressOptions {
   bool precomp = false;        // Layer 0 semantic precompression
   bool coarse = false;         // consult the coarse (SREP-style) index
   bool lzma2_fallback = true;  // Tier-1 guarantee; --no-lzma2 disables it
+  bool parse = true;           // Phase 3 optimal parse (LZ_RAW candidate)
+  uint32_t window = 64u << 20; // match-finder window
 };
 
 struct CompressStats {
   uint64_t blocks = 0;
   uint64_t raw_blocks = 0;
   uint64_t lzma2_blocks = 0;
+  uint64_t parsed_blocks = 0;
+  uint64_t tokens = 0;
   uint64_t payload_bytes = 0;
   // True when the LZMA2 fallback won and the stream is one fallback block.
   bool lzma2_stream = false;
