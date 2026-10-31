@@ -11,6 +11,7 @@
 #include "codecs/lzma2_fallback.hpp"
 #include "token_stream.hpp"
 #include "chimera/huffman.hpp"
+#include "entropy/bwt_bsc.hpp"
 #include "entropy/token_coder.hpp"
 #include "precompressors/bcj_x86.hpp"
 #include "precompressors/preflate_wrap.hpp"
@@ -92,7 +93,16 @@ Err decode_body(const BlockHeader& hdr, std::span<const uint8_t> body,
       return Err::Ok;
     }
 
-    case Mode::BwtBsc:
+    case Mode::BwtBsc: {
+      ByteReader r(body);
+      if (Err e = bsc_decompress_block(body, static_cast<uint32_t>(hdr.uncompressed_size),
+                                       dst);
+          e != Err::Ok) {
+        return e;
+      }
+      return Err::Ok;
+    }
+
     case Mode::Brotli:
     case Mode::Zstd:
     case Mode::Lz4:

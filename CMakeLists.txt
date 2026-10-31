@@ -106,6 +106,34 @@ if(NOT MSVC)
   target_compile_options(preflate_vendor PRIVATE -w)
 endif()
 
+
+# ---------------------------------------------------------------------------
+# libbsc (Phase 9) — BWT backend, Apache-2.0.
+#
+# Compiled directly, like preflate: its CMakeLists prefers clang and enables
+# OpenMP by default, neither of which we want. The file list is the one its own
+# build declares.
+# ---------------------------------------------------------------------------
+set(LIBBSC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/hcs/old/libbsc-master)
+add_library(bsc_vendor STATIC
+  ${LIBBSC_DIR}/libbsc/adler32/adler32.cpp
+  ${LIBBSC_DIR}/libbsc/bwt/bwt.cpp
+  ${LIBBSC_DIR}/libbsc/bwt/libsais/libsais.c
+  ${LIBBSC_DIR}/libbsc/coder/coder.cpp
+  ${LIBBSC_DIR}/libbsc/coder/qlfc/qlfc.cpp
+  ${LIBBSC_DIR}/libbsc/coder/qlfc/qlfc_model.cpp
+  ${LIBBSC_DIR}/libbsc/filters/detectors.cpp
+  ${LIBBSC_DIR}/libbsc/filters/preprocessing.cpp
+  ${LIBBSC_DIR}/libbsc/libbsc/libbsc.cpp
+  ${LIBBSC_DIR}/libbsc/lzp/lzp.cpp
+  ${LIBBSC_DIR}/libbsc/platform/platform.cpp
+  ${LIBBSC_DIR}/libbsc/st/st.cpp
+)
+target_include_directories(bsc_vendor PUBLIC ${LIBBSC_DIR})
+if(NOT MSVC)
+  target_compile_options(bsc_vendor PRIVATE -w)
+endif()
+
 add_library(chce_core STATIC
   src/engine/block_writer.cpp
   src/engine/compressor.cpp
@@ -114,6 +142,7 @@ add_library(chce_core STATIC
   src/engine/match_finder.cpp
   src/engine/parser.cpp
   src/engine/token_stream.cpp
+  src/entropy/bwt_bsc.cpp
   src/entropy/huffman.cpp
   src/entropy/rans.cpp
   src/entropy/range_coder.cpp
@@ -128,7 +157,7 @@ target_include_directories(chce_core
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(chce_core PRIVATE liblzma preflate_shim)
+target_link_libraries(chce_core PRIVATE liblzma preflate_shim bsc_vendor)
 target_include_directories(chce_core PRIVATE ${XZ_DIR}/src/liblzma/api)
 
 if(MSVC)

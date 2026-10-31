@@ -10,6 +10,7 @@
 #include "parser.hpp"
 #include "token_stream.hpp"
 #include "chimera/huffman.hpp"
+#include "entropy/bwt_bsc.hpp"
 #include "entropy/token_coder.hpp"
 #include "precompressors/bcj_x86.hpp"
 #include "precompressors/preflate_wrap.hpp"
@@ -106,6 +107,21 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
       stats.tokens += tokens.size();
       cands.push_back(std::move(pb));
 
+      // Burrows-Wheeler, via libbsc. A different family from LZ: it wins on
+      // statistically structured binary and loses on ordinary text, so it is
+      // offered per block and only kept where it is smallest.
+      if (opt.bwt) {
+        std::vector<uint8_t> bb;
+        if (bsc_compress_block(block, bb)) {
+          EncodedBlock b;
+          b.hdr.mode = Mode::BwtBsc;
+          b.hdr.uncompressed_size = n;
+          b.hdr.compressed_size = bb.size();
+          b.body = std::move(bb);
+          cands.push_back(std::move(b));
+        }
+      }
+
       // Byte-level Huffman: no LZ, just the block's byte distribution. Only
       // worth offering where LZ finds little but the bytes are skewed.
       if (opt.huffman) {
@@ -165,6 +181,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
     if (best->hdr.mode == Mode::HuffStatic || best->hdr.mode == Mode::HuffAdapt) {
       ++stats.huff_blocks;
     }
+    if (best->hdr.mode == Mode::BwtBsc) ++stats.bwt_blocks;
     stats.payload_bytes += best->hdr.compressed_size;
 
     pos += n;

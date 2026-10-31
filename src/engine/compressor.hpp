@@ -36,6 +36,8 @@ struct CompressOptions {
   bool bcj = true;
   // Byte-level Huffman backends (Phase 7).
   bool huffman = true;
+  // BWT backend (Phase 9).
+  bool bwt = true;
   uint32_t window = 64u << 20; // match-finder window
 };
 
@@ -45,6 +47,7 @@ struct CompressStats {
   uint64_t lzma2_blocks = 0;
   uint64_t parsed_blocks = 0;
   uint64_t huff_blocks = 0;
+  uint64_t bwt_blocks = 0;
   uint64_t tokens = 0;
   uint64_t payload_bytes = 0;
   // True when the LZMA2 fallback won and the stream is one fallback block.

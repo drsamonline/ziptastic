@@ -240,6 +240,12 @@ int run_compress(const Options& o) {
                  static_cast<unsigned long long>(stats.lzma2_blocks),
                  static_cast<unsigned long long>(stats.parsed_blocks),
                  stats.lzma2_stream ? " [lzma2 fallback]" : "");
+  if (o.verbose && !stats.lzma2_stream &&
+      (stats.bwt_blocks || stats.huff_blocks)) {
+    std::fprintf(stderr, "  chose: %llu BWT, %llu huffman\n",
+                 static_cast<unsigned long long>(stats.bwt_blocks),
+                 static_cast<unsigned long long>(stats.huff_blocks));
+  }
   }
   return 0;
 }

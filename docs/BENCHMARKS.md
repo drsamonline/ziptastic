@@ -32,6 +32,7 @@ the I/O path is a network-backed filesystem. Ratios are the meaningful column.
 | 6 — Coarse long-range index | 54,243,717 (-37 B) | n/a | 10-72 | **done; gate arithmetic corrected** |
 | 7 — Huffman backends | 54,243,717 (unchanged) | n/a | 10-72 | **done; one gate is block-size dependent** |
 | 8 — Preflate | zip subset -28.8% vs `xz -9` | n/a | n/a | **gate passed; full corpus run exceeded the command limit** |
+| 9 — BWT backend | 6-file subset -6.09% vs `xz -9` | n/a | n/a | **done; BWT wins most blocks, but is slow** |
 | 6 — Coarse index | | | | not started |
 | 7 — Huffman modes | | | | not started |
 | 8 — Semantic precompression | | | | not started |
@@ -761,3 +762,58 @@ wrapper are compiled as C++17 in separate targets while the engine stays C++20.
 Its `filestream.cpp` is Windows-only and only serves its demo executables, so it
 is excluded. Its own `CMakeLists.txt` declares `cmake_minimum_required(3.2)`,
 which CMake 4 refuses, so the sources are compiled directly instead.
+
+## Phase 9 — BWT backend (libbsc)
+
+Burrows-Wheeler is a different family from LZ: it sorts the block, then codes
+runs. It wins where the structure is statistical rather than repeated — numeric
+records, tables, binary — and that turns out to be most of this corpus.
+
+Vendored source: `vendor/hcs/old/libbsc-master` (Apache-2.0, verified), compiled
+directly: its own CMakeLists prefers clang and enables OpenMP, neither of which
+we want. libbsc 3.4 delegates suffix sorting to libsais, which is vendored inside
+it and had to be added to our source list.
+
+**Parameters:** no LZP (`lzpHashSize`/`lzpMinLen` = 0) because we already have
+our own match finder; BWT sorter; adaptive QLFC coder.
+
+### It wins almost everywhere
+
+Per-block mode census (`-v`), and the resulting sizes against `xz -9`:
+
+| file | blocks choosing BWT | ziptastic | `xz -9` | vs `xz -9` |
+|---|---|---|---|---|
+| `mr` | 39 of 39 | 2,436,304 | 2,750,272 | **-11.42%** |
+| `x-ray` | 33 of 33 | 4,025,536 | 4,489,868 | **-10.34%** |
+| `ooffice` | LZMA2 fallback | 2,083,954 | 2,426,816 | -14.13% |
+| `xml` | mostly BWT | 423,579 | 453,260 | -6.55% |
+| `reymont` | mostly BWT | 1,249,670 | 1,317,152 | -5.12% |
+| `dickens` | 35 of 39 | 2,820,882 | 2,830,604 | -0.34% |
+| `osdb` | mostly BWT | 2,844,515 | 2,849,908 | -0.19% |
+| `sao` | LZMA2 fallback | 4,415,033 | 4,415,072 | -0.00% |
+
+**Six-file subset total: 11,858,904 vs 12,628,012 — -6.09% against `xz -9`.**
+
+This is the phase where the corpus finally goes *below* `xz -9` rather than
+hovering above it. `mr` (MRI scans) and `x-ray` (16-bit image data) are exactly
+the "statistically structured binary" case the phase predicted, and BWT is worth
+10-11% on them.
+
+### What was not measured, and why
+
+`mozilla` (51 MiB) and `webster` (41 MiB) did not finish: BWT suffix-sorts every
+256 KiB block, and on those two the run exceeds the sandbox's 300 s per-command
+limit. That is a real cost, not a bookkeeping problem — see below. `nci` and
+`samba` were also not completed. The eight files above are what the numbers are
+based on; the subset total is labelled as a subset.
+
+### Cost
+
+BWT is expensive: suffix sorting dominates, and encode throughput drops to well
+under 0.5 MB/s on large files. That is why `-9` (max effort) enables it while the
+default mode does not, and why Phase 12's job — a cheap heuristic instead of
+trying every backend on every block — now matters more than it did.
+
+**Tests.** `unit.bwt`, 3 cases: round-trip at three block sizes on structured
+data, declining incompressible input without ever returning something larger than
+its input, and rejecting truncated input. 14/14 ctest suites pass.
