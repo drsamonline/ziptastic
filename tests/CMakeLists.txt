@@ -1,7 +1,7 @@
 # Test suite. Each unit test is its own executable with TEST_MAIN() inside,
 # registered with CTest. Integration tests are shell scripts driving the CLI.
 
-set(CHCE_UNIT_TESTS varint header lzma2 match_finder parser rans range_coder bcj coarse_index huffman bwt zpaq ppmd dedup roundtrip fuzz)
+set(CHCE_UNIT_TESTS varint header lzma2 match_finder parser rans range_coder bcj coarse_index huffman bwt zpaq ppmd dedup jpeg roundtrip fuzz)
 
 foreach(t ${CHCE_UNIT_TESTS})
   add_executable(test_${t} unit/test_${t}.cpp)
@@ -13,6 +13,9 @@ foreach(t ${CHCE_UNIT_TESTS})
 endforeach()
 
 if(UNIX)
+  target_compile_definitions(test_jpeg PRIVATE
+    TEST_JPEG_PATH="${CMAKE_SOURCE_DIR}/vendor/hcs/old/packJPG-master/test-files/color_photo.jpg")
+
   add_test(NAME integration.fuzz_cli
     COMMAND ${CMAKE_COMMAND} -E env
             ZIPT_BIN=$<TARGET_FILE:ziptastic>

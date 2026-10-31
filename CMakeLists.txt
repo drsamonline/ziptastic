@@ -98,9 +98,10 @@ set_target_properties(preflate_vendor PROPERTIES CXX_STANDARD 17 CXX_STANDARD_RE
 # own header, which does not include theirs.
 add_library(preflate_shim STATIC
   src/precompressors/preflate_wrap.cpp
+  src/precompressors/jpeg_wrap.cpp
   src/entropy/cm_zpaq.cpp)
 set_target_properties(preflate_shim PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-target_link_libraries(preflate_shim PUBLIC preflate_vendor zpaq_vendor)
+target_link_libraries(preflate_shim PUBLIC preflate_vendor zpaq_vendor brunsli_vendor)
 target_include_directories(preflate_shim PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -173,6 +174,33 @@ endif()
 
 find_package(Threads REQUIRED)
 
+
+# ---------------------------------------------------------------------------
+# brunsli (Phase 18) — JPEG recompression, MIT (Google), vendored inside precomp.
+# Depends on brotli, also vendored there. brotli's sources are C and must be
+# compiled as C; passing them to the C++ driver fails with "-std=c++17 not
+# allowed with C".
+# ---------------------------------------------------------------------------
+set(CONTRIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/hcs/old/precomp-cpp-master/contrib)
+file(GLOB BROTLI_SRC ${CONTRIB_DIR}/brotli/c/*/*.c)
+add_library(brotli_vendor STATIC ${BROTLI_SRC})
+target_include_directories(brotli_vendor PUBLIC
+  ${CONTRIB_DIR}/brotli/c/include ${CONTRIB_DIR}/brotli/c/common)
+if(NOT MSVC)
+  target_compile_options(brotli_vendor PRIVATE -w)
+endif()
+
+file(GLOB BRUNSLI_SRC ${CONTRIB_DIR}/brunsli/c/*/*.cc)
+add_library(brunsli_vendor STATIC ${BRUNSLI_SRC})
+set_target_properties(brunsli_vendor PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_include_directories(brunsli_vendor PUBLIC
+  ${CONTRIB_DIR}/brunsli/c/include ${CONTRIB_DIR}/brunsli/c/common
+  ${CONTRIB_DIR}/brunsli/c/enc ${CONTRIB_DIR}/brunsli/c/dec)
+target_link_libraries(brunsli_vendor PUBLIC brotli_vendor)
+if(NOT MSVC)
+  target_compile_options(brunsli_vendor PRIVATE -w)
+endif()
+
 add_library(chce_core STATIC
   src/engine/block_writer.cpp
   src/engine/compressor.cpp
@@ -198,7 +226,7 @@ target_include_directories(chce_core
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(chce_core PRIVATE liblzma preflate_shim bsc_vendor zpaq_vendor ppmd_vendor Threads::Threads)
+target_link_libraries(chce_core PRIVATE liblzma preflate_shim bsc_vendor zpaq_vendor ppmd_vendor brunsli_vendor Threads::Threads)
 target_include_directories(chce_core PRIVATE ${XZ_DIR}/src/liblzma/api)
 
 if(MSVC)

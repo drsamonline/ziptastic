@@ -43,6 +43,10 @@ struct CompressOptions {
   // default, keeps them coupled for ratio.
   // Coarse dedup stage (SREP-style): remove long-range duplicates before block
   // splitting, so backends that cannot look across blocks still benefit.
+  // JPEG recompression via brunsli: a JPEG is re-encoded from its DCT
+  // coefficients, which is worth ~19% on a photo where compressing the JPEG
+  // bytes is worth ~2%.
+  bool jpeg = true;
   bool dedup = true;
   bool parallel = false;
   unsigned threads = 0;  // 0 = hardware concurrency

@@ -47,9 +47,11 @@ enum Flags : uint8_t {
   kFlagParallel = 1u << 4,
   // A coarse dedup stage ran before block splitting.
   kFlagDedup = 1u << 5,
+  // A JPEG was recompressed with brunsli before block splitting.
+  kFlagJpeg = 1u << 6,
 };
 inline constexpr uint8_t kFlagMask =
-    kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup;
+    kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup | kFlagJpeg;
 
 // ---------------------------------------------------------------------------
 // Block modes

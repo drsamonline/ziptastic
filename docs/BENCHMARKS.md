@@ -1366,3 +1366,43 @@ carried in the header (40 bytes across ten files).
 
 Still unmeasured: `webster` (41 MiB) and `mozilla` (51 MiB), which exceed the
 300 s per-command limit at every block size tried.
+
+## JPEG recompression (brunsli) — integrated
+
+`src/precompressors/jpeg_wrap.cpp`, a Layer 0 stage that runs **first**, before
+DEFLATE precompression, BCJ and dedup. A JPEG is neither DEFLATE, nor x86 code,
+nor text, so every other layer would waste its time on it. The header carries
+`kFlagJpeg` (bit 6).
+
+brunsli re-encodes a JPEG's DCT coefficients and keeps a recipe that reproduces
+the file exactly. Measured through the shipped CLI:
+
+| image | JPEG | before | after | gain |
+|---|---|---|---|---|
+| `color_photo.jpg` | 21,797 | 21,342 | **17,202** | **-19.4%** |
+
+All five vendored test JPEGs round-trip **bit-exact** through `ziptastic -9` and
+back. Non-JPEG data is untouched: `xml` is 374,686 before and after.
+
+**Why it works where compressing the JPEG does not:** the engine got 21,342 from a
+21,797-byte JPEG — about 2%. The bytes are already Huffman-coded; there is nothing
+left to find. brunsli goes a level down, to the quantised coefficients, and its
+output does not compress further either (22,643 -> 22,664 through the engine, a
+rounding loss). The entire gain is replacing the representation.
+
+**Two vendored-code fixes were needed**, both recorded here because they are the
+kind of thing that silently rots:
+
+- The brunsli copy inside precomp-cpp is **internally inconsistent**: its headers
+  declare `BrunsliEncodeJpeg`/`BrunsliDecodeJpeg` with a fourth `use_brotli`
+  argument, while its own `encode.cc` and `decode.cc` call them with three. It
+  does not compile as vendored. Adding `false` at both call sites fixes it.
+- brotli's sources are **C**, and CMake must compile them as C. Handing them to
+  the C++ driver fails with `-std=c++17 not allowed with C`.
+
+**Licence:** brunsli and brotli are both MIT (Google), so this is the first
+significant capability added from the vendored shelf that is permissively licensed
+*and* measured. It is also the largest single win found in the whole scan.
+
+**Tests:** `unit.jpeg`, 3 cases — header detection, declining non-JPEG data, and a
+bit-exact round trip of a real vendored JPEG. 19/19 suites pass.

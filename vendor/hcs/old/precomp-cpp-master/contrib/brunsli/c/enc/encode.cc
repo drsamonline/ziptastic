@@ -24,7 +24,7 @@ int EncodeBrunsli(size_t insize, const unsigned char* in, void* outdata,
   }
   size_t output_size = brunsli::GetMaximumBrunsliEncodedSize(jpg);
   output.resize(output_size);
-  if (!brunsli::BrunsliEncodeJpeg(jpg, output.data(), &output_size)) {
+  if (!brunsli::BrunsliEncodeJpeg(jpg, output.data(), &output_size, false)) {
     return 0;
   }
   output.resize(output_size);
