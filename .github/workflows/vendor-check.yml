@@ -23,7 +23,10 @@ jobs:
           submodules: recursive
 
       - name: Every vendored source must be present and mapped
-        run: ./scripts/check-vendor.sh
+        # Invoked through bash, not as ./script: the executable bit is not
+        # preserved when the file is written by tooling, and a missing +x would
+        # fail the guard for the wrong reason.
+        run: bash scripts/check-vendor.sh
 
       - name: Report what is present
         if: always()
