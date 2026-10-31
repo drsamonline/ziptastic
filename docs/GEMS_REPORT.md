@@ -339,3 +339,65 @@ code so it belongs in the C++17 shim target the way preflate and zpaq already do
 **This is the recommendation to act on.** It is the only item in the whole scan
 that is simultaneously permissively licensed, measured, large, and a plumbing
 problem rather than a research one.
+
+---
+
+# Part 3 — copyleft as plugins: what is possible and what is not
+
+The question was whether the copyleft sources can be shipped as DLL/.so plugins,
+each keeping its own licence, with the core staying MIT.
+
+## The answer, per licence family
+
+| licence | examples on the shelf | plugin-able? | why |
+|---|---|---|---|
+| **MIT / Apache / BSD** | brunsli, brotli, bitshuffle, giflib, libdeflate, zopfli | **yes, and already shipped** | no conditions to satisfy |
+| **LGPL-3** | bzip3, packJPG, packmp3 | **YES** | LGPL-3 §4 permits a Combined Work under your own terms *provided the user can replace the library*; a separate `.so`/`.dll` satisfies that. Static linking would not. |
+| **GPL-2/3** | ARC (freearc), paq8px, lzo, advancecomp | **NO** | Linking GPL code — dynamically *or* statically — makes the combined work GPL. A DLL does not escape it. Only a separate process is generally considered safe, and that is not settled law. |
+| **no licence** | SREP | **NO, in any form** | No licence file means all rights reserved. Stricter than GPL: no linking, no bundling, no redistribution. Technique may be reimplemented; the code may not be shipped. |
+| **PolyForm** (Shield / Noncommercial) | none on this shelf | mechanically yes, practically no | Source-available, not open source. Noncommercial forbids commercial use; Shield forbids competing use. The restriction propagates to whoever uses that plugin. |
+
+**So: LGPL yes, GPL no, SREP never.** That is the whole distinction, and it is the
+reason the plugin boundary exists rather than being a nicety.
+
+## Built: the plugin ABI and bzip3
+
+- `include/chimera/plugin.hpp` — a plain-C ABI (`chce_plugin`: `bound`, `compress`,
+  `decompress`, plus `name` and `licence` strings the host prints). C, not C++,
+  because a plugin loaded by path must not depend on this project's headers,
+  compiler flags or STL version.
+- `src/engine/plugin_host.cpp` — loads every `.so` in `CHCE_PLUGIN_DIR` (default
+  `./plugins`), validates the ABI, and skips anything incompatible with a message
+  rather than failing the run.
+- `plugins/bzip3_plugin.cpp` -> `libbzip3.so`, **LGPL-3.0**, carrying its own
+  licence string. Nothing LGPL is linked into the main binary.
+- New block mode `0x0C` (PLUGIN); the block body names the plugin so the decoder
+  knows which one produced it, and a stream whose plugin is missing fails with
+  "invalid or unsupported block mode" rather than silent corruption.
+
+**Measured, with the plugin directory present:**
+
+| file | without plugin | with bzip3 plugin | delta |
+|---|---|---|---|
+| `mr` | 2,249,536 | **2,151,639** | **-4.35%** |
+| `x-ray` | 3,798,296 | **3,674,282** | -3.27% |
+| `dickens` | 2,355,517 | **2,330,340** | -1.07% |
+| `xml` | 374,686 | **371,836** | -0.76% |
+
+Round-trip exact. The selector takes bzip3 where it wins and declines it where it
+does not, which is why even `xml` — where bzip3 was 6.6% worse file-wide — improves
+slightly: it wins on some blocks and loses on others.
+
+## What this does NOT get you
+
+- **ARC, paq8px, lzo, advancecomp stay out.** A plugin would be GPL code and the
+  combined work would have to be GPL. If those are wanted, the realistic routes
+  are (a) reimplement the mechanisms, which the coarse index and dedup already do,
+  or (b) run them as separate processes, which is a legal question I cannot settle.
+- **SREP stays out entirely.** No licence, no rights.
+- **packmp3 / packJPG** are LGPL, so they *are* plugin-able by this design — the
+  ABI is generic and adding them is the same 60-line file bzip3 used.
+
+**Not legal advice.** For anything distributed commercially, have the linking
+question checked by a lawyer; the plugin boundary is the well-trodden path, but it
+is not a substitute for advice.

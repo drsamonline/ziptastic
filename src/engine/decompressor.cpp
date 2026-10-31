@@ -20,6 +20,7 @@
 #include "precompressors/bcj_x86.hpp"
 #include "precompressors/dedup.hpp"
 #include "precompressors/jpeg_wrap.hpp"
+#include "plugin_host.hpp"
 #include "precompressors/preflate_wrap.hpp"
 
 namespace chce {
@@ -129,6 +130,33 @@ Err decode_body(const BlockHeader& hdr, std::span<const uint8_t> body,
         return e;
       }
       return Err::Ok;
+    }
+
+    case Mode::Plugin: {
+      ByteReader pr(body);
+      uint64_t name_len = 0;
+      if (!pr.varint(name_len) || name_len == 0 || name_len > 256) return Err::Corrupt;
+      std::span<const uint8_t> name_span;
+      if (!pr.take(static_cast<size_t>(name_len), name_span)) return Err::Truncated;
+      const std::string name(reinterpret_cast<const char*>(name_span.data()), name_span.size());
+      std::span<const uint8_t> payload;
+      if (!pr.take(pr.remaining(), payload)) return Err::Truncated;
+
+      static const std::vector<LoadedPlugin> plugins = load_plugins(default_plugin_dir());
+      for (const LoadedPlugin& p : plugins) {
+        if (p.name != name) continue;
+        const size_t start = dst.size();
+        dst.resize(start + hdr.uncompressed_size);
+        if (p.api->decompress(payload.data(), payload.size(), dst.data() + start,
+                              hdr.uncompressed_size) != 0) {
+          dst.resize(start);
+          return Err::Corrupt;
+        }
+        return Err::Ok;
+      }
+      // The stream needs a plugin this build does not have. Say so rather than
+      // reporting a generic corruption.
+      return Err::BadMode;
     }
 
     case Mode::Brotli:

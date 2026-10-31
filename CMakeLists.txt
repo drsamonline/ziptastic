@@ -201,8 +201,41 @@ if(NOT MSVC)
   target_compile_options(brunsli_vendor PRIVATE -w)
 endif()
 
+
+# ---------------------------------------------------------------------------
+# Plugins (Phase 19) — copyleft backends as separate shared objects.
+#
+# bzip3 is LGPL-3. LGPL allows an MIT program to use it *if the user can replace
+# the library*, which a separate .so satisfies and static linking would not. So
+# nothing LGPL is linked into the main binary: the plugin is built on its own and
+# loaded at runtime. GPL backends (ARC, paq8px, lzo) are NOT offered this way —
+# dynamic linking does not escape the GPL.
+# ---------------------------------------------------------------------------
+option(CHCE_BUILD_PLUGINS "Build the LGPL backend plugins" ON)
+if(CHCE_BUILD_PLUGINS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/vendor/hcs/old/bzip3/src/libbz3.c)
+  add_library(bz3_vendor STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/vendor/hcs/old/bzip3/src/libbz3.c)
+  target_include_directories(bz3_vendor PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/vendor/hcs/old/bzip3/include)
+  # libbz3.c reports its version and has no fallback define; without this it does
+  # not compile at all.
+  target_compile_definitions(bz3_vendor PRIVATE VERSION=\"1.5.1\")
+  if(NOT MSVC)
+    target_compile_options(bz3_vendor PRIVATE -w)
+  endif()
+
+  add_library(bzip3_plugin SHARED plugins/bzip3_plugin.cpp)
+  target_include_directories(bzip3_plugin PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_link_libraries(bzip3_plugin PRIVATE bz3_vendor)
+  set_target_properties(bzip3_plugin PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/plugins
+    OUTPUT_NAME bzip3)
+endif()
+
 add_library(chce_core STATIC
   src/engine/block_writer.cpp
+  src/engine/plugin_host.cpp
   src/engine/compressor.cpp
   src/engine/decompressor.cpp
   src/engine/cost_model.cpp
@@ -226,7 +259,7 @@ target_include_directories(chce_core
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(chce_core PRIVATE liblzma preflate_shim bsc_vendor zpaq_vendor ppmd_vendor brunsli_vendor Threads::Threads)
+target_link_libraries(chce_core PRIVATE liblzma preflate_shim bsc_vendor zpaq_vendor ppmd_vendor brunsli_vendor Threads::Threads ${CMAKE_DL_LIBS})
 target_include_directories(chce_core PRIVATE ${XZ_DIR}/src/liblzma/api)
 
 if(MSVC)

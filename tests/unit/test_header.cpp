@@ -159,8 +159,10 @@ TEST(block_header_roundtrip) {
 }
 
 TEST(block_header_bad_mode) {
-  // 0x0B (LZ_RAW) is a real mode; the first undefined byte is 0x0C.
-  for (uint8_t mode : {uint8_t{0x0C}, uint8_t{0x7F}, uint8_t{0xFF}}) {
+  // Referenced from the enum rather than hard-coded: this said 0x0C until PLUGIN
+  // took that value, at which point it silently stopped testing anything.
+  for (uint8_t mode : {static_cast<uint8_t>(mode_byte(Mode::Plugin) + 1),
+                       uint8_t{0x7F}, uint8_t{0xFF}}) {
     ByteWriter w;
     w.u8(mode);
     w.varint(10);

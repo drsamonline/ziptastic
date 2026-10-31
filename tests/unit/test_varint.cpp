@@ -107,7 +107,7 @@ TEST(mode_names) {
   CHECK(std::string_view(mode_name(Mode::Lzma2Fallback)) == "LZMA2_FALLBACK");
   CHECK(std::string_view(mode_name(Mode::Ppmd)) == "PPMD");
   CHECK(mode_is_known(mode_byte(Mode::Ppmd)));
-  CHECK(!mode_is_known(mode_byte(Mode::LzRaw) + 1));
+  CHECK(!mode_is_known(mode_byte(Mode::Plugin) + 1));
   CHECK_EQ(mode_byte(Mode::Raw), uint8_t{0x00});
   CHECK_EQ(mode_byte(Mode::CmZpaq), uint8_t{0x09});
   CHECK_EQ(mode_byte(Mode::Ppmd), uint8_t{0x0A});

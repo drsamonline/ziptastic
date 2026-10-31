@@ -73,11 +73,14 @@ enum class Mode : uint8_t {
   // entropy coding. It exists so the optimal parse can be round-tripped and
   // measured before Phase 4 gives it a real backend; RANS_CTX supersedes it.
   LzRaw = 0x0B,
+  // A backend loaded from a plugin. The body names the plugin so the decoder
+  // knows which one produced it; the plugin must be present to decode.
+  Plugin = 0x0C,
 };
 
 constexpr uint8_t mode_byte(Mode m) { return static_cast<uint8_t>(m); }
 
-constexpr bool mode_is_known(uint8_t b) { return b <= mode_byte(Mode::LzRaw); }
+constexpr bool mode_is_known(uint8_t b) { return b <= mode_byte(Mode::Plugin); }
 
 constexpr const char* mode_name(Mode m) {
   switch (m) {
@@ -93,6 +96,7 @@ constexpr const char* mode_name(Mode m) {
     case Mode::CmZpaq: return "CM_ZPAQ";
     case Mode::Ppmd: return "PPMD";
     case Mode::LzRaw: return "LZ_RAW";
+    case Mode::Plugin: return "PLUGIN";
   }
   return "UNKNOWN";
 }

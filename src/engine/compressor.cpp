@@ -19,6 +19,7 @@
 #include "precompressors/bcj_x86.hpp"
 #include "precompressors/dedup.hpp"
 #include "precompressors/jpeg_wrap.hpp"
+#include "plugin_host.hpp"
 #include "precompressors/preflate_wrap.hpp"
 
 namespace chce {
@@ -124,6 +125,33 @@ EncodedBlock encode_one_block(std::span<const uint8_t> input, size_t pos, size_t
         z.hdr.compressed_size = zb.size();
         z.body = std::move(zb);
         cands.push_back(std::move(z));
+      }
+    }
+
+    // Backends from plugins (include/chimera/plugin.hpp). These are the
+    // copyleft ones: LGPL permits use from an MIT program when the library is
+    // separately replaceable, which is exactly what a .so is. Loaded once.
+    {
+      static const std::vector<LoadedPlugin> plugins = load_plugins(default_plugin_dir());
+      for (const LoadedPlugin& p : plugins) {
+        const size_t cap = p.api->bound(n);
+        if (cap == 0) continue;
+        std::vector<uint8_t> buf(cap);
+        const long got = p.api->compress(block.data(), n, buf.data(), cap);
+        if (got <= 0 || static_cast<size_t>(got) >= n) continue;
+        buf.resize(static_cast<size_t>(got));
+
+        ByteWriter bw;
+        bw.varint(p.name.size());
+        bw.bytes(reinterpret_cast<const uint8_t*>(p.name.data()), p.name.size());
+        bw.bytes(buf.data(), buf.size());
+
+        EncodedBlock pb2;
+        pb2.hdr.mode = Mode::Plugin;
+        pb2.hdr.uncompressed_size = n;
+        pb2.hdr.compressed_size = bw.size();
+        pb2.body = bw.take();
+        cands.push_back(std::move(pb2));
       }
     }
 
