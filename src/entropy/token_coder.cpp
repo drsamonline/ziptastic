@@ -47,7 +47,7 @@ constexpr uint32_t kTableCount = 28;
 
 // Symbols per adaptive chunk. Large enough that the per-chunk rANS flush (4
 // bytes) is noise, small enough that the model tracks a changing block.
-constexpr uint32_t kAdaptChunk = 4096;
+constexpr uint32_t kAdaptChunk = 1024;
 
 uint32_t floor_log2(uint32_t v) {
   uint32_t b = 0;
@@ -107,9 +107,15 @@ void count_symbols(Counts& m, const std::vector<std::pair<uint16_t, uint8_t>>& s
   }
 }
 
+// Decay by three quarters, never dropping a symbol that has been seen below 1.
+// Without the floor a rare symbol decays to zero and becomes uncodable, which
+// is a divide-by-zero in RansEncoder::put.
 void decay_only(Counts& m) {
   for (uint32_t t = 0; t < kTableCount; ++t) {
-    for (uint32_t s = 0; s < 256; ++s) m.c[t][s] = (m.c[t][s] * 3) >> 2;
+    for (uint32_t s = 0; s < 256; ++s) {
+      const uint32_t v = (m.c[t][s] * 3) >> 2;
+      m.c[t][s] = (m.c[t][s] > 0 && v == 0) ? 1u : v;
+    }
   }
 }
 
@@ -122,6 +128,24 @@ void decay_and_add(Counts& m, const std::vector<std::pair<uint16_t, uint8_t>>& s
     for (uint32_t s = 0; s < 256; ++s) m.c[t][s] = (m.c[t][s] * 3) >> 2;
   }
   count_symbols(m, syms, from, to);
+}
+
+// Seeds the adaptive model from a table set's normalised frequencies.
+//
+// Both sides do this from the *same* transmitted tables, so their counts start
+// identical — that is what makes the later adaptation reproducible without
+// sending anything else. Seeding from the tables rather than from a raw
+// histogram matters: the encoder's histogram is on a different scale than the
+// 4096-slot frequencies, and the two sides must agree exactly.
+void seed_counts_from_tables(Counts& m, const Tables& t) {
+  for (uint32_t c = 0; c < kFlagCtx; ++c)
+    for (uint32_t s = 0; s < kFlagAlphabet; ++s) m.c[kFlag0 + c][s] = t.flag[c].freq(s);
+  for (uint32_t c = 0; c < kLitCtx; ++c)
+    for (uint32_t s = 0; s < kLitAlphabet; ++s) m.c[kLit0 + c][s] = t.lit[c].freq(s);
+  for (uint32_t c = 0; c < kLenCtx; ++c)
+    for (uint32_t s = 0; s < kLenAlphabet; ++s) m.c[kLen0 + c][s] = t.len[c].freq(s);
+  for (uint32_t c = 0; c < kDistCtx; ++c)
+    for (uint32_t s = 0; s < kDistAlphabet; ++s) m.c[kDist0 + c][s] = t.dist[c].freq(s);
 }
 
 void build_tables(const Counts& m, Tables& t) {
@@ -255,6 +279,23 @@ void encode_tokens_rans_adaptive(ByteWriter& w, std::span<const uint8_t> data,
   Counts m;
   const RansTable bypass = make_bypass_table();
 
+  // Chunk 0's tables are measured over the WHOLE block, not just chunk 0. That
+  // costs nothing extra — one table set is transmitted either way — and it means
+  // the adaptive model starts at the static optimum instead of having to learn
+  // from scratch. Adaptation can then only improve on it.
+  Tables tables0;
+  {
+    Counts whole;
+    for (size_t i = 0; i < total; ++i) {
+      const std::vector<Token> one(tokens.begin() + static_cast<long>(i),
+                                   tokens.begin() + static_cast<long>(i + 1));
+      const auto syms = build_symbols(data, tok_pos[i], one);
+      count_symbols(whole, syms, 0, syms.size());
+    }
+    build_tables(whole, tables0);
+    seed_counts_from_tables(m, tables0);
+  }
+
   for (size_t c = 0; c < chunks; ++c) {
     const size_t from = c * chunk;
     const size_t to = std::min(total, from + chunk);
@@ -262,13 +303,9 @@ void encode_tokens_rans_adaptive(ByteWriter& w, std::span<const uint8_t> data,
                                    tokens.begin() + static_cast<long>(to));
     const auto syms = build_symbols(data, tok_pos[from], slice);
 
-    if (c == 0) {
-      // The first chunk cannot adapt to anything, so its table is measured and
-      // sent. Every later chunk is derived from what the decoder already has.
-      count_symbols(m, syms, 0, syms.size());
-    }
     Tables tables;
-    build_tables(m, tables);
+    if (c == 0) tables = tables0;
+    else build_tables(m, tables);
     if (c == 0) write_tables(w, tables);
 
     RansEncoder enc;
@@ -281,14 +318,8 @@ void encode_tokens_rans_adaptive(ByteWriter& w, std::span<const uint8_t> data,
     w.bytes(payload);
 
     if (c + 1 < chunks) {
-      // Chunk 0 seeded the model outright, so only decay it; later chunks fold
-      // in their own symbols. The decoder mirrors this exactly.
-      if (c == 0) {
-        decay_only(m);
-      } else {
-        decay_only(m);
-        count_symbols(m, syms, 0, syms.size());
-      }
+      decay_only(m);
+      count_symbols(m, syms, 0, syms.size());
     }
   }
 }
@@ -494,6 +525,7 @@ Err decode_tokens_rans(ByteReader& r, uint32_t out_size, std::vector<uint8_t>& o
     Tables tables;
     if (c == 0) {
       if (Err e = read_tables(r, tables); e != Err::Ok) return e;
+      seed_counts_from_tables(m, tables);
     } else {
       build_tables(m, tables);
     }
@@ -507,16 +539,9 @@ Err decode_tokens_rans(ByteReader& r, uint32_t out_size, std::vector<uint8_t>& o
     // Advance the model exactly as the encoder did: chunk 0 seeds it, later
     // chunks fold in their own symbols after a three-quarter decay.
     if (c + 1 < chunks) {
-      if (c == 0) {
-        for (const auto& [id, sym] : recorded) {
-          if (id < kBypass) ++m.c[id][sym];
-        }
-        decay_only(m);
-      } else {
-        decay_only(m);
-        for (const auto& [id, sym] : recorded) {
-          if (id < kBypass) ++m.c[id][sym];
-        }
+      decay_only(m);
+      for (const auto& [id, sym] : recorded) {
+        if (id < kBypass) ++m.c[id][sym];
       }
       recorded.clear();
     }

@@ -224,4 +224,78 @@ TEST(token_coder_rejects_corruption) {
   }
 }
 
+TEST(adaptive_model_round_trips) {
+  // The adaptive path must decode to exactly the same bytes, including across
+  // the chunk boundaries where the model changes. Sizes are chosen to give one
+  // chunk, a few, and many.
+  for (uint32_t alphabet : {2u, 8u, 256u}) {
+    for (uint32_t n : {1000u, 20000u, 200000u}) {
+      auto data = make(n, alphabet, 300 + alphabet + n);
+      StaticCostModel model(data);
+      MatchFinder mf(data);
+      std::vector<Token> tokens;
+      parse_block(data, 0, n, mf, model, tokens);
+
+      ByteWriter w;
+      encode_tokens_rans_adaptive(w, data, 0, n, tokens);
+
+      std::vector<uint8_t> out;
+      ByteReader r(w.span());
+      CHECK_ERR(decode_tokens_rans(r, n, out), Err::Ok);
+      CHECK_MSG(out == data, "adaptive round-trip failed: alphabet " +
+                                 std::to_string(alphabet) + " n " +
+                                 std::to_string(n));
+    }
+  }
+}
+
+TEST(adaptive_wins_on_nonstationary_data) {
+  // Two halves with very different statistics: a single static table must
+  // average them, an adaptive model can follow. This is the property Phase 5
+  // exists for, and the reason it is worth a candidate slot.
+  chce_test::Rng rng(4242);
+  std::vector<uint8_t> data;
+  for (int i = 0; i < 300000; ++i) data.push_back(static_cast<uint8_t>('a' + rng.below(2)));
+  for (int i = 0; i < 300000; ++i) data.push_back(static_cast<uint8_t>('a' + rng.below(24)));
+
+  StaticCostModel model(data);
+  MatchFinder mf(data);
+  std::vector<Token> tokens;
+  parse_block(data, 0, static_cast<uint32_t>(data.size()), mf, model, tokens);
+
+  ByteWriter s;
+  encode_tokens_rans(s, data, 0, static_cast<uint32_t>(data.size()), tokens);
+  ByteWriter a;
+  encode_tokens_rans_adaptive(a, data, 0, static_cast<uint32_t>(data.size()), tokens);
+
+  CHECK_MSG(a.size() < s.size(), "adaptive " + std::to_string(a.size()) +
+                                     " not smaller than static " +
+                                     std::to_string(s.size()) +
+                                     " on a non-stationary block");
+
+  std::vector<uint8_t> out;
+  ByteReader r(a.span());
+  CHECK_ERR(decode_tokens_rans(r, static_cast<uint32_t>(data.size()), out), Err::Ok);
+  CHECK(out == data);
+}
+
+TEST(adaptive_rejects_corruption) {
+  auto data = make(60000, 6, 71);
+  StaticCostModel model(data);
+  MatchFinder mf(data);
+  std::vector<Token> tokens;
+  parse_block(data, 0, 60000, mf, model, tokens);
+  ByteWriter w;
+  encode_tokens_rans_adaptive(w, data, 0, 60000, tokens);
+
+  const auto full = w.buffer();
+  for (size_t n = 0; n < full.size(); n += 307) {
+    std::vector<uint8_t> out;
+    ByteReader r(std::span<const uint8_t>(full.data(), n));
+    const Err e = decode_tokens_rans(r, 60000, out);
+    CHECK_MSG(e != Err::Ok || out.size() == 60000,
+              "truncated adaptive stream at " + std::to_string(n) + " decoded");
+  }
+}
+
 TEST_MAIN()

@@ -112,8 +112,33 @@ Bytes `0x0C`–`0xFF` are undefined and rejected as `bad-mode`.
 
 ### `0x01` — RANS_CTX
 
-The parse, coded with context-modelled rANS. The body is 28 frequency tables
-followed by the coded payload:
+The parse, coded with context-modelled rANS. The body starts with a model byte
+and then, for model 0 (static):
+
+```
+| model = 0x00 | 28 frequency tables | payload |
+```
+
+and for model 1 (adaptive):
+
+```
+| model = 0x01 | varint chunk_tokens | varint total_tokens |
+| 28 tables (chunk 0) |
+| repeated per chunk: varint payload_len | payload |
+```
+
+Model 1 cuts the token stream into chunks of `chunk_tokens` tokens. Chunk 0 is
+coded with the tables in the body, measured over the whole block. Every later
+chunk is coded with a table derived from the symbols already decoded: both sides
+seed their counts from the transmitted frequencies, then decay by three quarters
+and add the previous chunk's histogram, never letting a symbol that has been
+seen fall below 1. Nothing after chunk 0 is transmitted.
+
+Model 0 is the fast path; model 1 is chosen per block when it is smaller. The
+chunk framing costs about 5 bytes per chunk (a length varint and the rANS
+flush), which is why model 1 loses on small or incompressible blocks.
+
+The tables, in both models, are:
 
 ```
 | 4  flag tables   | ctx = position & 3                        | 2 symbols  |

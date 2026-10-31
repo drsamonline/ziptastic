@@ -5,7 +5,13 @@ self-contained binary that composes preprocessors, a dual-resolution match
 finder, a joint optimal parser and per-block entropy backends into a single
 stream format. No external processes, no network, no model files.
 
-**Status: Phase 4 complete.** The parse is now coded with context-modelled
+**Status: Phase 5 partial.** Adaptive tables are implemented, correct, and
+shipped as a per-block candidate: the corpus is 50 KB smaller (57,880,654 vs
+57,930,807, -0.087%) and non-stationary blocks gain clearly, but stationary text
+(`dickens`, `webster`) gains nothing — the 1% the phase asks for is not there.
+`docs/BENCHMARKS.md` has the numbers and the reason.
+
+**Phase 4, for the record:** The parse is now coded with context-modelled
 rANS: Silesia lands at 57.9 MB against `xz -9`'s 48.8 MB (+18.7%), down from
 +84% when the parse had no coder at all. Decode speed is 26–70 MB/s, short of
 the 150 MB/s target — that needs interleaved streams (Phase 12).
@@ -80,7 +86,7 @@ measured results.
 | 2 | Fine (binary-tree) match finder | **done** |
 | 3 | Joint optimal parser | **done, ratio gate not met** |
 | 4 | Context-modelled rANS backend | **done** (ratio pass, speed gate not met) |
-| 5 | Adaptive frequency tables | **FAILED** — written, disabled (see docs) |
+| 5 | Adaptive frequency tables | **partial** — ships, text gate not met |
 | 6 | Coarse (SREP-style) long-range index | next |
 | 7 | Static + adaptive Huffman | |
 | 8 | Semantic precompression (Preflate) | |

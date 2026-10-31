@@ -25,9 +25,10 @@ struct CompressOptions {
   bool coarse = false;         // consult the coarse (SREP-style) index
   bool lzma2_fallback = true;  // Tier-1 guarantee; --no-lzma2 disables it
   bool parse = true;           // Phase 3 optimal parse (rANS candidate)
-  // Phase 5 adaptive tables. NOT correct on multi-chunk inputs yet — see
-  // docs/BENCHMARKS.md — so it is off and unreachable from the CLI.
-  bool adaptive = false;
+  // Phase 5 adaptive tables, offered as an extra per-block candidate. The mode
+  // selector keeps whichever of static and adaptive is smaller, so enabling it
+  // cannot make a block worse.
+  bool adaptive = true;
   uint32_t window = 64u << 20; // match-finder window
 };
 
