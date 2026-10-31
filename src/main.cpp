@@ -47,6 +47,7 @@ void print_usage(FILE* f) {
       "      --no-parse       disable the optimal parse (RAW blocks only)\n"
       "      --no-adaptive    disable adaptive tables (static rANS only)\n"
       "      --no-range       disable the range-coded model\n"
+      "      --no-bcj         disable the x86 BCJ transform\n"
       "      --no-coarse      disable the coarse match index\n"
       "  -b, --block-size N   block size in KiB (default 256)\n"
       "  -o, --output FILE    write to FILE instead of stdout\n"
@@ -138,6 +139,8 @@ int parse_args(int argc, char** argv, Options& o) {
       o.comp.adaptive = false;
     } else if (a == "--no-range") {
       o.comp.range = false;
+    } else if (a == "--no-bcj") {
+      o.comp.bcj = false;
     } else if (a == "--no-coarse") {
       o.comp.coarse = false;
     } else if (a == "-b" || a == "--block-size") {

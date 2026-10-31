@@ -32,6 +32,8 @@ struct CompressOptions {
   // Range-coded model: per-symbol adaptation, no tables. Wins on every corpus
   // file measured; costs encode time, so Phase 12 may gate it.
   bool range = true;
+  // x86 BCJ transform, applied when the input looks like code.
+  bool bcj = true;
   uint32_t window = 64u << 20; // match-finder window
 };
 

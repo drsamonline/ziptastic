@@ -86,7 +86,7 @@ TEST(file_header_bad_version) {
 
 TEST(file_header_bad_flags) {
   auto buf = valid_file_header();
-  buf[5] = 0x08;  // bit outside kFlagMask
+  buf[5] = 0x10;  // bit outside kFlagMask (0x08 is kFlagBcj now)
   ByteReader r(buf);
   FileHeader h;
   CHECK_ERR(read_file_header(r, h), Err::BadFlags);

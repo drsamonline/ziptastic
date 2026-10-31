@@ -11,6 +11,7 @@
 #include "codecs/lzma2_fallback.hpp"
 #include "token_stream.hpp"
 #include "entropy/token_coder.hpp"
+#include "precompressors/bcj_x86.hpp"
 
 namespace chce {
 namespace {
@@ -123,6 +124,13 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
 
   if (!r.at_end()) return Err::TrailingData;
   if (dst.size() != fh.original_size) return Err::SizeMismatch;
+
+  // Undo the Layer 0 transform, if the stream was written with it. The
+  // transform is applied over the whole stream, so it is reversed over the
+  // whole output rather than per block.
+  if ((fh.flags & kFlagBcj) != 0) {
+    bcj_x86_transform(dst, false);
+  }
 
   out = std::move(dst);
   if (report) {

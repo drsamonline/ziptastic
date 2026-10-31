@@ -28,6 +28,7 @@ the I/O path is a network-backed filesystem. Ratios are the meaningful column.
 | 3 — Joint parser | 89,970,960 parse-only (see below) | n/a | 47–88 | **gate NOT met** |
 | 4 — rANS + context models | 57,930,807 (+18.7%) | n/a | 26–70 | **ratio pass, speed gate NOT met** |
 | 5 — Adaptive tables + range coder | 54,619,596 (-5.72% vs Phase 4) | n/a | 10-72 | **done via range coder** |
+| 5b — x86 BCJ transform | 54,243,754 (-0.69% vs Phase 5) | n/a | 10-72 | **done; ooffice beats xz -9** |
 | 6 — Coarse index | | | | not started |
 | 7 — Huffman modes | | | | not started |
 | 8 — Semantic precompression | | | | not started |
@@ -512,3 +513,41 @@ reaching the entropy bound (99% zeros costs < 0.2 bits/bit), eight independent
 models, direct bits, bit trees at four widths, a mixed flag/tree/direct stream
 shaped like the token coder, and truncation reporting. `unit.rans` is 12 cases.
 10/10 ctest suites pass.
+
+## Phase 5b — x86 BCJ transform (a Layer 0 win found by reviewing the sources)
+
+Came out of `docs/SOURCES_REVIEW.md`: the x86 BCJ filter is already vendored in
+`xz-master/src/liblzma/simple/x86.c` (0BSD) and we already link liblzma, so the
+work was porting the transform, not finding it.
+
+**What it does.** x86 code encodes CALL/JMP targets as *relative* displacements,
+which differ at every call site. The filter rewrites them to absolute, so they
+repeat, and is exactly invertible. `xz -9` does not apply it unless asked
+(`xz --x86`), so on executable data this is a win against our own baseline.
+
+**Result: corpus 54,619,596 → 54,243,754 (−375,842 bytes, −0.69%); the gap to
+`xz -9` goes from +11.94% to +11.17%.**
+
+| file | before | after | change | vs `xz -9` |
+|---|---|---|---|---|
+| `ooffice` | 2,704,203 | **2,328,361** | **−13.90%** | **−4.06%** |
+| `mozilla` | 15,956,335 | 15,956,335 | 0.00% (declined) | +19.31% |
+| `dickens` | 2,960,174 | 2,960,174 | 0.00% (not code) | +4.58% |
+| `samba` | 4,145,894 | 4,145,894 | 0.00% (not code) | +10.16% |
+
+`ooffice` is now **below `xz -9`** — the first file in the corpus to beat it.
+
+**The interesting negative result.** I expected this to help `mozilla` most, since
+it is the worst file and is made of executables. It made it 0.78% *worse*.
+`mozilla` is a tar: the CALL/JMP bytes are plentiful but scattered across archive
+members instead of forming one code image, so absolute displacements become
+position-dependent without becoming repetitive. A density heuristic cannot tell
+these apart, so the decision is made by trying the transform on a 128 KiB sample
+and keeping it only when the sample codes smaller. That costs well under a second
+and is what stops a plausible-looking idea from making the corpus worse.
+
+**Correctness.** The transform is exactly invertible and is applied to the whole
+stream before compression, reversed after decompression, signalled by
+`kFlagBcj` (flag bit 3). `unit.bcj` checks invertibility on x86-like data, on
+uniform random bytes, and at sizes 0/1/4/5/6/17, plus the detection gate. 11/11
+ctest suites pass.

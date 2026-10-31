@@ -5,7 +5,13 @@ self-contained binary that composes preprocessors, a dual-resolution match
 finder, a joint optimal parser and per-block entropy backends into a single
 stream format. No external processes, no network, no model files.
 
-**Status: Phase 5 done.** Three entropy models are offered per block and the
+**Status: Phase 5b done.** A source review (`docs/SOURCES_REVIEW.md`) turned up
+the x86 BCJ filter already vendored and already linked; applying it as a Layer 0
+transform takes the corpus to 54,243,754 bytes (+11.17% vs `xz -9`, from
++11.94%), and `ooffice` to −4.06% against `xz -9` — the first file to beat the
+baseline.
+
+**Phase 5, for the record:** Three entropy models are offered per block and the
 smallest wins: static rANS, chunked adaptive rANS, and a range-coded model that
 adapts after every bit. The corpus drops from 57,930,807 to 54,619,596 bytes
 (-5.72%), and the gap to `xz -9` from +18.72% to +11.94%. The chunked rANS
@@ -88,6 +94,7 @@ measured results.
 | 3 | Joint optimal parser | **done, ratio gate not met** |
 | 4 | Context-modelled rANS backend | **done** (ratio pass, speed gate not met) |
 | 5 | Adaptive frequency tables | **done** (via range coder) — corpus -5.72% |
+| 5b | x86 BCJ transform | **done** — ooffice now beats `xz -9` |
 | 6 | Coarse (SREP-style) long-range index | next |
 | 7 | Static + adaptive Huffman | |
 | 8 | Semantic precompression (Preflate) | |

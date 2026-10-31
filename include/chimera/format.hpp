@@ -36,8 +36,10 @@ enum Flags : uint8_t {
   kFlagCoarse = 1u << 0,    // coarse (SREP-style) index was consulted
   kFlagMaxRatio = 1u << 1,  // --max-ratio was in effect when written
   kFlagPrecomp = 1u << 2,   // semantic precompression was applied
+  kFlagBcj = 1u << 3,       // the x86 BCJ transform was applied to the stream
 };
-inline constexpr uint8_t kFlagMask = kFlagCoarse | kFlagMaxRatio | kFlagPrecomp;
+inline constexpr uint8_t kFlagMask =
+    kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj;
 
 // ---------------------------------------------------------------------------
 // Block modes
