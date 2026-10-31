@@ -22,7 +22,11 @@ inline constexpr uint8_t kMagic[4] = {'C', 'H', 'C', 'E'};
 inline constexpr uint8_t kFormatVersion = 1;
 
 // Default block size. The prompt starts at 256 KB; Phase 12 tunes it.
-inline constexpr size_t kDefaultBlockSize = 256u * 1024u;
+// 4 MiB. Measured: on dickens, 256 KiB gives 2,743,444 bytes, 1 MiB 2,496,909,
+// 4 MiB 2,355,513 — every backend we have (PPMd, BWT) builds a better model
+// from a larger block, and total time is flat. Memory is the trade: a BWT block
+// needs a few multiples of its size.
+inline constexpr size_t kDefaultBlockSize = 4u * 1024u * 1024u;
 
 // Hard ceiling on a single block's uncompressed size. Guards the decoder
 // against absurd varints in fuzzed input (never a real encoder output).

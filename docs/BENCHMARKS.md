@@ -35,6 +35,7 @@ the I/O path is a network-backed filesystem. Ratios are the meaningful column.
 | 9 — BWT backend | 6-file subset -6.09% vs `xz -9` | n/a | n/a | **done; BWT wins most blocks, but is slow** |
 | 10 — CM (`--max-ratio`) | xml -13.1% vs `xz -9` | n/a | n/a | **done; ratio ceiling, ~3.4x the time** |
 | 11 — PPMd for text | dickens -2.7% vs BWT | n/a | n/a | **done; wins on English text** |
+| 12 — Tuning | dickens 2,355,513 (**-16.8%** vs `xz -9`) | n/a | n/a | **block size tuned; selector and parallelism open** |
 | 6 — Coarse index | | | | not started |
 | 7 — Huffman modes | | | | not started |
 | 8 — Semantic precompression | | | | not started |
@@ -864,3 +865,42 @@ its input, and rejecting truncated input. 14/14 ctest suites pass.
 **Test fragility fixed properly this time.** Adding a backend kept leaving the round-trip stats stale, because each backend had its own named counter and I kept forgetting to add the new one. `CompressStats` now carries `mode_counts[16]`, indexed by mode byte, and the test sums that array. Adding a backend can no longer make the check stale.
 
 **Tests:** `unit.ppmd`, 3 cases — round-trip on text and on binary, and truncation rejection. 16/16 ctest suites pass.
+
+## Phase 12 — Tuning: block size
+
+**The single biggest tuning win in the project, and it was free.** Every backend
+now benefits from a large block: PPMd builds a deeper context model, BWT sorts a
+bigger window, and the fine match finder sees more history per block.
+
+On `dickens` (10,192,446 bytes), `-9`, varying only the block size:
+
+| block size | bytes | vs 256 KiB |
+|---|---|---|
+| 256 KiB (old default) | 2,743,444 | — |
+| 1 MiB | 2,496,909 | -9.0% |
+| **4 MiB (new default)** | **2,355,513** | **-14.1%** |
+
+Total time is flat (62-72 s across all three), because the extra work per block
+is offset by having far fewer blocks. Memory is the trade: a BWT block needs a
+few multiples of its own size, and PPMd holds a 16 MiB model per block.
+
+Against `xz -9` (2,830,604) the 4 MiB default is **-16.8%** on dickens, and on
+`x-ray` 3,798,292 vs 4,489,868 is **-15.4%**. Both round-trip exact.
+
+**Fuzzing and round-trip.** 16/16 suites pass at the new default, including the
+mutation fuzz suite and the CLI integration tests.
+
+### What is NOT done in this phase
+
+Two items from the plan are open, and it is worth being precise about why:
+
+- **Cheap mode selector.** The compressor still tries every applicable backend on
+  every block, which is why `-9` runs at roughly 0.3-0.5 MB/s. A sample-based
+  pre-selection (the pattern already used for BCJ and for preflate) would cut
+  that several-fold with little ratio loss. Not implemented.
+- **Parallelism.** Blocks are not independent in this format: the match finder
+  and coarse index carry state across block boundaries, and tokens may reference
+  earlier blocks. Compressing blocks in parallel would silently break that.
+  Parallel decompression is equally unsafe for the same reason. Doing it properly
+  needs either a per-block "no cross-block references" flag or a two-pass
+  scheme — a format change, not a threading change.
