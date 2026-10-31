@@ -115,7 +115,7 @@ TEST(coder_round_trips_random_symbols) {
 
     // rANS is a stack: symbols go in backwards so the decoder reads forwards.
     RansEncoder enc;
-    for (uint32_t i = nsym; i-- > 0;) enc.put(tables[ctx_of[i]], sym_of[i]);
+    for (uint32_t i = nsym; i-- > 0;) enc.put(tables[ctx_of[i]], sym_of[i], i);
     const auto payload = enc.finish();
 
     RansDecoder dec(payload);
@@ -140,7 +140,7 @@ TEST(coder_compresses_skewed_data) {
   for (uint32_t i = 0; i < n; ++i) {
     syms[i] = rng.below(10000) < 9000 ? 0 : (rng.below(1000) < 900 ? 1 : (rng.below(100) < 90 ? 2 : 3));
   }
-  for (uint32_t i = n; i-- > 0;) enc.put(t, syms[i]);
+  for (uint32_t i = n; i-- > 0;) enc.put(t, syms[i], i);
   const auto payload = enc.finish();
   CHECK_MSG(payload.size() < n, "no compression: " + std::to_string(payload.size()) +
                                     " bytes for " + std::to_string(n) + " symbols");

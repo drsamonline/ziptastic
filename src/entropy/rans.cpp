@@ -143,21 +143,28 @@ size_t RansTable::memory_bytes() const {
   return freq_.capacity() * 2 + cum_.capacity() * 2 + slot_sym_.capacity();
 }
 
-void RansEncoder::put(const RansTable& t, uint32_t sym) {
+void RansEncoder::put(const RansTable& t, uint32_t sym, uint64_t index) {
+  const uint32_t lane = single_lane_ ? 0 : static_cast<uint32_t>(index & (kRansLanes - 1));
+  uint32_t& st = state_[lane];
   const uint32_t f = t.freq(sym);
   const uint32_t start = t.start(sym);
   const uint32_t x_max = ((kRansL >> kRansScaleBits) << 8) * f;
-  while (state_ >= x_max) {
-    buf_.push_back(static_cast<uint8_t>(state_ & 0xFF));
-    state_ >>= 8;
+  while (st >= x_max) {
+    buf_.push_back(static_cast<uint8_t>(st & 0xFF));
+    st >>= 8;
   }
-  state_ = ((state_ / f) << kRansScaleBits) + (state_ % f) + start;
+  st = ((st / f) << kRansScaleBits) + (st % f) + start;
 }
 
 std::vector<uint8_t> RansEncoder::finish() {
-  for (int i = 0; i < 4; ++i) {
-    buf_.push_back(static_cast<uint8_t>(state_ & 0xFF));
-    state_ >>= 8;
+  // Pushed in reverse lane order so that after the reversal below the decoder
+  // reads lane 0 first, then 1, 2, 3.
+  for (uint32_t lane = kRansLanes; lane-- > 0;) {
+    uint32_t st = state_[lane];
+    for (int i = 0; i < 4; ++i) {
+      buf_.push_back(static_cast<uint8_t>(st & 0xFF));
+      st >>= 8;
+    }
   }
   std::reverse(buf_.begin(), buf_.end());
   return std::move(buf_);
@@ -168,8 +175,12 @@ RansDecoder::RansDecoder(std::span<const uint8_t> payload) : in_(payload) {
     ok_ = false;
     return;
   }
-  for (int i = 0; i < 4; ++i) state_ = (state_ << 8) | next();
-  if (state_ < kRansL) ok_ = false;
+  for (uint32_t lane = 0; lane < kRansLanes; ++lane) {
+    uint32_t st = 0;
+    for (int i = 0; i < 4; ++i) st = (st << 8) | next();
+    state_[lane] = st;
+    if (st < kRansL) ok_ = false;
+  }
 }
 
 uint8_t RansDecoder::next() {
@@ -181,7 +192,9 @@ uint8_t RansDecoder::next() {
 }
 
 uint32_t RansDecoder::get(const RansTable& t) {
-  const uint32_t slot = state_ & (kRansTotal - 1);
+  const uint32_t lane = single_lane_ ? 0 : (lane_next_++ & (kRansLanes - 1));
+  uint32_t& st = state_[lane];
+  const uint32_t slot = st & (kRansTotal - 1);
   const uint32_t sym = t.symbol_at(slot);
   const uint32_t f = t.freq(sym);
   const uint32_t start = t.start(sym);
@@ -189,12 +202,12 @@ uint32_t RansDecoder::get(const RansTable& t) {
     ok_ = false;
     return 0;
   }
-  state_ = f * (state_ >> kRansScaleBits) + slot - start;
+  st = f * (st >> kRansScaleBits) + slot - start;
   // Renormalise until the state is back in range. This must be a loop, not a
   // single read: with a skewed table the encoder can emit several bytes at one
   // put, and the decoder has to consume all of them. (An earlier version read
   // exactly one byte here and desynced on highly skewed data.)
-  while (state_ < kRansL) state_ = (state_ << 8) | next();
+  while (st < kRansL) st = (st << 8) | next();
   return sym;
 }
 

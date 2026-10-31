@@ -244,10 +244,14 @@ void encode_tokens_rans(ByteWriter& w, std::span<const uint8_t> data,
   build_tables(m, tables);
 
   RansEncoder enc;
+  enc.set_single_lane();  // adaptive model: one lane, so counts and state stay in step
   const RansTable bypass = make_bypass_table();
   for (size_t i = syms.size(); i-- > 0;) {
-    if (syms[i].first < kBypass) enc.put(table_for(tables, syms[i].first), syms[i].second);
-    else enc.put(bypass, syms[i].second);
+    if (syms[i].first < kBypass) {
+      enc.put(table_for(tables, syms[i].first), syms[i].second, i);
+    } else {
+      enc.put(bypass, syms[i].second, i);
+    }
   }
   const std::vector<uint8_t> payload = enc.finish();
 
@@ -311,8 +315,11 @@ void encode_tokens_rans_adaptive(ByteWriter& w, std::span<const uint8_t> data,
 
     RansEncoder enc;
     for (size_t i = syms.size(); i-- > 0;) {
-      if (syms[i].first < kBypass) enc.put(table_for(tables, syms[i].first), syms[i].second);
-      else enc.put(bypass, syms[i].second);
+      if (syms[i].first < kBypass) {
+        enc.put(table_for(tables, syms[i].first), syms[i].second, i);
+      } else {
+        enc.put(bypass, syms[i].second, i);
+      }
     }
     const std::vector<uint8_t> payload = enc.finish();
     w.varint(payload.size());
@@ -511,6 +518,7 @@ Err decode_tokens_rans(ByteReader& r, uint32_t out_size, std::vector<uint8_t>& o
     // Re-run the same chunk decoder over the single stream by handing it the
     // payload directly; the static path has no length prefix.
     RansDecoder dec(payload);
+    dec.set_single_lane();  // the adaptive model codes everything on lane 0
     if (!dec.ok()) return Err::Corrupt;
     // The static stream is unbounded in symbols, so drive it by output size.
     while (produced < out_size) {

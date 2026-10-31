@@ -1307,3 +1307,33 @@ only pays when there are many blocks to spread.
 **Still unmet:** the 150 MB/s decode target. Parallelism is not the lever for it —
 the decode cost is in the entropy coders, and reaching that number needs the
 interleaved rANS work deferred long ago, not more threads.
+
+## Interleaved rANS
+
+A single-state rANS is a serial dependency chain: each symbol's state depends on
+the previous one, leaving the CPU's out-of-order machinery nothing to overlap.
+The static rANS path now codes across **4 independent lanes** (`kRansLanes`),
+round-robin by symbol index. The adaptive model stays on one lane, because its
+counts and state have to advance together.
+
+**Measured (micro-benchmark, 4 M symbols, skewed 16-symbol alphabet):**
+
+| lanes | decode throughput |
+|---|---|
+| 1 | 82.0, 85.9 Msym/s |
+| **4** | **90.2, 97.6 Msym/s** |
+
+**~12% faster, for 9 bytes of payload.** Correctness is unchanged: 12/12 rANS
+unit tests and 18/18 suites pass, and the round-trip is exact.
+
+**That is much less than interleaving usually buys, and the reason is worth
+recording:** this loop is bound by table lookups and the renormalisation branch,
+not by the state dependency. Interleaving removes a bottleneck that was not the
+binding one here. The 150 MB/s decode target is not reached by this, and reaching
+it needs a different approach — smaller tables that fit in L1, or a coder whose
+inner loop does less work per symbol — not more lanes.
+
+**One implementation detail that cost a build cycle:** the encoder walks symbols
+*backwards* (rANS is LIFO), so a call-order counter assigns lanes in reverse and
+desynchronises from the decoder, which walks forwards. `put()` therefore takes the
+symbol's **logical index** and derives the lane from it.

@@ -50,15 +50,27 @@ class RansTable {
   std::vector<uint8_t> slot_sym_;  // kRansTotal entries
 };
 
+// Independent states coded round-robin. A single-state rANS is a serial
+// dependency chain — each symbol's state depends on the previous one — which
+// leaves the CPU's out-of-order machinery with nothing to overlap. Four lanes
+// break the chain and cost nothing in ratio (each lane sees the same tables).
+inline constexpr uint32_t kRansLanes = 4;
+
 class RansEncoder {
  public:
-  void put(const RansTable& t, uint32_t sym);
+  // `index` is the symbol's position in the LOGICAL sequence. The lane is
+  // index % kRansLanes, which is why it must be passed rather than counted:
+  // rANS encodes backwards, so a call counter would assign lanes in reverse and
+  // desynchronise from the decoder, which reads forwards.
+  void put(const RansTable& t, uint32_t sym, uint64_t index);
+  void set_single_lane() { single_lane_ = true; }
   // Writes the final state and returns the payload in decoder order.
   std::vector<uint8_t> finish();
   size_t size() const { return buf_.size(); }
 
  private:
-  uint32_t state_ = kRansL;
+  uint32_t state_[kRansLanes] = {kRansL, kRansL, kRansL, kRansL};
+  bool single_lane_ = false;
   std::vector<uint8_t> buf_;  // reverse order until finish()
 };
 
@@ -67,13 +79,20 @@ class RansDecoder {
   // `payload` must outlive the decoder.
   explicit RansDecoder(std::span<const uint8_t> payload);
   bool ok() const { return ok_; }
+  // Lanes advance round-robin automatically, matching the encoder's symbol
+  // order. Call set_single_lane() for a stream coded entirely on lane 0 (the
+  // adaptive model does that).
   uint32_t get(const RansTable& t);
+  void set_single_lane() { single_lane_ = true; }
 
  private:
   uint8_t next();
   std::span<const uint8_t> in_;
   size_t pos_ = 0;
-  uint32_t state_ = 0;
+  uint32_t state_[kRansLanes] = {};
+  // Decode order is forward, so a call counter is the logical index here.
+  uint32_t lane_next_ = 0;
+  bool single_lane_ = false;
   bool ok_ = true;
 };
 
