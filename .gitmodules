@@ -1,0 +1,101 @@
+# Vendored upstream sources (copy of the HCS mirror).
+#
+# 23 of these are submodules, pinned by the commit SHA in the tree and
+# mapped here. Until this file existed the pins had no URL, which is
+# unrecoverable: git knew the commit but not where to fetch it, so every
+# clone silently got 23 empty directories.
+#
+# Materialise:  git submodule update --init --recursive
+# Verify:       ./scripts/check-vendor.sh
+
+[submodule "vendor/hcs/old/aqueous"]
+	path = vendor/hcs/old/aqueous
+	url = https://github.com/lifthrasiir/aqueous
+
+[submodule "vendor/hcs/old/awesome-compopt"]
+	path = vendor/hcs/old/awesome-compopt
+	url = https://github.com/MartinEesmaa/awesome-compopt
+
+[submodule "vendor/hcs/old/awesome-cpp"]
+	path = vendor/hcs/old/awesome-cpp
+	url = https://github.com/hstsethi/awesome-cpp
+
+[submodule "vendor/hcs/old/brieflz"]
+	path = vendor/hcs/old/brieflz
+	url = https://github.com/jibsen/brieflz
+
+[submodule "vendor/hcs/old/bzip3"]
+	path = vendor/hcs/old/bzip3
+	url = https://github.com/kspalaiologos/bzip3
+
+[submodule "vendor/hcs/old/density"]
+	path = vendor/hcs/old/density
+	url = https://github.com/centaurean/density
+
+[submodule "vendor/hcs/old/fse"]
+	path = vendor/hcs/old/fse
+	url = https://github.com/Cyan4973/FiniteStateEntropy
+
+[submodule "vendor/hcs/old/heatshrink"]
+	path = vendor/hcs/old/heatshrink
+	url = https://github.com/atomicobject/heatshrink
+
+[submodule "vendor/hcs/old/lizard"]
+	path = vendor/hcs/old/lizard
+	url = https://github.com/inikep/lizard
+
+[submodule "vendor/hcs/old/lzham"]
+	path = vendor/hcs/old/lzham
+	url = https://github.com/richgel999/lzham_codec
+
+[submodule "vendor/hcs/old/omnizip-zpaq"]
+	path = vendor/hcs/old/omnizip-zpaq
+	url = https://github.com/omnizip/omnizip-rs
+
+[submodule "vendor/hcs/old/paq8px"]
+	path = vendor/hcs/old/paq8px
+	url = https://github.com/hxim/paq8px
+
+[submodule "vendor/hcs/old/pcodec"]
+	path = vendor/hcs/old/pcodec
+	url = https://github.com/mayhemheroes/quantile-compression
+
+[submodule "vendor/hcs/old/rhefo"]
+	path = vendor/hcs/old/rhefo
+	url = https://github.com/T-3B/rhefo
+
+[submodule "vendor/hcs/old/ryg_rans"]
+	path = vendor/hcs/old/ryg_rans
+	url = https://github.com/rygorous/ryg_rans
+
+[submodule "vendor/hcs/old/shoco"]
+	path = vendor/hcs/old/shoco
+	url = https://github.com/Ed-von-Schleck/shoco
+
+[submodule "vendor/hcs/old/smaz"]
+	path = vendor/hcs/old/smaz
+	url = https://github.com/antirez/smaz
+
+[submodule "vendor/hcs/old/snappy"]
+	path = vendor/hcs/old/snappy
+	url = https://github.com/google/snappy
+
+[submodule "vendor/hcs/old/tamp"]
+	path = vendor/hcs/old/tamp
+	url = https://github.com/BrianPugh/tamp
+
+[submodule "vendor/hcs/old/upx"]
+	path = vendor/hcs/old/upx
+	url = https://github.com/upx/upx
+
+[submodule "vendor/hcs/old/zelf"]
+	path = vendor/hcs/old/zelf
+	url = https://github.com/seb3773/zelf
+
+[submodule "vendor/hcs/old/zpaqfranz"]
+	path = vendor/hcs/old/zpaqfranz
+	url = https://github.com/fcorbelli/zpaqfranz
+
+[submodule "vendor/hcs/old/zxc"]
+	path = vendor/hcs/old/zxc
+	url = https://github.com/hellobertrand/zxc

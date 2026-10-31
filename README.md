@@ -126,3 +126,27 @@ gets a wrapper under `src/`.
 MIT — see `LICENSE`. Only permissively licensed sources are ever linked in;
 GPL/LGPL tools (paq8px, upx, advancecomp, packJPG, lzo) are excluded from this
 repository entirely.
+
+## Vendored sources
+
+`vendor/hcs/` is a copy of the HCS mirror. 23 of its sources are git submodules
+pinned to an upstream commit, so clone with them:
+
+```bash
+git clone --recurse-submodules https://github.com/drsamonline/ziptastic
+# or, in an existing clone:
+git submodule update --init --recursive
+```
+
+Verify at any time:
+
+```bash
+./scripts/check-vendor.sh     # exit 0 = every source present and mapped
+```
+
+That guard exists because those 23 sources were once gitlinks with no
+`.gitmodules` — a state git cannot recover from, since it knows the commit but
+not where to fetch it. Every clone silently got 23 empty directories and nothing
+failed until a build reached for one. CI now checks out with `submodules:
+recursive` and runs the guard on every push, so the failure mode is a red build
+instead of a quiet one.
