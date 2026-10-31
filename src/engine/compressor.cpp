@@ -496,6 +496,46 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
     // fall through rather than failing the whole compression.
   }
 
+  // --max-ratio: context mixing over the WHOLE stream, not per block.
+  //
+  // A CM model is stateful and long-lived; cutting it at a block boundary throws
+  // away everything it learned. Measured on xml: per-block --max-ratio gives
+  // 394,185 bytes while one CM pass over the same bytes gives 330,394 — 16% that
+  // the block boundaries were costing. Tried last and only kept when smaller,
+  // because it is the most expensive thing in the engine.
+  if (opt.max_ratio && zpaq_available() && !data.empty()) {
+    std::vector<uint8_t> whole(data.begin(), data.end());
+    std::vector<uint8_t> packed;
+    if (zpaq_compress_block(whole, packed)) {
+      ByteWriter cw;
+      cw.reserve(packed.size() + 64);
+      FileHeader cfh;
+      cfh.version = kFormatVersion;
+      cfh.flags = header_flags(opt, bcj, precomp, /*parallel=*/false, dedup);
+      cfh.original_size = input.size();
+      cfh.block_count = 1;
+      cfh.checksum = crc;
+      write_file_header(cw, cfh);
+
+      BlockHeader bh;
+      bh.mode = Mode::CmZpaq;
+      bh.uncompressed_size = data.size();
+      bh.compressed_size = packed.size();
+      write_block_header(cw, bh);
+      cw.bytes(packed);
+
+      if (cw.size() < native.size()) {
+        CompressStats cs;
+        cs.blocks = 1;
+        cs.mode_counts[static_cast<uint8_t>(Mode::CmZpaq) & 15] = 1;
+        cs.payload_bytes = cw.size();
+        out = cw.take();
+        if (stats) *stats = cs;
+        return Err::Ok;
+      }
+    }
+  }
+
   out = std::move(native);
   if (stats) *stats = local;
   return Err::Ok;

@@ -1239,3 +1239,42 @@ XML-like short repetition, accepting a genuinely periodic pattern (an earlier
 version of this test asserted the opposite and was wrong about the data),
 declining unique data, and corruption never producing a wrong length. 18/18 ctest
 suites pass.
+
+## --max-ratio: context mixing over the whole stream
+
+I previously wrote that libzpaq level 5 "is not its strongest setting" and that a
+stronger CM configuration was the next lever. **That was wrong**, and measuring it
+was cheap:
+
+| method string | bytes on `xml` |
+|---|---|
+| **"5"** (what we use) | **330,394** |
+| "6", "7", "8" | 330,394 (identical — libzpaq clamps at 5) |
+| "x6.0ci1,1,1,1,4,4,24,40,64" | 378,162 |
+| "x6.0ci1,1,1,1,3,3,24,40,64,0,0,0" | 381,098 |
+| "x6.0ci1,1,1,1,1,2,2,20,36,64" | 383,729 |
+| "x9.0ci1,1,1,1,1,2,2,20,36,64" | out of memory |
+
+Every `x`-config is **14-16% worse** than level 5. There is no stronger setting to
+switch to.
+
+### What the measurement did reveal
+
+`"5"` on the whole file gives **330,394**, while `--max-ratio` per block gave
+**394,185** — a 16% gap that the block boundaries were costing. A CM model is
+stateful and long-lived; cutting it every 4 MiB throws away what it learned.
+
+So `--max-ratio` now also tries one CM pass over the **entire stream**, and keeps
+it only when smaller:
+
+| file | `-9` (archive mode) | `--max-ratio` before | `--max-ratio` now |
+|---|---|---|---|
+| `xml` | 374,682 | 394,185 | **330,417 (-16.2%)** |
+| `reymont` | 1,024,579 | — | **953,851 (-6.9%)** |
+
+Round-trip exact on both; 18/18 suites pass. The xml result is within 23 bytes of
+the theoretical best for this method, i.e. the framing is all that is left.
+
+It is tried **last and only kept when smaller**, because it is the most expensive
+thing in the engine — and it is confined to `--max-ratio`, so the default path
+never pays for it.
