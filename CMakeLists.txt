@@ -96,10 +96,14 @@ set_target_properties(preflate_vendor PROPERTIES CXX_STANDARD 17 CXX_STANDARD_RE
 # Our wrapper includes preflate's headers, which are C++14-era, so it is built as
 # C++17 in its own target. The rest of the engine stays C++20 and only sees our
 # own header, which does not include theirs.
-add_library(preflate_shim STATIC src/precompressors/preflate_wrap.cpp)
+add_library(preflate_shim STATIC
+  src/precompressors/preflate_wrap.cpp
+  src/entropy/cm_zpaq.cpp)
 set_target_properties(preflate_shim PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-target_link_libraries(preflate_shim PUBLIC preflate_vendor)
-target_include_directories(preflate_shim PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(preflate_shim PUBLIC preflate_vendor zpaq_vendor)
+target_include_directories(preflate_shim PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Vendored third-party code: keep its warnings out of our build log.
 if(NOT MSVC)
@@ -134,6 +138,23 @@ if(NOT MSVC)
   target_compile_options(bsc_vendor PRIVATE -w)
 endif()
 
+
+# ---------------------------------------------------------------------------
+# libzpaq (Phase 10) — context-mixing backend for --max-ratio, public domain.
+# One translation unit; built as C++17 because the source predates C++20.
+# ---------------------------------------------------------------------------
+set(ZPAQ_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/hcs/old/zpaq-master)
+add_library(zpaq_vendor STATIC ${ZPAQ_DIR}/libzpaq.cpp)
+target_include_directories(zpaq_vendor PUBLIC ${ZPAQ_DIR})
+set_target_properties(zpaq_vendor PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+# libzpaq branches on `#ifdef unix` and otherwise includes <windows.h>. The macro
+# is not predefined by this compiler, so it has to be given explicitly. NOJIT
+# avoids the x86 JIT, which wants executable memory we should not depend on.
+target_compile_definitions(zpaq_vendor PUBLIC unix NOJIT)
+if(NOT MSVC)
+  target_compile_options(zpaq_vendor PRIVATE -w)
+endif()
+
 add_library(chce_core STATIC
   src/engine/block_writer.cpp
   src/engine/compressor.cpp
@@ -157,7 +178,7 @@ target_include_directories(chce_core
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(chce_core PRIVATE liblzma preflate_shim bsc_vendor)
+target_link_libraries(chce_core PRIVATE liblzma preflate_shim bsc_vendor zpaq_vendor)
 target_include_directories(chce_core PRIVATE ${XZ_DIR}/src/liblzma/api)
 
 if(MSVC)

@@ -215,7 +215,7 @@ TEST(unimplemented_modes_rejected) {
     // Skip the modes this build actually implements.
     if (m == mode_byte(Mode::Lzma2Fallback) || m == mode_byte(Mode::RansCtx) ||
         m == mode_byte(Mode::HuffStatic) || m == mode_byte(Mode::HuffAdapt) ||
-        m == mode_byte(Mode::BwtBsc)) {
+        m == mode_byte(Mode::BwtBsc) || m == mode_byte(Mode::CmZpaq)) {
       continue;
     }
     // Rewrite the single block's mode byte.
@@ -226,7 +226,10 @@ TEST(unimplemented_modes_rejected) {
     auto mutated = compressed;
     mutated[mode_offset] = m;
     std::vector<uint8_t> out;
-    CHECK_ERR(decompress(mutated, out), Err::BadMode);
+    const Err got = decompress(mutated, out);
+    CHECK_MSG(got == Err::BadMode,
+              "mode 0x" + std::to_string(static_cast<int>(m)) + " returned " +
+                  err_name(got) + ", expected bad-mode");
   }
 }
 

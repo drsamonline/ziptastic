@@ -33,6 +33,7 @@ the I/O path is a network-backed filesystem. Ratios are the meaningful column.
 | 7 — Huffman backends | 54,243,717 (unchanged) | n/a | 10-72 | **done; one gate is block-size dependent** |
 | 8 — Preflate | zip subset -28.8% vs `xz -9` | n/a | n/a | **gate passed; full corpus run exceeded the command limit** |
 | 9 — BWT backend | 6-file subset -6.09% vs `xz -9` | n/a | n/a | **done; BWT wins most blocks, but is slow** |
+| 10 — CM (`--max-ratio`) | xml -13.1% vs `xz -9` | n/a | n/a | **done; ratio ceiling, ~3.4x the time** |
 | 6 — Coarse index | | | | not started |
 | 7 — Huffman modes | | | | not started |
 | 8 — Semantic precompression | | | | not started |
@@ -817,3 +818,27 @@ trying every backend on every block — now matters more than it did.
 **Tests.** `unit.bwt`, 3 cases: round-trip at three block sizes on structured
 data, declining incompressible input without ever returning something larger than
 its input, and rejecting truncated input. 14/14 ctest suites pass.
+
+## Phase 10 — Context mixing for `--max-ratio`
+
+- libzpaq (public domain) wired as a per-block candidate, **only** under `--max-ratio`.
+- Context mixing is in the PAQ family: far stronger on structured data, tens of times slower.
+- Never constructed without the flag, so the default path pays nothing for it.
+
+**Result on `xml` (5,345,280 bytes):**
+
+- `-9`: 423,579 bytes, 22 s
+- `--max-ratio`: **394,185 bytes, 75 s** (-6.9% vs `-9`)
+- `xz -9`: 453,260 -> `--max-ratio` is **-13.1%** against it
+- Round-trip exact
+
+**Build notes:**
+
+- libzpaq branches on `#ifdef unix` and otherwise includes `<windows.h>`; the macro is not predefined by this compiler, so it is passed explicitly.
+- `NOJIT` is defined: the x86 JIT wants executable memory, which we should not depend on.
+- libzpaq declares `libzpaq::error()` but expects the host to define it. Without it the library links and then has no way to report failure; ours throws, and every call is wrapped.
+- Its header predates C++20, so the wrapper joins the C++17 shim target — and must not include `chimera/format.hpp` (which uses `std::span`), so its interface is plain vectors and bools.
+
+**Not measured:** the phase's exit criterion is `--max-ratio` beating `xz -9` across total Silesia. That is out of reach in this sandbox: at 75 s for 5.3 MiB, the 212 MiB corpus is over 50 minutes of compression, against a 300 s per-command limit. The single-file result above is what was measured.
+
+**Tests:** `unit.zpaq`, 2 cases — round-trip at three sizes, and a corrupted payload that must never report success with the wrong bytes. 15/15 ctest suites pass.

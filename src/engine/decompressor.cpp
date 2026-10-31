@@ -12,6 +12,7 @@
 #include "token_stream.hpp"
 #include "chimera/huffman.hpp"
 #include "entropy/bwt_bsc.hpp"
+#include "entropy/cm_zpaq.hpp"
 #include "entropy/token_coder.hpp"
 #include "precompressors/bcj_x86.hpp"
 #include "precompressors/preflate_wrap.hpp"
@@ -103,10 +104,21 @@ Err decode_body(const BlockHeader& hdr, std::span<const uint8_t> body,
       return Err::Ok;
     }
 
+    case Mode::CmZpaq: {
+      const std::vector<uint8_t> b(body.begin(), body.end());
+      if (!zpaq_decompress_block(b, static_cast<uint32_t>(hdr.uncompressed_size), dst)) {
+        return Err::Corrupt;
+      }
+      return Err::Ok;
+    }
+
+    // Defined in the format, not implemented in this build. These must stay
+    // separate from any implemented case: grouping CmZpaq with them earlier made
+    // three unimplemented modes run the zpaq decoder and report "corrupt"
+    // instead of "bad-mode".
     case Mode::Brotli:
     case Mode::Zstd:
     case Mode::Lz4:
-    case Mode::CmZpaq:
     case Mode::Ppmd:
       return Err::BadMode;
   }

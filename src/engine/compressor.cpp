@@ -11,6 +11,7 @@
 #include "token_stream.hpp"
 #include "chimera/huffman.hpp"
 #include "entropy/bwt_bsc.hpp"
+#include "entropy/cm_zpaq.hpp"
 #include "entropy/token_coder.hpp"
 #include "precompressors/bcj_x86.hpp"
 #include "precompressors/preflate_wrap.hpp"
@@ -106,6 +107,22 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
       pb.body = body.take();
       stats.tokens += tokens.size();
       cands.push_back(std::move(pb));
+
+      // Context mixing, only under --max-ratio: tens of times slower than
+      // anything else here, and only worth paying when the caller asks for the
+      // ratio ceiling.
+      if (opt.max_ratio) {
+        std::vector<uint8_t> zb;
+        const std::vector<uint8_t> blk(block.begin(), block.end());
+        if (zpaq_compress_block(blk, zb)) {
+          EncodedBlock z;
+          z.hdr.mode = Mode::CmZpaq;
+          z.hdr.uncompressed_size = n;
+          z.hdr.compressed_size = zb.size();
+          z.body = std::move(zb);
+          cands.push_back(std::move(z));
+        }
+      }
 
       // Burrows-Wheeler, via libbsc. A different family from LZ: it wins on
       // statistically structured binary and loses on ordinary text, so it is
