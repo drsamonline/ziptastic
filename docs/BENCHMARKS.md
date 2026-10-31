@@ -1143,3 +1143,49 @@ different families entirely — a stronger CM configuration for `--max-ratio`
 (currently libzpaq level 5, which is not its strongest setting), or a larger
 number of PPMd orders *only* if the selector that picks between them can be made
 cheap, which the earlier experiment showed it cannot be.
+
+## SREP-style dedup: measured, and the case for building it
+
+SREP is two separate things, and only one of them exists here:
+
+- **Its dedup engine** — a coarse block-hash index with long-range references.
+  Built from scratch in Phase 6 (`coarse_index.cpp`), because SREP's source is
+  all-rights-reserved.
+- **Its role as a pipeline stage** — dedupe the stream first, then compress the
+  deduped result (the FreeArc chain: precomp -> srep -> lzma). **Not built.**
+
+### Measurement on an archive with duplicate members
+
+`dup2.tar`: three 3 MiB files, one of them duplicated (9,011,200 bytes).
+
+| configuration | bytes |
+|---|---|
+| `xz -9` | 1,486,432 |
+| ziptastic, coarse index **on** | 1,326,180 |
+| ziptastic, coarse index **off** | 1,326,185 |
+| **ideal dedup** (duplicate removed before compression) | **1,188,707** |
+
+Two conclusions:
+
+1. **The coarse index makes no difference here — 5 bytes.** The duplicate sits
+   ~6 MiB back, inside the 64 MiB fine window, so the match finder already had
+   it. The coarse index only earns its keep beyond the window (measured earlier:
+   1,032,192 bytes recovered on a 100 MiB gap).
+2. **A dedup stage would save 10.4% on this file**, and the reason is not
+   distance: it is that **per-block backend selection picks BWT or PPMd for these
+   blocks, and neither can reference another block.** The duplicate is invisible
+   to them. Dedup would remove it before block splitting, so every backend
+   benefits.
+
+That second point is the real argument for building SREP's pipeline role: the
+engine's strength — picking the best backend per block — is also a blind spot for
+cross-block redundancy, and the coarse index only feeds the *token* path.
+
+### What building it would involve
+
+- A Layer 0b stage before block splitting: scan with the existing `CoarseIndex`,
+  emit literals plus back-references, and compress that payload normally.
+- A new header flag, and the same verify-before-use discipline used for preflate
+  (reconstruct and compare before committing to the transform).
+- Expected: ~10% on archives with duplicate members, ~0 on files without them.
+  Not built yet; this is a measurement, not a result.
