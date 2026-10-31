@@ -978,3 +978,42 @@ English text like `dickens` and would be expected to land in the same -15% to
 -20% band, and `mozilla` is a tar of executables where `samba`'s pattern (-0.6%)
 is the closer precedent — but those are expectations, not measurements, and are
 labelled as such.
+
+## End-to-end CLI fuzzing
+
+`tests/integration/test_fuzz_cli.sh`, registered as `integration.fuzz_cli`.
+
+- Drives the real binary, not the library: compress a file, decompress it, `cmp`.
+- 25 inputs x 3 flag sets: random bytes, English text, constant runs, base64.
+  Sizes 0-64 KiB, so the block loop, the layer-0 transforms and the mode selector
+  all get exercised at small sizes.
+- Then corrupts a valid stream at a random offset and requires a **clean failure**
+  — not a crash (exit >= 128) and not a hang (timeout 124). 25 more cases.
+- Then truncates streams by 1, 4, 16 and 64 bytes and requires rejection.
+- Deterministic (`RANDOM` is seeded), so any failure reproduces.
+
+**54 checks, 0 failures.** Registered in CTest, so it runs with the rest.
+
+Why this and not more unit fuzzing: the unit fuzz suite mutates encoded blocks and
+checks the decoder in-process. Every bug that actually reached a measurement in
+this project was an *integration* bug — a flag that disagreed with its data
+(`kFlagPrecomp` set while the original bytes were compressed), a mode case
+grouped with the wrong handler (CmZpaq sharing Brotli/Zstd/Lz4). Neither would be
+caught by mutating a block; both need the real pipeline.
+
+## Decided: two modes for parallelism (not implemented yet)
+
+Parallelism needs blocks to be independent, and today they are not: the match
+finder and coarse index carry state across block boundaries and tokens may
+reference earlier blocks. Rather than trade that away, the plan is **two modes**,
+both shipped:
+
+- **Archive mode** (default, what exists now): coupled blocks, cross-block
+  references, maximum ratio. This is the mode all the measurements above use.
+- **Parallel mode** (to build): each block self-contained, no cross-block
+  references, compressed on N threads. Lower ratio, faster wall-clock.
+
+The format already has room for this: a header flag bit marks the stream as
+parallel-safe, and a decoder can reject a stream whose blocks reference backwards
+across a boundary. Archive mode stays available, so nothing measured so far is
+lost.

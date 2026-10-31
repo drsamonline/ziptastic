@@ -109,7 +109,7 @@ measured results.
 | 9 | BWT, Brotli, Zstd, LZ4 backends | |
 | 10 | CM backend (`--max-ratio`) | |
 | 11 | PPMd backend | |
-| 12 | Speed/ratio optimisation | **block size tuned** (4 MiB) — selector + parallelism open |
+| 12 | Speed/ratio optimisation | **block size tuned** (4 MiB); CLI fuzzing added; selector + parallelism open |
 
 ## Layout
 

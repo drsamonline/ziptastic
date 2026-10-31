@@ -13,6 +13,12 @@ foreach(t ${CHCE_UNIT_TESTS})
 endforeach()
 
 if(UNIX)
+  add_test(NAME integration.fuzz_cli
+    COMMAND ${CMAKE_COMMAND} -E env
+            ZIPT_BIN=$<TARGET_FILE:ziptastic>
+            ITER=12
+            bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_fuzz_cli.sh)
+
   add_test(NAME integration.cli
     COMMAND ${CMAKE_COMMAND} -E env
             ZIPT_BIN=$<TARGET_FILE:ziptastic>
