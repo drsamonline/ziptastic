@@ -19,6 +19,10 @@ struct FileHeader {
   uint8_t flags = 0;
   uint64_t original_size = 0;  // exact byte count of the uncompressed input
   uint64_t block_count = 0;    // number of blocks that follow
+  // CRC-32 of the original (pre-transform) bytes. Verified after every inverse
+  // transform has run, so a decode that silently produced the wrong bytes — the
+  // failure mode a transform stack invites — is caught rather than returned.
+  uint32_t checksum = 0;
 
   bool operator==(const FileHeader&) const = default;
 };
@@ -40,6 +44,9 @@ struct BlockHeader {
 //
 // Writers append to a ByteWriter and always succeed. Readers are strict: they
 // validate every field and return Err::Ok only for a well-formed structure.
+
+// CRC-32 (IEEE 802.3 polynomial, reflected). Table-driven, no dependency.
+uint32_t crc32(std::span<const uint8_t> data);
 
 void write_file_header(ByteWriter& w, const FileHeader& h);
 Err read_file_header(ByteReader& r, FileHeader& h);

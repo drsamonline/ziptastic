@@ -192,8 +192,8 @@ EncodedBlock encode_one_block(std::span<const uint8_t> input, size_t pos, size_t
 }
 
 Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
-                  bool bcj, bool precomp, bool dedup, std::vector<uint8_t>& out,
-                  CompressStats& stats) {
+                  bool bcj, bool precomp, bool dedup, uint32_t checksum,
+                  std::vector<uint8_t>& out, CompressStats& stats) {
   const size_t block_count =
       input.empty() ? 0 : (input.size() + opt.block_size - 1) / opt.block_size;
   const bool parallel = opt.parallel && block_count > 1;
@@ -203,6 +203,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
   fh.flags = header_flags(opt, bcj, precomp, parallel, dedup);
   fh.original_size = input.size();
   fh.block_count = block_count;
+  fh.checksum = checksum;
 
   ByteWriter w;
   w.reserve(input.size() + 64);
@@ -293,7 +294,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
 //   props_len varint | props bytes | raw LZMA2 payload
 Err encode_lzma2_stream(std::span<const uint8_t> input,
                         const CompressOptions& opt, bool bcj, bool precomp,
-                        bool dedup, std::vector<uint8_t>& out) {
+                        bool dedup, uint32_t checksum, std::vector<uint8_t>& out) {
   std::vector<uint8_t> payload;
   std::vector<uint8_t> props;
   if (Err e = lzma2_encode(input, payload, props); e != Err::Ok) return e;
@@ -308,6 +309,7 @@ Err encode_lzma2_stream(std::span<const uint8_t> input,
   fh.flags = header_flags(opt, bcj, precomp, false, dedup);
   fh.original_size = input.size();
   fh.block_count = 1;
+  fh.checksum = checksum;
 
   BlockHeader bh;
   bh.mode = Mode::Lzma2Fallback;
@@ -411,6 +413,11 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   }
   if (input.size() > kMaxStreamSize) return Err::BadBlockSize;
 
+  // Checksum of the bytes as the caller handed them in. Every transform below
+  // changes what the blocks hold, so this is the only value that can be checked
+  // against the final decoded output.
+  const uint32_t crc = crc32(input);
+
   // Layer 0a: DEFLATE recompression. A ZIP/PNG/JAR is already DEFLATE, so we
   // inflate it and compress the inflated bytes instead, keeping preflate's
   // correction so the exact original can be recreated. Only used when the round
@@ -465,7 +472,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
 
   CompressStats local;
   std::vector<uint8_t> native;
-  if (Err e = encode_native(data, opt, bcj, precomp, dedup, native, local); e != Err::Ok) {
+  if (Err e = encode_native(data, opt, bcj, precomp, dedup, crc, native, local); e != Err::Ok) {
     return e;
   }
 
@@ -474,7 +481,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // about the bytes the user actually gets.
   if (opt.lzma2_fallback && lzma2_available() && !input.empty()) {
     std::vector<uint8_t> fallback;
-    const Err e = encode_lzma2_stream(data, opt, bcj, precomp, dedup, fallback);
+    const Err e = encode_lzma2_stream(data, opt, bcj, precomp, dedup, crc, fallback);
     if (e == Err::Ok && fallback.size() < native.size()) {
       CompressStats fb;
       fb.blocks = 1;

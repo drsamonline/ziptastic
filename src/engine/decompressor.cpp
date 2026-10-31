@@ -192,6 +192,11 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     dst = std::move(original);
   }
 
+  // Final check, after every inverse transform: the bytes must be the ones that
+  // were compressed. Without this a transform bug would return plausible-looking
+  // wrong data, which is the failure mode a stack of layers invites.
+  if (crc32(dst) != fh.checksum) return Err::ChecksumMismatch;
+
   out = std::move(dst);
   if (report) {
     report->blocks = blocks;

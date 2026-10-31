@@ -19,7 +19,8 @@ namespace chce {
 // ---------------------------------------------------------------------------
 
 inline constexpr uint8_t kMagic[4] = {'C', 'H', 'C', 'E'};
-inline constexpr uint8_t kFormatVersion = 1;
+// Version 2 added the trailing CRC-32 of the original bytes.
+inline constexpr uint8_t kFormatVersion = 2;
 
 // Default block size. The prompt starts at 256 KB; Phase 12 tunes it.
 // 4 MiB. Measured: on dickens, 256 KiB gives 2,743,444 bytes, 1 MiB 2,496,909,
@@ -105,6 +106,7 @@ enum class Err : int {
   BadMagic,       // first four bytes are not "CHCE"
   BadVersion,     // version byte is not kFormatVersion
   BadFlags,       // flag byte has bits outside kFlagMask
+  ChecksumMismatch,  // the rebuilt bytes do not match the stored CRC-32
   BadMode,        // mode byte is outside the defined set, or unsupported here
   BadVarint,      // varint is truncated or overflows 64 bits
   Truncated,      // stream ended before a declared field/block completed
@@ -121,6 +123,7 @@ constexpr const char* err_name(Err e) {
     case Err::BadMagic: return "bad-magic";
     case Err::BadVersion: return "bad-version";
     case Err::BadFlags: return "bad-flags";
+    case Err::ChecksumMismatch: return "checksum-mismatch";
     case Err::BadMode: return "bad-mode";
     case Err::BadVarint: return "bad-varint";
     case Err::Truncated: return "truncated";
@@ -140,6 +143,7 @@ constexpr const char* err_message(Err e) {
     case Err::BadMagic: return "not a CHCE stream (bad magic)";
     case Err::BadVersion: return "unsupported CHCE format version";
     case Err::BadFlags: return "invalid header flags";
+    case Err::ChecksumMismatch: return "checksum mismatch";
     case Err::BadMode: return "invalid or unsupported block mode";
     case Err::BadVarint: return "malformed varint";
     case Err::Truncated: return "stream truncated";
@@ -161,6 +165,11 @@ class ByteWriter {
   ByteWriter() = default;
 
   void u8(uint8_t v) { buf_.push_back(v); }
+
+  // Fixed-width little-endian, for fields whose size must not vary.
+  void u32(uint32_t v) {
+    for (int i = 0; i < 4; ++i) buf_.push_back(static_cast<uint8_t>(v >> (8 * i)));
+  }
 
   void varint(uint64_t v) {
     while (v >= 0x80) {
@@ -194,6 +203,15 @@ class ByteWriter {
 class ByteReader {
  public:
   explicit ByteReader(std::span<const uint8_t> in) : in_(in) {}
+
+  bool u32(uint32_t& v) {
+    if (in_.size() - pos_ < 4) return false;
+    uint32_t out = 0;
+    for (int i = 0; i < 4; ++i) out |= static_cast<uint32_t>(in_[pos_ + i]) << (8 * i);
+    pos_ += 4;
+    v = out;
+    return true;
+  }
 
   bool u8(uint8_t& v) {
     if (pos_ >= in_.size()) return false;

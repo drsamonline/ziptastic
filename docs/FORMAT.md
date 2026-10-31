@@ -269,3 +269,36 @@ assume and what a future version may change.
   independent compressions.
 - **Determinism.** The same input with the same options produces byte-identical
   output; the test suite asserts this.
+
+## Version 2: CRC-32 of the original bytes
+
+The header gained a 4-byte little-endian CRC-32 (IEEE 802.3, reflected) of the
+**original, pre-transform** bytes, and `kFormatVersion` went from 1 to 2.
+
+Layout is now:
+
+```
+"CHCE" | version u8 | flags u8 | original_size varint | block_count varint | crc32 u32
+```
+
+The checksum is verified **after every inverse transform has run**, so it covers
+what the user actually gets back rather than what the blocks happened to hold.
+A mismatch returns `Err::ChecksumMismatch` ("checksum mismatch").
+
+**Why it was needed.** The format had no integrity field at all. With precomp,
+BCJ, dedup and per-block backend selection stacked up, a transform bug would
+return plausible-looking wrong bytes and report success — the exact failure mode
+the dedup and preflate work kept flirting with. Measured before the change: a
+single flipped byte in a dedup packet decoded to wrong content of the right
+length, silently. After: `checksum mismatch`, exit 1.
+
+**Cost:** 4 bytes per stream, plus one CRC pass over the output at each end.
+Nothing measurable.
+
+**Compatibility:** version 2 only. Version 1 streams are rejected with
+`bad-version` rather than misread — this project is pre-1.0 and there are no
+version-1 streams in the wild, but a reader that guessed would be worse than one
+that refuses.
+
+**Test:** `corruption_is_detected` flips a byte at three positions and requires
+the decoder to refuse rather than return wrong bytes as success.

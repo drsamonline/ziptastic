@@ -2,11 +2,30 @@
 //
 // Layout (docs/FORMAT.md):
 //   "CHCE" | version u8 | flags u8 | original_size varint | block_count varint
+//   | crc32 u32 (little endian)
 //   then per block: mode u8 | uncompressed_size varint | compressed_size varint
 //                   | metadata | payload
+#include <array>
+
 #include "chimera/block.hpp"
 
 namespace chce {
+
+uint32_t crc32(std::span<const uint8_t> data) {
+  static const auto table = [] {
+    std::array<uint32_t, 256> t{};
+    for (uint32_t i = 0; i < 256; ++i) {
+      uint32_t c = i;
+      for (int k = 0; k < 8; ++k) c = (c & 1u) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
+      t[i] = c;
+    }
+    return t;
+  }();
+
+  uint32_t c = 0xFFFFFFFFu;
+  for (uint8_t b : data) c = table[(c ^ b) & 0xFFu] ^ (c >> 8);
+  return c ^ 0xFFFFFFFFu;
+}
 
 void write_file_header(ByteWriter& w, const FileHeader& h) {
   w.bytes(kMagic, sizeof(kMagic));
@@ -14,6 +33,7 @@ void write_file_header(ByteWriter& w, const FileHeader& h) {
   w.u8(h.flags);
   w.varint(h.original_size);
   w.varint(h.block_count);
+  w.u32(h.checksum);
 }
 
 Err read_file_header(ByteReader& r, FileHeader& h) {
@@ -44,7 +64,11 @@ Err read_file_header(ByteReader& r, FileHeader& h) {
   h.version = version;
   h.flags = flags;
   h.original_size = original_size;
+  uint32_t checksum = 0;
+  if (!r.u32(checksum)) return Err::Truncated;
+
   h.block_count = block_count;
+  h.checksum = checksum;
   return Err::Ok;
 }
 

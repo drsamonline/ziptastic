@@ -321,4 +321,27 @@ TEST(parallel_roundtrips) {
   CHECK_MSG(ar == data, "archive round-trip mismatch");
 }
 
+TEST(corruption_is_detected) {
+  // The format carries a CRC-32 of the original bytes. Without it, a flipped
+  // byte in a payload that still parses produced plausible wrong data and
+  // reported success — the failure mode a stack of transforms invites.
+  chce_test::Rng rng(31);
+  auto data = make_data(rng, 40000, 2);
+  std::vector<uint8_t> compressed;
+  CHECK_ERR(compress(data, compressed, CompressOptions{}), Err::Ok);
+
+  int detected = 0;
+  for (size_t off : {compressed.size() / 3, compressed.size() / 2,
+                     compressed.size() * 3 / 4}) {
+    auto bad = compressed;
+    bad[off] ^= 0xFF;
+    std::vector<uint8_t> out;
+    const Err e = decompress(bad, out);
+    if (e != Err::Ok) ++detected;
+    else CHECK_MSG(out == data, "corrupt stream decoded to wrong bytes as success");
+  }
+  CHECK_MSG(detected >= 2, "corruption went undetected in " +
+                               std::to_string(3 - detected) + " of 3 cases");
+}
+
 TEST_MAIN()

@@ -74,7 +74,10 @@ TEST(file_header_bad_magic) {
 
 TEST(file_header_bad_version) {
   auto buf = valid_file_header();
-  buf[4] = 2;  // version 2 does not exist yet
+  // Reference the constant rather than a literal: this test hard-coded 2 as
+  // "does not exist yet" until version 2 shipped, and then silently stopped
+  // testing anything.
+  buf[4] = static_cast<uint8_t>(kFormatVersion + 1);
   ByteReader r(buf);
   FileHeader h;
   CHECK_ERR(read_file_header(r, h), Err::BadVersion);
