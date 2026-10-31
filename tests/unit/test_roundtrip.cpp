@@ -77,7 +77,8 @@ void check_roundtrip(const std::vector<uint8_t>& data, size_t block_size,
                                   " bytes, block " + std::to_string(block_size));
 
   // Only implemented modes may appear in a stream.
-  CHECK_EQ(stats.raw_blocks + stats.lzma2_blocks + stats.parsed_blocks,
+  CHECK_EQ(stats.raw_blocks + stats.lzma2_blocks + stats.parsed_blocks +
+               stats.huff_blocks,
            stats.blocks);
 
   // Compression must be deterministic (same bytes out on a second pass).
@@ -198,7 +199,10 @@ TEST(unimplemented_modes_rejected) {
 
   for (uint8_t m = 1; m <= mode_byte(Mode::Ppmd); ++m) {
     // Skip the modes this build actually implements.
-    if (m == mode_byte(Mode::Lzma2Fallback) || m == mode_byte(Mode::RansCtx)) continue;
+    if (m == mode_byte(Mode::Lzma2Fallback) || m == mode_byte(Mode::RansCtx) ||
+        m == mode_byte(Mode::HuffStatic) || m == mode_byte(Mode::HuffAdapt)) {
+      continue;
+    }
     // Rewrite the single block's mode byte.
     ByteReader r(compressed);
     FileHeader fh;

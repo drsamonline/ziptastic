@@ -34,6 +34,8 @@ struct CompressOptions {
   bool range = true;
   // x86 BCJ transform, applied when the input looks like code.
   bool bcj = true;
+  // Byte-level Huffman backends (Phase 7).
+  bool huffman = true;
   uint32_t window = 64u << 20; // match-finder window
 };
 
@@ -42,6 +44,7 @@ struct CompressStats {
   uint64_t raw_blocks = 0;
   uint64_t lzma2_blocks = 0;
   uint64_t parsed_blocks = 0;
+  uint64_t huff_blocks = 0;
   uint64_t tokens = 0;
   uint64_t payload_bytes = 0;
   // True when the LZMA2 fallback won and the stream is one fallback block.

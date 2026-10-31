@@ -10,6 +10,7 @@
 #include "chimera/block.hpp"
 #include "codecs/lzma2_fallback.hpp"
 #include "token_stream.hpp"
+#include "chimera/huffman.hpp"
 #include "entropy/token_coder.hpp"
 #include "precompressors/bcj_x86.hpp"
 
@@ -72,8 +73,24 @@ Err decode_body(const BlockHeader& hdr, std::span<const uint8_t> body,
     }
 
     // Defined in the format but not yet implemented in this engine build.
-    case Mode::HuffStatic:
-    case Mode::HuffAdapt:
+    case Mode::HuffStatic: {
+      ByteReader r(body);
+      if (Err e = huff_static_decode(r, static_cast<uint32_t>(hdr.uncompressed_size), dst);
+          e != Err::Ok) {
+        return e;
+      }
+      return Err::Ok;
+    }
+
+    case Mode::HuffAdapt: {
+      ByteReader r(body);
+      if (Err e = huff_adaptive_decode(r, static_cast<uint32_t>(hdr.uncompressed_size), dst);
+          e != Err::Ok) {
+        return e;
+      }
+      return Err::Ok;
+    }
+
     case Mode::BwtBsc:
     case Mode::Brotli:
     case Mode::Zstd:

@@ -9,6 +9,7 @@
 #include "chimera/coarse_index.hpp"
 #include "parser.hpp"
 #include "token_stream.hpp"
+#include "chimera/huffman.hpp"
 #include "entropy/token_coder.hpp"
 #include "precompressors/bcj_x86.hpp"
 
@@ -103,6 +104,28 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
       stats.tokens += tokens.size();
       cands.push_back(std::move(pb));
 
+      // Byte-level Huffman: no LZ, just the block's byte distribution. Only
+      // worth offering where LZ finds little but the bytes are skewed.
+      if (opt.huffman) {
+        ByteWriter hs;
+        huff_static_encode(block, hs);
+        EncodedBlock hb;
+        hb.hdr.mode = Mode::HuffStatic;
+        hb.hdr.uncompressed_size = n;
+        hb.hdr.compressed_size = hs.size();
+        hb.body = hs.take();
+        cands.push_back(std::move(hb));
+
+        ByteWriter ha;
+        huff_adaptive_encode(block, ha);
+        EncodedBlock hab;
+        hab.hdr.mode = Mode::HuffAdapt;
+        hab.hdr.uncompressed_size = n;
+        hab.hdr.compressed_size = ha.size();
+        hab.body = ha.take();
+        cands.push_back(std::move(hab));
+      }
+
       if (opt.range) {
         ByteWriter rbody;
         encode_tokens_range(rbody, input, pos, pos + n, tokens);
@@ -137,6 +160,9 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
     if (best->hdr.mode == Mode::Raw) ++stats.raw_blocks;
     if (best->hdr.mode == Mode::Lzma2Fallback) ++stats.lzma2_blocks;
     if (best->hdr.mode == Mode::RansCtx) ++stats.parsed_blocks;
+    if (best->hdr.mode == Mode::HuffStatic || best->hdr.mode == Mode::HuffAdapt) {
+      ++stats.huff_blocks;
+    }
     stats.payload_bytes += best->hdr.compressed_size;
 
     pos += n;

@@ -30,6 +30,7 @@ the I/O path is a network-backed filesystem. Ratios are the meaningful column.
 | 5 — Adaptive tables + range coder | 54,619,596 (-5.72% vs Phase 4) | n/a | 10-72 | **done via range coder** |
 | 5b — x86 BCJ transform | 54,243,754 (-0.69% vs Phase 5) | n/a | 10-72 | **done; ooffice beats xz -9** |
 | 6 — Coarse long-range index | 54,243,717 (-37 B) | n/a | 10-72 | **done; gate arithmetic corrected** |
+| 7 — Huffman backends | 54,243,717 (unchanged) | n/a | 10-72 | **done; one gate is block-size dependent** |
 | 6 — Coarse index | | | | not started |
 | 7 — Huffman modes | | | | not started |
 | 8 — Semantic precompression | | | | not started |
@@ -625,3 +626,70 @@ no long-range redundancy, which is why it is a flag (`-9` enables it,
 miniature, no false matches on 300 KB of random bytes, every reported match
 verified byte for byte on repetitive data, the anchored-slot policy surviving
 3 MB of noise, and a memory bound. 12/12 ctest suites pass.
+
+## Phase 7 — Static and adaptive Huffman
+
+`include/chimera/huffman.hpp` + `src/entropy/huffman.cpp`: canonical Huffman
+(static, two-pass, code lengths in the body) and an adaptive variant (rebuilds
+every 256 symbols from counts both sides maintain, so nothing is transmitted).
+Modes `0x02` and `0x03`, offered as per-block candidates alongside RAW, the
+token path and LZMA2.
+
+**These code block bytes, not tokens.** A Huffman coder over the *token* stream
+would be strictly worse than the rANS and range coders already in the tree and
+would never be selected, so it would be dead weight. Coding bytes gives a
+genuinely different trade-off: it helps where LZ finds little but the byte
+distribution is skewed, and loses to RAW where there is no skew.
+
+### Gate 1 — adaptive beats static by >=2% on `mozilla`: PASSED
+
+Per block over `mozilla` (51,220,480 bytes, 196 blocks of 256 KiB):
+
+| | bytes |
+|---|---|
+| RAW (stored) | 51,220,480 |
+| HUFF_STATIC | 37,528,334 |
+| HUFF_ADAPT | **36,205,500** |
+
+**Adaptive is 3.52% smaller than static**, against a 2% target. Paletted binary
+drifts within the file, and a 256-symbol rebuild cadence tracks it. `ooffice`
+shows the opposite — +0.01%, i.e. a wash — which is what you would expect from a
+more homogeneous executable.
+
+### Gate 2 — RAW beats Huffman by >=5% on incompressible blocks: PASSED ONLY FOR SMALL BLOCKS
+
+Direction is right everywhere, but the margin is the 256-byte code-length header
+amortised over the block, so it is a function of block size, not of the coder.
+Measured on 1 MiB of uniform random bytes:
+
+| block size | RAW vs static Huffman |
+|---|---|
+| 256 KiB (our default) | 0.10% |
+| 64 KiB | 0.39% |
+| 16 KiB | 1.54% |
+| **4 KiB** | **5.68%** |
+| 1 KiB | 18.75% |
+
+So the 5% target is met at 4 KiB blocks and not at the default. Recorded as
+measured rather than tuned to fit: shrinking blocks to pass a ratio gate would
+cost more elsewhere than the gate is worth.
+
+### Effect on the corpus: none, and that is the expected answer
+
+`dickens` 2,960,174, `ooffice` 2,328,361, `samba` 4,145,857 — all identical to
+Phase 6. On real data the LZ + range path wins every block, so the Huffman
+candidates are never selected. They exist for the case where LZ finds nothing
+but the bytes are skewed; on this corpus that case does not arise, and the
+selector correctly declines them.
+
+**Bug found.** The decode-tree builder held a reference into a `std::vector` and
+then called `resize()` on it, writing interior nodes through a dangling
+reference. Blocks with one or two distinct symbols passed (no interior nodes
+needed) while anything larger failed — which is exactly how it presented: the
+static round-trip failed at 255 bytes and not at 1 or 2.
+
+**Tests.** `unit.huffman`, 7 cases: static and adaptive round-trips across six
+sizes including single-symbol and all-256-uniform, adaptive round-trips across
+rebuild boundaries with a distribution that changes partway, static compression
+on skewed data, the impossibility check that Huffman cannot beat raw on uniform
+data, determinism, and truncation rejection. 13/13 ctest suites pass.

@@ -56,6 +56,7 @@ add_library(chce_core STATIC
   src/engine/match_finder.cpp
   src/engine/parser.cpp
   src/engine/token_stream.cpp
+  src/entropy/huffman.cpp
   src/entropy/rans.cpp
   src/entropy/range_coder.cpp
   src/precompressors/bcj_x86.cpp
