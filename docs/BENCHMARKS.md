@@ -1406,3 +1406,43 @@ significant capability added from the vendored shelf that is permissively licens
 
 **Tests:** `unit.jpeg`, 3 cases — header detection, declining non-JPEG data, and a
 bit-exact round trip of a real vendored JPEG. 19/19 suites pass.
+
+## PDF stream extraction
+
+PDF stores its content streams as DEFLATE inside `stream` ... `endstream`. The
+preflate stage now finds those, so a PDF is recompressed at the same level as a
+ZIP: the stream is inflated, the inflated bytes go through the normal pipeline,
+and preflate's recipe reproduces the original stream exactly.
+
+**Measured through the CLI:**
+
+| file | before | after | note |
+|---|---|---|---|
+| `poor.pdf` (level-1 deflate, 52,359 B) | 31,452 | **6,562** | **-79.1%**, `precomp=True` |
+| `big.pdf` (level-9 deflate, 25,926 B) | 6,034 | 6,034 | `precomp=False` — declined, and correctly |
+
+The second row matters as much as the first: when the PDF's DEFLATE was already
+good, inflating buys nothing and the stage declines. It only pays where the
+producer's deflate was weak — which is the common case for PDFs written by fast or
+legacy encoders.
+
+**Two bugs, both of which failed silently:**
+
+1. **The end-of-line before `endstream` is not part of the stream.** Slicing to
+   `endstream` included it, making the DEFLATE one byte too long. The parse simply
+   returned false — no error, no signal, the transform just never engaged.
+2. **PDF's `/FlateDecode` is zlib-wrapped (RFC 1950)** — a 2-byte header and a
+   4-byte Adler-32 around the raw DEFLATE. preflate works on raw DEFLATE, so it
+   has to be handed the middle. The wrapper stays in the skeleton as literal
+   bytes, which keeps the repack exact without recomputing the checksum. ZIP
+   stores raw DEFLATE, which is why this never came up before.
+
+Both were found the same way: by checking whether the transform had actually
+engaged (the `kFlagPrecomp` bit) rather than trusting the output size. The first
+version "improved" `poor.pdf` by 40% through the ordinary pipeline while the new
+code did nothing at all.
+
+**Not done, and why:** MP3 via `packmp3` is **LGPL** (it depends on `packjpg`), so
+it is blocked by the same MIT-only rule as bzip3. GIF and PDF handling inside
+precomp-cpp live in its 8,512-line `precomp.cpp` rather than in modules — GIF would
+mean lifting code out of a monolith, so PDF was written from scratch instead.

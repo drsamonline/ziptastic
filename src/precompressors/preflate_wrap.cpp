@@ -101,6 +101,72 @@ std::vector<Stream> scan_zip(const std::vector<uint8_t>& in) {
   return streams;
 }
 
+
+// PDF stores its content streams as DEFLATE inside `stream` ... `endstream`.
+// Finding them is our own code (no licence entanglement): scan for the keyword,
+// skip the end-of-line, and take everything up to `endstream`. A stream that is
+// not DEFLATE simply fails to parse and is left alone.
+std::vector<Stream> scan_pdf(const std::vector<uint8_t>& in) {
+  std::vector<Stream> streams;
+  if (in.size() < 8 || std::memcmp(in.data(), "%PDF", 4) != 0) return streams;
+
+  const char* kStream = "stream";
+  const char* kEnd = "endstream";
+  size_t pos = 0;
+  while (pos + 6 < in.size()) {
+    const void* hit = std::memchr(in.data() + pos, 's', in.size() - pos);
+    if (!hit) break;
+    const size_t at = static_cast<size_t>(static_cast<const uint8_t*>(hit) - in.data());
+    pos = at + 1;
+    if (at + 6 > in.size() || std::memcmp(in.data() + at, kStream, 6) != 0) continue;
+
+    size_t data = at + 6;
+    if (data < in.size() && in[data] == '\r') ++data;
+    if (data < in.size() && in[data] == '\n') ++data;
+
+    // End of the data: the next "endstream".
+    size_t end = data;
+    while (end + 9 <= in.size()) {
+      if (in[end] == 'e' && std::memcmp(in.data() + end, kEnd, 9) == 0) break;
+      ++end;
+    }
+    if (end + 9 > in.size()) break;
+    if (end <= data) { pos = end + 9; continue; }
+
+    // The bytes just before "endstream" are an end-of-line that belongs to the
+    // file's syntax, not to the stream. Feeding it to the DEFLATE parser makes
+    // the stream one byte too long and the parse fails silently — which is
+    // exactly what happened first.
+    size_t data_end = end;
+    while (data_end > data && (in[data_end - 1] == '\n' || in[data_end - 1] == '\r')) {
+      --data_end;
+    }
+    if (data_end <= data) { pos = end + 9; continue; }
+
+    // PDF's /FlateDecode streams are zlib-wrapped (RFC 1950): a 2-byte header
+    // and a 4-byte Adler-32 around the raw DEFLATE. preflate works on the raw
+    // DEFLATE only, so hand it the middle and leave the wrapper in the skeleton
+    // as literal bytes. (ZIP stores raw DEFLATE, which is why this did not come
+    // up until PDF.)
+    size_t inner = data;
+    size_t inner_len = data_end - data;
+    if (inner_len > 6 && (in[inner] & 0x0F) == 8 &&
+        ((static_cast<uint32_t>(in[inner]) << 8) | in[inner + 1]) % 31 == 0) {
+      inner += 2;
+      inner_len -= 6;  // header + Adler-32
+    }
+
+    Stream s;
+    if (inner_len > 4 &&
+        parse_stream(in.data() + inner, static_cast<uint32_t>(inner_len), s)) {
+      s.offset = static_cast<uint32_t>(inner);
+      streams.push_back(std::move(s));
+    }
+    pos = end + 9;
+  }
+  return streams;
+}
+
 bool build_payload(const std::vector<uint8_t>& in, const std::vector<Stream>& streams,
                    std::vector<uint8_t>& payload) {
   payload.clear();
@@ -134,6 +200,7 @@ bool preflate_unpack(const std::vector<uint8_t>& input, std::vector<uint8_t>& pa
   if (input.size() < 64) return false;
 
   std::vector<Stream> streams = scan_zip(input);
+  if (streams.empty()) streams = scan_pdf(input);
   if (streams.empty()) {
     // Not a ZIP: try the whole input as one bare DEFLATE stream.
     Stream s;
