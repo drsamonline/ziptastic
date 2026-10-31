@@ -179,3 +179,78 @@ future scan should run that first; otherwise two-thirds of the shelf looks bare.
 - The negative results (§4.1) are reusable too: any project in this family that
   uses BWT+QLFC should expect delta, shuffle and bit-plane transforms to lose, and
   should not spend time on them.
+
+---
+
+# Part 2 — the empty submodules, fetched and measured
+
+`git submodule update --init` was run for the two most promising of the 23 empty
+trees. Both were then measured, not just read.
+
+## bzip3 — measurably better than our BWT, and licence-blocked
+
+`kspalaiologos/bzip3`, **LGPL-3**, one C file (`libbz3.c`), clean API.
+
+Its pipeline is BWT + LZP + a **context-mixing order-0 arithmetic coder**. Ours is
+BWT + QLFC (libbsc's adaptive coder). Measured on identical 4 MiB blocks:
+
+| file | libbsc BWT | bzip3 | delta |
+|---|---|---|---|
+| `mr` | 2,249,498 | **2,151,583** | **-4.35%** |
+| `x-ray` | 3,798,258 | **3,674,226** | **-3.27%** |
+| `ooffice` | 2,565,414 | **2,526,126** | -1.53% |
+| `dickens` | 2,359,168 | **2,330,284** | -1.22% |
+| `reymont` | 1,024,552 | **1,022,729** | -0.18% |
+| `osdb` | 2,347,660 | 2,355,306 | +0.33% |
+| `xml` | 374,656 | 399,334 | **+6.59%** |
+
+**bzip3 wins on five of seven files**, and the wins are large where they happen.
+Offered as a per-block candidate, the selector would take every win and decline
+the XML loss. Applying it to the current corpus results: `mr` -4.35%, `x-ray`
+-3.27%, `dickens` -1.07%, `reymont` -0.18% — roughly 250 KB on those files alone.
+
+**It cannot ship.** ziptastic is MIT, and its README states that only
+permissively licensed sources are linked in. bzip3 is LGPL-3; static linking it
+into an MIT binary imposes relinking obligations that contradict that promise.
+
+**What to take instead:** the entire advantage is in the *entropy stage*, not the
+BWT. libbsc already gives us the BWT and its inverse; what bzip3 adds is a
+context-mixing coder over the transformed bytes. That is a mechanism we can write
+ourselves — the engine already has rANS, a range coder and a CM backend — and it
+would be licence-clean. This is the single most valuable engineering direction
+found in the whole scan after JPEG.
+
+## paq8px — the strongest CM compressor, GPL, unusable
+
+**GPL-2+**, 135 source files, Copyright Mahoney/Osnach/Ratushnyak et al. Nothing
+here can be linked into an MIT binary, and unlike bzip3 there is no single
+mechanism to lift — its strength comes from hundreds of hand-tuned models.
+
+## The pattern this scan confirms
+
+Of the 44 trees, the ones with the best measured results are systematically the
+copyleft ones:
+
+| tree | licence | measured |
+|---|---|---|
+| bzip3 | LGPL-3 | **-4.35%** on mr |
+| paq8px | GPL-2+ | strongest CM in existence |
+| freearc (ARC) | GPL-2 | REP, DICT, Tornado |
+| srep | none | the technique already reimplemented |
+| lzo, advancecomp, zstd-dev | GPL | not applicable |
+
+The permissive subset — precomp-cpp/brunsli (Apache/MIT), bitshuffle (MIT),
+brotli (MIT), lz4 (BSD), libdeflate (MIT), zopfli (Apache) — is where anything we
+can actually ship has to come from. That makes **reimplementation from mechanism
+descriptions**, not adoption, the only route to the best ideas in this tree. The
+coarse index and dedup stage already followed that route; BWT+CM would be the
+next.
+
+## Revised ranking
+
+1. **JPEG recompression via brunsli** (MIT) — largest real-world win, licence-clean.
+2. **Our own CM entropy stage on top of libbsc's BWT** — captures bzip3's
+   measured -4.35% without the LGPL, using machinery the engine already has.
+3. MP3/GIF/PDF via precomp's contrib.
+4. Word-dictionary as a per-block candidate.
+5. REP's memory tricks, only for multi-GB streams.
