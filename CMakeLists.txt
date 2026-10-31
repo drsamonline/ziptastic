@@ -171,6 +171,8 @@ if(NOT MSVC)
   target_compile_options(ppmd_vendor PRIVATE -w)
 endif()
 
+find_package(Threads REQUIRED)
+
 add_library(chce_core STATIC
   src/engine/block_writer.cpp
   src/engine/compressor.cpp
@@ -195,7 +197,7 @@ target_include_directories(chce_core
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(chce_core PRIVATE liblzma preflate_shim bsc_vendor zpaq_vendor ppmd_vendor)
+target_link_libraries(chce_core PRIVATE liblzma preflate_shim bsc_vendor zpaq_vendor ppmd_vendor Threads::Threads)
 target_include_directories(chce_core PRIVATE ${XZ_DIR}/src/liblzma/api)
 
 if(MSVC)

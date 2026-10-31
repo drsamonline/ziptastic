@@ -38,6 +38,11 @@ struct CompressOptions {
   bool huffman = true;
   // BWT backend (Phase 9).
   bool bwt = true;
+  // Parallel mode: blocks become self-contained (no cross-block matches) so they
+  // can be compressed and decompressed on several threads. Archive mode, the
+  // default, keeps them coupled for ratio.
+  bool parallel = false;
+  unsigned threads = 0;  // 0 = hardware concurrency
   uint32_t window = 64u << 20; // match-finder window
 };
 

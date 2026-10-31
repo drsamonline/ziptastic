@@ -86,7 +86,10 @@ TEST(file_header_bad_version) {
 
 TEST(file_header_bad_flags) {
   auto buf = valid_file_header();
-  buf[5] = 0x10;  // bit outside kFlagMask (0x08 is kFlagBcj now)
+  // A bit outside kFlagMask. This has moved twice now as flags were added
+  // (0x08 became kFlagBcj, then 0x10 became kFlagParallel), which is the test
+  // doing its job: a new flag must be registered in kFlagMask or rejected.
+  buf[5] = 0x80;
   ByteReader r(buf);
   FileHeader h;
   CHECK_ERR(read_file_header(r, h), Err::BadFlags);

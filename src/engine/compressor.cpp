@@ -3,7 +3,9 @@
 #include "compressor.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
+#include <thread>
 
 #include "codecs/lzma2_fallback.hpp"
 #include "chimera/coarse_index.hpp"
@@ -46,178 +48,238 @@ std::vector<EncodedBlock> encode_candidates(std::span<const uint8_t> block,
   return cands;
 }
 
-uint8_t header_flags(const CompressOptions& opt, bool bcj, bool precomp) {
+uint8_t header_flags(const CompressOptions& opt, bool bcj, bool precomp,
+                     bool parallel) {
   uint8_t f = 0;
   if (opt.coarse) f |= kFlagCoarse;
   if (opt.max_ratio) f |= kFlagMaxRatio;
   if (opt.precomp && precomp) f |= kFlagPrecomp;
+  if (parallel) f |= kFlagParallel;
   if (bcj) f |= kFlagBcj;
   return f;
 }
 
 // The CHCE-native encoding: one block per `block_size` chunk, each block
 // optimally parsed against the fine match finder.
+// Encodes one block into the smallest of its candidate encodings.
+//
+// Extracted so that archive mode and parallel mode share exactly one
+// implementation. They differ only in the state handed in: archive mode passes
+// the stream-wide finder, cost model and coarse index so matches can reach back
+// across block boundaries; parallel mode passes a finder built over the block
+// alone, which is what makes the blocks independent.
+EncodedBlock encode_one_block(std::span<const uint8_t> input, size_t pos, size_t n,
+                              MatchFinder& finder, const CostModel& model,
+                              CoarseIndex* coarse, const CompressOptions& opt,
+                              CompressStats* stats) {
+  const std::span<const uint8_t> block = input.subspan(pos, n);
+  std::vector<Token> tokens;
+
+  std::vector<EncodedBlock> cands = encode_candidates(block, opt);
+  if (opt.parse && n > 0) {
+    const uint64_t cost = parse_block(input, pos, pos + n, finder, model,
+                                      tokens, ParseOptions{},
+                                      coarse);
+    (void)cost;
+    // Static and adaptive rANS both live in RANS_CTX; the body's first byte
+    // says which model it is, so the smaller candidate can be taken freely.
+    ByteWriter body;
+    encode_tokens_rans(body, input, pos, pos + n, tokens);
+    EncodedBlock pb;
+    pb.hdr.mode = Mode::RansCtx;
+    pb.hdr.uncompressed_size = n;
+    pb.hdr.compressed_size = body.size();
+    pb.body = body.take();
+    stats->tokens += tokens.size();
+    cands.push_back(std::move(pb));
+
+    // PPMd: models context rather than position, which is why it is the text
+    // backend. Offered per block so binary blocks never pay for it.
+    {
+      std::vector<uint8_t> pb;
+      if (ppmd_compress_block(block, pb)) {
+        EncodedBlock pbk;
+        pbk.hdr.mode = Mode::Ppmd;
+        pbk.hdr.uncompressed_size = n;
+        pbk.hdr.compressed_size = pb.size();
+        pbk.body = std::move(pb);
+        cands.push_back(std::move(pbk));
+      }
+    }
+
+    // Context mixing, only under --max-ratio: tens of times slower than
+    // anything else here, and only worth paying when the caller asks for the
+    // ratio ceiling.
+    if (opt.max_ratio) {
+      std::vector<uint8_t> zb;
+      const std::vector<uint8_t> blk(block.begin(), block.end());
+      if (zpaq_compress_block(blk, zb)) {
+        EncodedBlock z;
+        z.hdr.mode = Mode::CmZpaq;
+        z.hdr.uncompressed_size = n;
+        z.hdr.compressed_size = zb.size();
+        z.body = std::move(zb);
+        cands.push_back(std::move(z));
+      }
+    }
+
+    // Burrows-Wheeler, via libbsc. A different family from LZ: it wins on
+    // statistically structured binary and loses on ordinary text, so it is
+    // offered per block and only kept where it is smallest.
+    if (opt.bwt) {
+      std::vector<uint8_t> bb;
+      if (bsc_compress_block(block, bb)) {
+        EncodedBlock b;
+        b.hdr.mode = Mode::BwtBsc;
+        b.hdr.uncompressed_size = n;
+        b.hdr.compressed_size = bb.size();
+        b.body = std::move(bb);
+        cands.push_back(std::move(b));
+      }
+    }
+
+    // Byte-level Huffman: no LZ, just the block's byte distribution. Only
+    // worth offering where LZ finds little but the bytes are skewed.
+    if (opt.huffman) {
+      ByteWriter hs;
+      huff_static_encode(block, hs);
+      EncodedBlock hb;
+      hb.hdr.mode = Mode::HuffStatic;
+      hb.hdr.uncompressed_size = n;
+      hb.hdr.compressed_size = hs.size();
+      hb.body = hs.take();
+      cands.push_back(std::move(hb));
+
+      ByteWriter ha;
+      huff_adaptive_encode(block, ha);
+      EncodedBlock hab;
+      hab.hdr.mode = Mode::HuffAdapt;
+      hab.hdr.uncompressed_size = n;
+      hab.hdr.compressed_size = ha.size();
+      hab.body = ha.take();
+      cands.push_back(std::move(hab));
+    }
+
+    if (opt.range) {
+      ByteWriter rbody;
+      encode_tokens_range(rbody, input, pos, pos + n, tokens);
+      EncodedBlock rb;
+      rb.hdr.mode = Mode::RansCtx;
+      rb.hdr.uncompressed_size = n;
+      rb.hdr.compressed_size = rbody.size();
+      rb.body = rbody.take();
+      cands.push_back(std::move(rb));
+    }
+
+    if (opt.adaptive) {
+      ByteWriter abody;
+      encode_tokens_rans_adaptive(abody, input, pos, pos + n, tokens);
+      EncodedBlock ab;
+      ab.hdr.mode = Mode::RansCtx;
+      ab.hdr.uncompressed_size = n;
+      ab.hdr.compressed_size = abody.size();
+      ab.body = abody.take();
+      cands.push_back(std::move(ab));
+    }
+  }
+  auto best = std::min_element(
+      cands.begin(), cands.end(), [](const EncodedBlock& a, const EncodedBlock& b) {
+        return a.hdr.compressed_size < b.hdr.compressed_size;
+      });
+  return std::move(*best);
+}
+
 Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
                   bool bcj, bool precomp, std::vector<uint8_t>& out,
                   CompressStats& stats) {
-  // The finder and the cost model live for the whole stream: the dictionary
-  // carries across blocks, and the model is fitted to the whole input rather
-  // than re-learned per block.
-  MatchFinder::Options mf_opt;
-  mf_opt.window = opt.window;
-  mf_opt.nice_len = kMaxMatchLen;
-  MatchFinder finder(input, mf_opt);
-  // A small discount on coarse matches: the distance code for an extreme
-  // distance is cheaper than the 5 + log2(dist) slot model suggests, and a
-  // coarse match replaces a run of literals priced at full rate.
-  StaticCostModel model(input, /*coarse_discount=*/0);
-  CoarseIndex coarse(input);
-
-  std::vector<Token> tokens;
+  const size_t block_count =
+      input.empty() ? 0 : (input.size() + opt.block_size - 1) / opt.block_size;
+  const bool parallel = opt.parallel && block_count > 1;
 
   FileHeader fh;
   fh.version = kFormatVersion;
-  fh.flags = header_flags(opt, bcj, precomp);
+  fh.flags = header_flags(opt, bcj, precomp, parallel);
   fh.original_size = input.size();
-  fh.block_count =
-      input.empty() ? 0 : (input.size() + opt.block_size - 1) / opt.block_size;
+  fh.block_count = block_count;
 
   ByteWriter w;
   w.reserve(input.size() + 64);
   write_file_header(w, fh);
 
-  size_t pos = 0;
-  while (pos < input.size()) {
-    const size_t n = std::min(opt.block_size, input.size() - pos);
-    const std::span<const uint8_t> block = input.subspan(pos, n);
-
-    std::vector<EncodedBlock> cands = encode_candidates(block, opt);
-    if (opt.parse && n > 0) {
-      const uint64_t cost = parse_block(input, pos, pos + n, finder, model,
-                                        tokens, ParseOptions{},
-                                        opt.coarse ? &coarse : nullptr);
-      (void)cost;
-      // Static and adaptive rANS both live in RANS_CTX; the body's first byte
-      // says which model it is, so the smaller candidate can be taken freely.
-      ByteWriter body;
-      encode_tokens_rans(body, input, pos, pos + n, tokens);
-      EncodedBlock pb;
-      pb.hdr.mode = Mode::RansCtx;
-      pb.hdr.uncompressed_size = n;
-      pb.hdr.compressed_size = body.size();
-      pb.body = body.take();
-      stats.tokens += tokens.size();
-      cands.push_back(std::move(pb));
-
-      // PPMd: models context rather than position, which is why it is the text
-      // backend. Offered per block so binary blocks never pay for it.
-      {
-        std::vector<uint8_t> pb;
-        if (ppmd_compress_block(block, pb)) {
-          EncodedBlock pbk;
-          pbk.hdr.mode = Mode::Ppmd;
-          pbk.hdr.uncompressed_size = n;
-          pbk.hdr.compressed_size = pb.size();
-          pbk.body = std::move(pb);
-          cands.push_back(std::move(pbk));
-        }
-      }
-
-      // Context mixing, only under --max-ratio: tens of times slower than
-      // anything else here, and only worth paying when the caller asks for the
-      // ratio ceiling.
-      if (opt.max_ratio) {
-        std::vector<uint8_t> zb;
-        const std::vector<uint8_t> blk(block.begin(), block.end());
-        if (zpaq_compress_block(blk, zb)) {
-          EncodedBlock z;
-          z.hdr.mode = Mode::CmZpaq;
-          z.hdr.uncompressed_size = n;
-          z.hdr.compressed_size = zb.size();
-          z.body = std::move(zb);
-          cands.push_back(std::move(z));
-        }
-      }
-
-      // Burrows-Wheeler, via libbsc. A different family from LZ: it wins on
-      // statistically structured binary and loses on ordinary text, so it is
-      // offered per block and only kept where it is smallest.
-      if (opt.bwt) {
-        std::vector<uint8_t> bb;
-        if (bsc_compress_block(block, bb)) {
-          EncodedBlock b;
-          b.hdr.mode = Mode::BwtBsc;
-          b.hdr.uncompressed_size = n;
-          b.hdr.compressed_size = bb.size();
-          b.body = std::move(bb);
-          cands.push_back(std::move(b));
-        }
-      }
-
-      // Byte-level Huffman: no LZ, just the block's byte distribution. Only
-      // worth offering where LZ finds little but the bytes are skewed.
-      if (opt.huffman) {
-        ByteWriter hs;
-        huff_static_encode(block, hs);
-        EncodedBlock hb;
-        hb.hdr.mode = Mode::HuffStatic;
-        hb.hdr.uncompressed_size = n;
-        hb.hdr.compressed_size = hs.size();
-        hb.body = hs.take();
-        cands.push_back(std::move(hb));
-
-        ByteWriter ha;
-        huff_adaptive_encode(block, ha);
-        EncodedBlock hab;
-        hab.hdr.mode = Mode::HuffAdapt;
-        hab.hdr.uncompressed_size = n;
-        hab.hdr.compressed_size = ha.size();
-        hab.body = ha.take();
-        cands.push_back(std::move(hab));
-      }
-
-      if (opt.range) {
-        ByteWriter rbody;
-        encode_tokens_range(rbody, input, pos, pos + n, tokens);
-        EncodedBlock rb;
-        rb.hdr.mode = Mode::RansCtx;
-        rb.hdr.uncompressed_size = n;
-        rb.hdr.compressed_size = rbody.size();
-        rb.body = rbody.take();
-        cands.push_back(std::move(rb));
-      }
-
-      if (opt.adaptive) {
-        ByteWriter abody;
-        encode_tokens_rans_adaptive(abody, input, pos, pos + n, tokens);
-        EncodedBlock ab;
-        ab.hdr.mode = Mode::RansCtx;
-        ab.hdr.uncompressed_size = n;
-        ab.hdr.compressed_size = abody.size();
-        ab.body = abody.take();
-        cands.push_back(std::move(ab));
-      }
-    }
-    auto best = std::min_element(
-        cands.begin(), cands.end(), [](const EncodedBlock& a, const EncodedBlock& b) {
-          return a.hdr.compressed_size < b.hdr.compressed_size;
-        });
-
-    write_block_header(w, best->hdr);
-    w.bytes(best->body);
-
-    ++stats.blocks;
-    if (best->hdr.mode == Mode::Raw) ++stats.raw_blocks;
-    if (best->hdr.mode == Mode::Lzma2Fallback) ++stats.lzma2_blocks;
-    if (best->hdr.mode == Mode::RansCtx) ++stats.parsed_blocks;
-    if (best->hdr.mode == Mode::HuffStatic || best->hdr.mode == Mode::HuffAdapt) {
+  auto account = [&stats](const EncodedBlock& e) {
+    if (e.hdr.mode == Mode::Raw) ++stats.raw_blocks;
+    if (e.hdr.mode == Mode::Lzma2Fallback) ++stats.lzma2_blocks;
+    if (e.hdr.mode == Mode::RansCtx) ++stats.parsed_blocks;
+    if (e.hdr.mode == Mode::HuffStatic || e.hdr.mode == Mode::HuffAdapt) {
       ++stats.huff_blocks;
     }
-    if (best->hdr.mode == Mode::BwtBsc) ++stats.bwt_blocks;
-    ++stats.mode_counts[static_cast<uint8_t>(best->hdr.mode) & 15];
-    stats.payload_bytes += best->hdr.compressed_size;
+    if (e.hdr.mode == Mode::BwtBsc) ++stats.bwt_blocks;
+    ++stats.mode_counts[static_cast<uint8_t>(e.hdr.mode) & 15];
+    ++stats.blocks;
+  };
 
-    pos += n;
+  const size_t nblocks = fh.block_count;
+
+  if (parallel) {
+    // Parallel mode. Every block is encoded against itself: its own match
+    // finder over its own slice, no coarse index, no carried dictionary. Blocks
+    // therefore reference only themselves, which is what makes them
+    // independent — and it is the whole difference from archive mode.
+    std::vector<EncodedBlock> encoded(nblocks);
+    unsigned nt = opt.threads ? opt.threads : std::thread::hardware_concurrency();
+    if (nt == 0) nt = 1;
+    if (nt > nblocks) nt = static_cast<unsigned>(nblocks);
+
+    std::atomic<size_t> next{0};
+    auto worker = [&]() {
+      for (;;) {
+        const size_t b = next.fetch_add(1, std::memory_order_relaxed);
+        if (b >= nblocks) break;
+        const size_t pos = b * opt.block_size;
+        const size_t n = std::min(opt.block_size, input.size() - pos);
+        const std::span<const uint8_t> view = input.subspan(pos, n);
+        MatchFinder::Options o;
+        o.window = opt.window;
+        o.nice_len = kMaxMatchLen;
+        MatchFinder finder(view, o);
+        StaticCostModel model(view, /*coarse_discount=*/0);
+        CompressStats local;
+        encoded[b] = encode_one_block(view, 0, n, finder, model, nullptr, opt, &local);
+        stats.tokens += local.tokens;
+      }
+    };
+
+    std::vector<std::thread> pool;
+    pool.reserve(nt);
+    for (unsigned i = 0; i < nt; ++i) pool.emplace_back(worker);
+    for (auto& t : pool) t.join();
+
+    for (const auto& e : encoded) {
+      write_block_header(w, e.hdr);
+      w.bytes(e.body);
+      account(e);
+    }
+  } else {
+    // Archive mode: the dictionary carries across blocks and the coarse index
+    // sees the whole stream, so matches can reach arbitrarily far back.
+    MatchFinder::Options mf_opt;
+    mf_opt.window = opt.window;
+    mf_opt.nice_len = kMaxMatchLen;
+    MatchFinder finder(input, mf_opt);
+    StaticCostModel model(input, /*coarse_discount=*/0);
+    CoarseIndex coarse(input);
+
+    size_t pos = 0;
+    while (pos < input.size()) {
+      const size_t n = std::min(opt.block_size, input.size() - pos);
+      EncodedBlock best = encode_one_block(input, pos, n, finder, model,
+                                           opt.coarse ? &coarse : nullptr, opt,
+                                           &stats);
+      write_block_header(w, best.hdr);
+      w.bytes(best.body);
+      account(best);
+      pos += n;
+    }
   }
 
   out = w.take();
@@ -241,7 +303,7 @@ Err encode_lzma2_stream(std::span<const uint8_t> input,
 
   FileHeader fh;
   fh.version = kFormatVersion;
-  fh.flags = header_flags(opt, bcj, precomp);
+  fh.flags = header_flags(opt, bcj, precomp, false);
   fh.original_size = input.size();
   fh.block_count = 1;
 

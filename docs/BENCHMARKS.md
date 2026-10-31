@@ -1057,3 +1057,48 @@ The format already has room for this: a header flag bit marks the stream as
 parallel-safe, and a decoder can reject a stream whose blocks reference backwards
 across a boundary. Archive mode stays available, so nothing measured so far is
 lost.
+
+## Parallel mode (built)
+
+Two modes, as agreed, both shipped:
+
+- **Archive mode** — the default. Blocks are coupled: the match finder and coarse
+  index carry across block boundaries, so a match can reach arbitrarily far back.
+  Maximum ratio. Every measurement in this document uses this mode.
+- **Parallel mode** — `--parallel` (with `-T N` for the thread count). Each block
+  is encoded against **itself only**: its own match finder over its own slice, no
+  coarse index, no carried dictionary. That is what makes the blocks independent,
+  and it is the whole difference between the two modes.
+
+The header carries `kFlagParallel` (bit 4) when the stream was written that way,
+so a decoder knows the blocks may be decoded independently.
+
+**Measured on `xml` with `-b 512` (11 blocks, 2 cores):**
+
+| mode | bytes | time | round-trip |
+|---|---|---|---|
+| archive | 408,960 | 28 s | exact |
+| parallel | 422,808 | 20 s | exact |
+
+- **Ratio: +3.4%** — the price of dropping cross-block references.
+- **Time: -29%** on 2 cores (1.4x). Not 2x, because per-block work includes
+  single-threaded candidate encoding and the writer is sequential.
+- On the same file with the default 4 MiB blocks (2 blocks) the two modes gave
+  **identical** output (374,682 bytes), because there was no cross-block
+  redundancy to lose.
+
+**What is built and what is not:**
+
+- Built: parallel **compression**, the format flag, both modes shipping.
+- Not built: parallel **decompression**. The flag is written so a decoder may do
+  it, but the current decoder still decodes blocks sequentially. Decoding is
+  already 10-72 MB/s against a 150 MB/s target, so this is the next lever rather
+  than a blocker.
+
+**One bug the refactor introduced, and the test that caught it.** Extracting the
+per-block body into a shared `encode_one_block` meant rewriting the statistics
+accounting, and the rewrite dropped the `raw` and `lzma2` counters —
+`fallback_declines_on_incompressible_data` failed with `raw_blocks 0 vs blocks 1`
+immediately. Worth recording because it is the argument for extracting one
+function rather than duplicating the body for the parallel path: the duplicate
+would have kept the counters and silently drifted everywhere else.

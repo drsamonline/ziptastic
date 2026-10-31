@@ -43,6 +43,8 @@ void print_usage(FILE* f) {
       "  -9                   maximum effort preset (no CM backend)\n"
       "      --max-ratio      allow the CM backend (slowest, smallest)\n"
       "      --no-precomp     disable semantic precompression\n"
+      "  -T, --threads N      threads for --parallel (default: all cores)\n"
+      "      --parallel       self-contained blocks, compressed on N threads\n"
       "      --no-lzma2       disable the LZMA2 fallback (breaks Tier-1)\n"
       "      --no-parse       disable the optimal parse (RAW blocks only)\n"
       "      --no-adaptive    disable adaptive tables (static rANS only)\n"
@@ -129,6 +131,10 @@ int parse_args(int argc, char** argv, Options& o) {
       o.comp.max_ratio = true;
       o.comp.precomp = true;
       o.comp.coarse = true;
+    } else if (a == "--parallel") {
+      o.comp.parallel = true;
+    } else if (a == "-T" || a == "--threads") {
+      if (i + 1 < argc) o.comp.threads = static_cast<unsigned>(std::atoi(argv[++i]));
     } else if (a == "--no-precomp") {
       o.comp.precomp = false;
     } else if (a == "--no-lzma2") {

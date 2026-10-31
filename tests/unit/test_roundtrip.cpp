@@ -282,4 +282,43 @@ TEST(size_mismatch_rejected) {
   CHECK_ERR(decompress(mutated, out), Err::SizeMismatch);
 }
 
+TEST(parallel_roundtrips) {
+  // Parallel mode makes blocks self-contained so they can be encoded on several
+  // threads. The stream must still decode exactly, and the header must say so.
+  chce_test::Rng rng(77);
+  auto data = make_data(rng, 300 * 1024, 2);
+
+  CompressOptions opt;
+  opt.parallel = true;
+  opt.threads = 2;
+  opt.block_size = 64 * 1024;  // several blocks, so the threaded path is used
+
+  std::vector<uint8_t> compressed, restored;
+  CompressStats stats;
+  CHECK_ERR(compress(data, compressed, opt, &stats), Err::Ok);
+  CHECK_MSG(stats.blocks >= 4, "expected several blocks, got " +
+                                   std::to_string(stats.blocks));
+
+  // The flag must be set, or a decoder would not know the blocks are independent.
+  ByteReader r(compressed);
+  FileHeader fh;
+  CHECK_ERR(read_file_header(r, fh), Err::Ok);
+  CHECK_MSG((fh.flags & kFlagParallel) != 0, "kFlagParallel not set");
+
+  CHECK_ERR(decompress(compressed, restored), Err::Ok);
+  CHECK_MSG(restored == data, "parallel round-trip mismatch");
+
+  // And archive mode on the same input must still work.
+  CompressOptions archive;
+  archive.block_size = 64 * 1024;
+  std::vector<uint8_t> a, ar;
+  CHECK_ERR(compress(data, a, archive), Err::Ok);
+  ByteReader r2(a);
+  FileHeader fh2;
+  CHECK_ERR(read_file_header(r2, fh2), Err::Ok);
+  CHECK_MSG((fh2.flags & kFlagParallel) == 0, "archive stream marked parallel");
+  CHECK_ERR(decompress(a, ar), Err::Ok);
+  CHECK_MSG(ar == data, "archive round-trip mismatch");
+}
+
 TEST_MAIN()

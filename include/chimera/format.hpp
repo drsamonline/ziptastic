@@ -41,9 +41,12 @@ enum Flags : uint8_t {
   kFlagMaxRatio = 1u << 1,  // --max-ratio was in effect when written
   kFlagPrecomp = 1u << 2,   // semantic precompression was applied
   kFlagBcj = 1u << 3,       // the x86 BCJ transform was applied to the stream
+  // Every block is self-contained, so a decoder may decode them in parallel.
+  // Absent means a block may reference data in earlier blocks.
+  kFlagParallel = 1u << 4,
 };
 inline constexpr uint8_t kFlagMask =
-    kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj;
+    kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel;
 
 // ---------------------------------------------------------------------------
 // Block modes
