@@ -57,6 +57,7 @@ add_library(chce_core STATIC
   src/engine/parser.cpp
   src/engine/token_stream.cpp
   src/entropy/rans.cpp
+  src/entropy/range_coder.cpp
   src/entropy/token_coder.cpp
   src/codecs/lzma2_fallback.cpp
 )

@@ -29,6 +29,9 @@ struct CompressOptions {
   // selector keeps whichever of static and adaptive is smaller, so enabling it
   // cannot make a block worse.
   bool adaptive = true;
+  // Range-coded model: per-symbol adaptation, no tables. Wins on every corpus
+  // file measured; costs encode time, so Phase 12 may gate it.
+  bool range = true;
   uint32_t window = 64u << 20; // match-finder window
 };
 

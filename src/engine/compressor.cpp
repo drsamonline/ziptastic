@@ -95,6 +95,17 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
       stats.tokens += tokens.size();
       cands.push_back(std::move(pb));
 
+      if (opt.range) {
+        ByteWriter rbody;
+        encode_tokens_range(rbody, input, pos, pos + n, tokens);
+        EncodedBlock rb;
+        rb.hdr.mode = Mode::RansCtx;
+        rb.hdr.uncompressed_size = n;
+        rb.hdr.compressed_size = rbody.size();
+        rb.body = rbody.take();
+        cands.push_back(std::move(rb));
+      }
+
       if (opt.adaptive) {
         ByteWriter abody;
         encode_tokens_rans_adaptive(abody, input, pos, pos + n, tokens);

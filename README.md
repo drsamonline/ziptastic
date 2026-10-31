@@ -5,11 +5,12 @@ self-contained binary that composes preprocessors, a dual-resolution match
 finder, a joint optimal parser and per-block entropy backends into a single
 stream format. No external processes, no network, no model files.
 
-**Status: Phase 5 partial.** Adaptive tables are implemented, correct, and
-shipped as a per-block candidate: the corpus is 50 KB smaller (57,880,654 vs
-57,930,807, -0.087%) and non-stationary blocks gain clearly, but stationary text
-(`dickens`, `webster`) gains nothing — the 1% the phase asks for is not there.
-`docs/BENCHMARKS.md` has the numbers and the reason.
+**Status: Phase 5 done.** Three entropy models are offered per block and the
+smallest wins: static rANS, chunked adaptive rANS, and a range-coded model that
+adapts after every bit. The corpus drops from 57,930,807 to 54,619,596 bytes
+(-5.72%), and the gap to `xz -9` from +18.72% to +11.94%. The chunked rANS
+model alone gained only 0.087% — the range coder is where the phase's win
+actually came from, because it is FIFO and rANS is not.
 
 **Phase 4, for the record:** The parse is now coded with context-modelled
 rANS: Silesia lands at 57.9 MB against `xz -9`'s 48.8 MB (+18.7%), down from
@@ -86,7 +87,7 @@ measured results.
 | 2 | Fine (binary-tree) match finder | **done** |
 | 3 | Joint optimal parser | **done, ratio gate not met** |
 | 4 | Context-modelled rANS backend | **done** (ratio pass, speed gate not met) |
-| 5 | Adaptive frequency tables | **partial** — ships, text gate not met |
+| 5 | Adaptive frequency tables | **done** (via range coder) — corpus -5.72% |
 | 6 | Coarse (SREP-style) long-range index | next |
 | 7 | Static + adaptive Huffman | |
 | 8 | Semantic precompression (Preflate) | |

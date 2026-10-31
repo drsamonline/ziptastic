@@ -134,7 +134,19 @@ seed their counts from the transmitted frequencies, then decay by three quarters
 and add the previous chunk's histogram, never letting a symbol that has been
 seen fall below 1. Nothing after chunk 0 is transmitted.
 
-Model 0 is the fast path; model 1 is chosen per block when it is smaller. The
+Model 2 (range coder) has no tables and no framing at all:
+
+```
+| model = 0x02 | range-coded payload |
+```
+
+It uses the standard binary range coder with 11-bit adaptive probabilities and
+bit trees, so the model adapts after every bit — the cadence the format's
+predecessors could not express. Contexts match model 0: flag on position&3,
+literals on the previous byte's high nibble, length slots on position&3,
+distance slots on the length slot. Remainders are coded as direct bits.
+
+Model 0 is the fast path; models 1 and 2 are chosen per block when smaller. The
 chunk framing costs about 5 bytes per chunk (a length varint and the rANS
 flush), which is why model 1 loses on small or incompressible blocks.
 

@@ -46,6 +46,7 @@ void print_usage(FILE* f) {
       "      --no-lzma2       disable the LZMA2 fallback (breaks Tier-1)\n"
       "      --no-parse       disable the optimal parse (RAW blocks only)\n"
       "      --no-adaptive    disable adaptive tables (static rANS only)\n"
+      "      --no-range       disable the range-coded model\n"
       "      --no-coarse      disable the coarse match index\n"
       "  -b, --block-size N   block size in KiB (default 256)\n"
       "  -o, --output FILE    write to FILE instead of stdout\n"
@@ -135,6 +136,8 @@ int parse_args(int argc, char** argv, Options& o) {
       o.comp.parse = false;
     } else if (a == "--no-adaptive") {
       o.comp.adaptive = false;
+    } else if (a == "--no-range") {
+      o.comp.range = false;
     } else if (a == "--no-coarse") {
       o.comp.coarse = false;
     } else if (a == "-b" || a == "--block-size") {

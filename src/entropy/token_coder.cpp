@@ -23,6 +23,7 @@
 #include <cstring>
 
 #include "rans.hpp"
+#include "range_coder.hpp"
 
 namespace chce {
 namespace {
@@ -324,6 +325,55 @@ void encode_tokens_rans_adaptive(ByteWriter& w, std::span<const uint8_t> data,
   }
 }
 
+// Model 2: range coding with per-symbol adaptive bit models.
+//
+// No tables and no chunks: the model adapts after every bit, which is what the
+// Phase 5 spec asked for and what rANS cannot do (it is LIFO). Contexts match
+// the rANS path so the two are comparable: flag on position&3, literals on the
+// previous byte's high nibble, length slots on position&3, distance slots on
+// the length slot.
+void encode_tokens_range(ByteWriter& w, std::span<const uint8_t> data,
+                         uint32_t begin, uint32_t end,
+                         const std::vector<Token>& tokens) {
+  (void)end;
+  RangeEncoder rc;
+  BitModel flag[kFlagCtx];
+  std::vector<BitTreeEncoder> lit, len, dist;
+  lit.reserve(kLitCtx);
+  len.reserve(kLenCtx);
+  dist.reserve(kDistCtx);
+  for (uint32_t i = 0; i < kLitCtx; ++i) lit.emplace_back(8);
+  for (uint32_t i = 0; i < kLenCtx; ++i) len.emplace_back(5);
+  for (uint32_t i = 0; i < kDistCtx; ++i) dist.emplace_back(6);
+
+  uint32_t pos = begin;
+  for (const Token& t : tokens) {
+    const uint32_t ctx = pos & 3;
+    if (t.is_literal()) {
+      rc.bit(flag[ctx], 0);
+      const uint8_t prev = pos == 0 ? 0 : data[pos - 1];
+      lit[prev >> 4].encode(rc, data[pos]);
+      ++pos;
+    } else {
+      rc.bit(flag[ctx], 1);
+      const uint32_t ls = len_slot(t.len);
+      len[ctx].encode(rc, ls);
+      uint32_t rem = t.len - len_base(ls);
+      for (uint32_t i = len_extra_bits(ls); i-- > 0;) rc.direct((rem >> i) & 1, 1);
+
+      const uint32_t ds = dist_slot(t.dist);
+      dist[dist_ctx(ls)].encode(rc, ds);
+      rem = t.dist - dist_base(ds);
+      for (uint32_t i = dist_extra_bits(ds); i-- > 0;) rc.direct((rem >> i) & 1, 1);
+      pos += t.len;
+    }
+  }
+
+  const std::vector<uint8_t> payload = rc.finish();
+  w.u8(2);  // model: range coder
+  w.bytes(payload);
+}
+
 Err decode_tokens_rans(ByteReader& r, uint32_t out_size, std::vector<uint8_t>& out) {
   uint8_t model = 0;
   if (!r.u8(model)) return Err::Truncated;
@@ -503,6 +553,61 @@ Err decode_tokens_rans(ByteReader& r, uint32_t out_size, std::vector<uint8_t>& o
       produced += mlen;
     }
     return produced == out_size ? Err::Ok : Err::SizeMismatch;
+  }
+
+  if (model == 2) {
+    std::span<const uint8_t> payload;
+    if (!r.take(r.remaining(), payload)) return Err::Truncated;
+    if (payload.empty()) return Err::Truncated;
+
+    RangeDecoder rc(payload);
+    if (!rc.ok()) return Err::Corrupt;
+
+    BitModel flag[kFlagCtx];
+    std::vector<BitTreeDecoder> lit, len, dist;
+    lit.reserve(kLitCtx);
+    len.reserve(kLenCtx);
+    dist.reserve(kDistCtx);
+    for (uint32_t i = 0; i < kLitCtx; ++i) lit.emplace_back(8);
+    for (uint32_t i = 0; i < kLenCtx; ++i) len.emplace_back(5);
+    for (uint32_t i = 0; i < kDistCtx; ++i) dist.emplace_back(6);
+
+    uint32_t produced2 = 0;
+    while (produced2 < out_size) {
+      const uint32_t ctx = static_cast<uint32_t>(out.size()) & 3;
+      if (rc.bit(flag[ctx]) == 0) {
+        const uint8_t prev = out.empty() ? 0 : out.back();
+        const uint32_t byte = lit[prev >> 4].decode(rc);
+        if (!rc.ok()) return Err::Corrupt;
+        out.push_back(static_cast<uint8_t>(byte));
+        ++produced2;
+        continue;
+      }
+      const uint32_t ls = len[ctx].decode(rc);
+      if (!rc.ok() || ls >= kLenAlphabet) return Err::Corrupt;
+      uint32_t rem = 0;
+      for (uint32_t i = 0, n = len_extra_bits(ls); i < n; ++i) rem = (rem << 1) | rc.direct(1);
+      const uint32_t mlen = len_base(ls) + rem;
+      if (mlen < 2 || mlen > 273 || mlen > out_size - produced2) return Err::Corrupt;
+
+      const uint32_t ds = dist[dist_ctx(ls)].decode(rc);
+      if (!rc.ok() || ds >= kDistAlphabet) return Err::Corrupt;
+      uint32_t drem = 0;
+      for (uint32_t i = 0, n = dist_extra_bits(ds); i < n; ++i) drem = (drem << 1) | rc.direct(1);
+      const uint32_t mdist = dist_base(ds) + drem;
+      if (mdist == 0 || mdist > out.size()) return Err::BadMode;
+
+      const size_t at = out.size();
+      if (mdist >= mlen) {
+        out.resize(at + mlen);
+        std::memcpy(out.data() + at, out.data() + at - mdist, mlen);
+      } else {
+        for (uint32_t k = 0; k < mlen; ++k) out.push_back(out[out.size() - mdist]);
+      }
+      produced2 += mlen;
+    }
+    if (!rc.ok()) return Err::Corrupt;
+    return produced2 == out_size ? Err::Ok : Err::SizeMismatch;
   }
 
   if (model != 1) return Err::BadMode;

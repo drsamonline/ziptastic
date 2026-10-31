@@ -42,6 +42,12 @@ void encode_tokens_rans_adaptive(ByteWriter& w, std::span<const uint8_t> data,
                                  uint32_t begin, uint32_t end,
                                  const std::vector<Token>& tokens);
 
+// Encodes with the range coder: FIFO, per-symbol adaptive bit models, no
+// tables and no chunking.
+void encode_tokens_range(ByteWriter& w, std::span<const uint8_t> data,
+                         uint32_t begin, uint32_t end,
+                         const std::vector<Token>& tokens);
+
 // Decodes a RANS_CTX body, appending exactly `out_size` bytes to `out`.
 // Matches may reference bytes from earlier blocks: the window carries.
 Err decode_tokens_rans(ByteReader& r, uint32_t out_size, std::vector<uint8_t>& out);

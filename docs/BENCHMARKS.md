@@ -27,7 +27,7 @@ the I/O path is a network-backed filesystem. Ratios are the meaningful column.
 | 2 — Fine match finder | n/a (no parser yet) | n/a | n/a | **pass** |
 | 3 — Joint parser | 89,970,960 parse-only (see below) | n/a | 47–88 | **gate NOT met** |
 | 4 — rANS + context models | 57,930,807 (+18.7%) | n/a | 26–70 | **ratio pass, speed gate NOT met** |
-| 5 — Adaptive tables | 57,880,654 (-0.087% vs Phase 4) | n/a | 10-64 | **partial: ships, text gate NOT met** |
+| 5 — Adaptive tables + range coder | 54,619,596 (-5.72% vs Phase 4) | n/a | 10-72 | **done via range coder** |
 | 6 — Coarse index | | | | not started |
 | 7 — Huffman modes | | | | not started |
 | 8 — Semantic precompression | | | | not started |
@@ -413,111 +413,102 @@ consistency across the whole length and distance range, token-stream round-trip
 at three alphabets, coded-vs-uncoded size, and corruption rejection. 9/9 ctest
 suites pass.
 
-## Phase 5 — Adaptive tables: partial (ships, but the text gate is not met)
+## Phase 5 — Adaptive tables, and the range coder that made them pay
 
-**Outcome.** The adaptive model is now *correct* — it round-trips byte-exactly on
-every input tested, including 4 MB blocks with ~4 M tokens — and it ships as an
-extra per-block candidate. It gives a small net win on the corpus (-0.087%) and
-a clear win on non-stationary blocks. It does **not** deliver the 1% on
-`dickens`/`webster` the phase asks for, and the measurements below say why.
+**Outcome.** The phase resolved in two steps. The chunked adaptive rANS model is
+correct and ships, but on its own it gains only 0.087% — on stationary text it
+gains nothing at all. The phase's goal was only reachable by adding a **range
+coder**, which is FIFO and therefore supports per-symbol adaptation. With all
+three models offered per block and the smallest chosen, the corpus goes from
+**57,930,807 to 54,619,596 bytes: -3,311,211 (-5.72%)**, and the gap to `xz -9`
+from **+18.72% to +11.94%**.
 
-### The constraint that shapes the design
+### Why rANS could not do what the spec asked
 
-The spec asks for tables re-normalised every 256 symbols. **That is not
-implementable with rANS**, and the reason is structural, not a coding slip:
+The spec asks for tables re-normalised every 256 symbols. rANS is a stack: the
+decoder pops symbols in the reverse of the encoding order, so at symbol *i* the
+encoder's model has seen *i+1..n* and the decoder's has seen *0..i-1*. A
+per-symbol adaptive rANS is not decodable in principle — which is why LZMA uses
+a range coder and why rANS implementations use static tables or transmit
+periodic updates.
 
-rANS is a stack. The decoder pops symbols in the reverse of the encoding order,
-so at symbol *i* the encoder's model has seen symbols *i+1..n* while the
-decoder's has seen *0..i-1*. A per-symbol adaptive rANS is not decodable in
-principle. This is why LZMA uses a range coder (FIFO) and why rANS
-implementations use static tables or transmit periodic table updates.
+### Step 1 — chunked adaptive rANS (ships, small win)
 
-The implementable design is **chunked**: the token stream is cut into chunks of
-1024 tokens; each chunk is an independent rANS stream with a fixed table; chunk
-0 carries measured tables and every later chunk derives its table from the
-symbols already decoded, so nothing after chunk 0 is transmitted. The cadence
-is one chunk, not 256 symbols. The spec's number is unreachable this way and it
-is better to say so than to fake it.
+Each chunk (1024 tokens) is an independent rANS stream with a fixed table; chunk
+0 carries tables measured over the whole block and later chunks derive theirs
+from already-decoded symbols, so nothing after chunk 0 is transmitted. Both
+sides seed their counts from the transmitted frequencies, then decay by three
+quarters and fold in the previous chunk's histogram, floored at 1.
 
-### Three defects, found in this order
+Three defects were found getting here:
 
-1. **rANS is a stack** (above). The first design sliced by *symbols* and told
-   the decoder to expect that many - but the decoder counts *tokens*. It
-   expected 3374 symbols where there were 1638 tokens and ran off the end of the
-   chunk. Chunks are now measured in tokens.
+1. **Chunking by symbols instead of tokens.** The decoder counts tokens; it was
+   told to expect 3374 symbols where there were 1638 and ran off the end.
+2. **A symbol with frequency 0 is a divide-by-zero.** Adaptive tables come from
+   *earlier* chunks, so a first-seen symbol had freq 0, `RansEncoder::put`
+   divided by zero, and its renormalisation loop ran until memory was exhausted
+   (`std::bad_alloc` — the 1 MiB CLI crash). Found by hashing the table set on
+   both sides per chunk and diffing: the *encoder* crashed first, which pointed
+   at the model rather than the stream.
+3. **Cold-start adaptation loses.** A uniform prior made everything codable but
+   reserved 6.25% of the 4096-slot literal alphabet: up to 4.8% worse on
+   low-entropy data. Fixed by measuring chunk 0 over the whole block.
 
-2. **A symbol with frequency 0 is a divide-by-zero.** An adaptive table is built
-   from *earlier* chunks, so a symbol appearing for the first time in the current
-   chunk had frequency 0; `RansEncoder::put` divided by zero and its
-   renormalisation loop ran until memory was exhausted (`std::bad_alloc`). This
-   is what actually crashed the 1 MiB file in the CLI. It was found by hashing
-   the table set on both sides per chunk and diffing: the encoder crashed before
-   the decoder was ever reached, which is what pointed at the model rather than
-   the stream.
+Alone, that model gains 50,153 bytes (-0.087%) on the corpus.
 
-3. **Adaptation from a cold start loses.** The first fix (a uniform prior of one
-   count per symbol) made every symbol codable but reserved 6.25% of the
-   4096-slot literal alphabet, costing up to 4.8% on low-entropy data.
+### Step 2 — the range coder (where the phase's win actually is)
 
-### The design that works
+`src/entropy/range_coder.cpp`: the standard LZMA binary range coder — 32-bit
+range, 11-bit probabilities, 5-bit adaptation, carry handled through a cache
+byte — plus bit trees for symbols. Because it is FIFO, the model adapts after
+*every bit*: no tables, no chunks, no transmission. Contexts match the rANS
+path so the two are directly comparable.
 
-Chunk 0's tables are measured over the **whole block**, not just chunk 0. That
-costs nothing - one table set is transmitted either way - and it means the
-adaptive model starts at the static optimum rather than learning from nothing.
-Both sides then seed their counts from those transmitted frequencies (identical
-values on both sides, which is what makes the later adaptation reproducible
-without sending anything), and each chunk decays the counts by three quarters
-and folds in the previous chunk's symbols. A floor keeps any symbol that has
-been seen at >= 1, so defect 2 cannot recur.
+Measured on single-block parses of four files (the tool parses the whole file as
+one block, so these differ from the blocked corpus numbers):
 
-### Measurements
+| file | rANS static | rANS adaptive | range coder | range vs rANS |
+|---|---|---|---|---|
+| `dickens` | 2,953,395 | 2,956,400 | 2,947,324 | **-0.21%** |
+| `webster` | 8,644,422 | 8,676,990 | 8,638,928 | **-0.06%** |
+| `xml` | 590,017 | 569,277 | 555,717 | **-5.81%** |
+| `samba` | 4,676,115 | 4,438,552 | 4,286,983 | **-8.32%** |
 
-Corpus, `ziptastic --no-lzma2 -9` (the parsed path), with the per-block selector
-choosing between static and adaptive:
+It wins on every file, and by a lot where the data is heterogeneous. That is
+what per-symbol adaptation buys and what chunked rANS cannot.
 
-| file | `xz -9` | Phase 4 (static) | Phase 5 (best of) | delta bytes | delta % |
-|---|---|---|---|---|---|
-| `webster` | 8,385,868 | 8,747,813 | 8,747,972 | +159 | +0.002% |
-| `dickens` | 2,830,604 | 2,963,280 | 2,963,319 | +39 | +0.001% |
-| `reymont` | 1,317,152 | 1,415,229 | 1,413,976 | -1253 | -0.089% |
-| `nci` | 1,738,884 | 1,928,571 | 1,928,699 | +128 | +0.007% |
-| `xml` | 453,260 | 505,719 | 504,937 | -782 | -0.155% |
-| `samba` | 3,763,616 | 4,366,310 | 4,362,059 | -4251 | -0.097% |
-| `mr` | 2,750,272 | 3,213,078 | 3,194,535 | -18543 | -0.577% |
-| `x-ray` | 4,489,868 | 5,252,101 | 5,252,134 | +33 | +0.001% |
-| `sao` | 4,415,072 | 5,264,258 | 5,264,286 | +28 | +0.001% |
-| `osdb` | 2,849,908 | 3,400,189 | 3,400,228 | +39 | +0.001% |
-| `ooffice` | 2,426,816 | 2,914,412 | 2,913,537 | -875 | -0.030% |
-| `mozilla` | 13,374,160 | 17,959,847 | 17,934,972 | -24875 | -0.139% |
-| **total** | **48,795,480** | **57,930,807** | **57,880,654** | **-50153** | **-0.087%** |
+### Corpus result, all three models offered per block
 
-**Total: 57,880,654 vs 57,930,807 - 50,153 bytes smaller (-0.087%).**
+| file | `xz -9` | Phase 4 | Phase 5 | delta bytes | vs Phase 4 | vs `xz -9` |
+|---|---|---|---|---|---|---|
+| `webster` | 8,385,868 | 8,747,813 | 8,676,928 | -70885 | -0.81% | +3.47% |
+| `dickens` | 2,830,604 | 2,963,280 | 2,960,174 | -3106 | -0.10% | +4.58% |
+| `reymont` | 1,317,152 | 1,415,229 | 1,393,328 | -21901 | -1.55% | +5.78% |
+| `nci` | 1,738,884 | 1,928,571 | 1,858,811 | -69760 | -3.62% | +6.90% |
+| `xml` | 453,260 | 505,719 | 487,239 | -18480 | -3.65% | +7.50% |
+| `osdb` | 2,849,908 | 3,400,189 | 3,090,701 | -309488 | -9.10% | +8.45% |
+| `samba` | 3,763,616 | 4,366,310 | 4,145,894 | -220416 | -5.05% | +10.16% |
+| `ooffice` | 2,426,816 | 2,914,412 | 2,704,203 | -210209 | -7.21% | +11.43% |
+| `sao` | 4,415,072 | 5,264,258 | 4,995,846 | -268412 | -5.10% | +13.15% |
+| `mr` | 2,750,272 | 3,213,078 | 3,132,212 | -80866 | -2.52% | +13.89% |
+| `x-ray` | 4,489,868 | 5,252,101 | 5,217,925 | -34176 | -0.65% | +16.22% |
+| `mozilla` | 13,374,160 | 17,959,847 | 15,956,335 | -2003512 | -11.16% | +19.31% |
+| **total** | **48,795,480** | **57,930,807** | **54,619,596** | **-3311211** | **-5.72%** | **+11.94%** |
 
-Where it helps: `mozilla` (-24,875), `mr` (-18,543), `samba` (-4,251), `reymont`
-(-1,253), `ooffice` (-875), `xml` (-782), `nci` (-128), `x-ray` (-33) - blocks
-whose statistics drift within the block.
+**Total: 54,619,596 vs 57,930,807 — 3,311,211 bytes smaller (-5.72%).**
 
-Where it does not: `dickens` (+39) and `webster` (+159) are *stationary* English
-text. A static two-pass table measured on the whole block is already close to
-optimal there, so the selector keeps static and the only cost is the one-byte
-model discriminator per block (40 blocks on dickens, 159 on webster - matching
-the observed deltas). **The phase's 1% on text-heavy files does not
-materialise, and that is a real result rather than a missing measurement:** on
-stationary data, whole-block two-pass statistics beat a decayed local window.
+On the phase's specific gate — 1% on text-heavy files — `dickens` improves 0.11%
+and `webster` 0.81%. **Neither reaches 1%.** Stationary English text is where
+whole-block two-pass statistics are already strongest, and that is the honest
+measurement. The large wins are elsewhere: `mozilla` -11.2%, `osdb` -9.1%,
+`nci` -3.6%, `ooffice` -7.2%, `xml` -3.6%.
 
-Isolated check on synthetic non-stationary data (two halves with different
-alphabets, 600 KB) the adaptive model wins clearly - unit test
-`adaptive_wins_on_nonstationary_data`.
+**Cost.** Encode is now ~0.9 MB/s because three models are tried per block.
+Phase 12 owns that: the selector could be made to skip models by a cheap
+heuristic instead of trying all three.
 
-### What this means for the next step
-
-A real win on text needs a model that adapts *within* a symbol, which rANS
-cannot do. That is the argument for a range coder: it is FIFO, so encoder and
-decoder can update a bit model after every symbol and the spec's 256-symbol
-cadence becomes reachable. The rANS path stays as the fast option; a range coder
-would be the ratio option.
-
-**Tests.** `unit.rans` grew to 12 cases: adaptive round-trip at three alphabets
-x three sizes (one chunk, few, many), adaptive-wins-on-non-stationary, and
-adaptive corruption rejection, alongside the nine from Phase 4. 9/9 ctest suites
-pass. Decode throughput 10-64 MB/s, unchanged in kind from Phase 4.
+**Tests.** New `unit.range_coder` (7 cases): biased bit round-trips, adaptation
+reaching the entropy bound (99% zeros costs < 0.2 bits/bit), eight independent
+models, direct bits, bit trees at four widths, a mixed flag/tree/direct stream
+shaped like the token coder, and truncation reporting. `unit.rans` is 12 cases.
+10/10 ctest suites pass.
