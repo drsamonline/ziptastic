@@ -1102,3 +1102,44 @@ accounting, and the rewrite dropped the `raw` and `lzma2` counters —
 immediately. Worth recording because it is the argument for extracting one
 function rather than duplicating the body for the parallel path: the duplicate
 would have kept the counters and silently drifted everywhere else.
+
+## Experiments: do other combinations beat what we ship?
+
+Question asked: can more modes be added by trying different combinations? Measured
+with a throwaway harness that links the same libraries and tries each combination
+on 4 MiB blocks, reporting bytes per file. Baseline is BWT (what the engine picks
+for most blocks).
+
+| file | bwt | ppmd6 | ppmd16 | bwt+lzp | delta1+bwt | delta2+bwt | delta4+bwt |
+|---|---|---|---|---|---|---|---|
+| `xml` | **374,656** | 488,884 | 374,660 | 474,460 | 432,226 | 518,506 | 718,506 |
+| `dickens` | **2,359,168** | 2,360,242 | 2,410,615 | 2,403,278 | 2,449,302 | 2,829,444 | 4,396,558 |
+| `sao` | **4,676,596** | 4,778,832 | 4,784,349 | 4,675,460 | 5,215,020 | 5,628,630 | 6,256,406 |
+| `x-ray` | **3,798,258** | 4,056,573 | 3,908,665 | 3,798,258 | 3,861,390 | 3,927,660 | 4,123,976 |
+
+**Nothing beat what we already ship.** Details worth keeping:
+
+- **Delta preprocessing is a clear loser on every file** (+1.7% to +91%). This was
+  the most promising idea on paper — byte-delta before BWT is the standard trick
+  for numeric arrays — and it lost everywhere, including on `x-ray` and `mr`,
+  which are 16-bit image data. Whatever redundancy those have, BWT already finds
+  it; differencing just destroys the byte statistics the QLFC coder relies on.
+- **LZP inside libbsc is a wash**: identical output on `x-ray` and `xml`-adjacent
+  blocks (libbsc declines it there), -0.02% on `sao` (1,136 bytes on 7 MiB —
+  noise), and +1.9% worse on `dickens`. Not worth a mode.
+- **PPMd order is content-dependent, and order 6 is the right default.** On
+  `dickens` order 6 ties BWT (+0.05%) while order 16 is 2.2% worse. On `xml` the
+  reverse: order 6 is **30% worse** than BWT and order 16 ties it. So the order
+  matters a lot, but adding a second order as a candidate buys nothing on this
+  corpus, because wherever order 16 catches up, BWT was already there.
+- **`sao` is the file we lose to nothing and win against nothing** — every
+  alternative is worse, and it is the one file where our output equals `xz -9` to
+  within 39 bytes.
+
+**Conclusion: the candidate set is already at a local optimum on this corpus.**
+Adding modes for their own sake would cost encode time and buy no bytes. If more
+modes are wanted, the honest next candidates are not preprocessing variants but
+different families entirely — a stronger CM configuration for `--max-ratio`
+(currently libzpaq level 5, which is not its strongest setting), or a larger
+number of PPMd orders *only* if the selector that picks between them can be made
+cheap, which the earlier experiment showed it cannot be.
