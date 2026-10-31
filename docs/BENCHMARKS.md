@@ -904,3 +904,34 @@ Two items from the plan are open, and it is worth being precise about why:
   Parallel decompression is equally unsafe for the same reason. Doing it properly
   needs either a per-block "no cross-block references" flag or a two-pass
   scheme — a format change, not a threading change.
+
+## Phase 12 — the cheap selector: attempted, measured, reverted
+
+The plan's remaining speed item was to stop trying every backend on every block.
+I implemented it: a 64 KiB sample from the middle of the block runs BWT and PPMd,
+and the loser is skipped on the full block unless the two are within 1-3% on the
+sample.
+
+**It was reverted, not shipped.** Two reasons:
+
+1. **The ratio got slightly worse** — `dickens` 2,355,513 -> 2,360,276 (+0.2%).
+   The sample is not a perfect predictor of a 4 MiB block, so occasionally it
+   skips the backend that would have won.
+
+2. **The speed benefit could not be measured on this machine.** Three runs of
+   essentially identical work gave **72 s, 86 s and 124 s** — roughly 70%
+   variance on a shared vCPU. Any speed claim from numbers like those would be
+   fiction, and I would rather leave the optimisation unshipped than ship it on
+   the strength of a measurement that cannot support it.
+
+Both the change and its measurements are recorded here rather than quietly
+dropped, because the negative result is the useful part: **speed work on this
+project needs a stable machine before it can be done honestly.** The ratio side
+has been measured throughout on sizes, which are exact and reproducible; the
+throughput numbers in earlier phases (0.3-0.5 MB/s, 10-72 MB/s decode) are
+therefore order-of-magnitude figures, not precise ones.
+
+What a proper attempt needs: a quiet machine, a timing harness that runs each
+configuration several times and reports a median, and a ratio budget agreed in
+advance (the 0.2% above may well be an acceptable price for halving the time —
+that judgement needs real numbers).
