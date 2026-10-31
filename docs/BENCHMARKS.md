@@ -905,7 +905,19 @@ Two items from the plan are open, and it is worth being precise about why:
   needs either a per-block "no cross-block references" flag or a two-pass
   scheme — a format change, not a threading change.
 
-## Phase 12 — the cheap selector: attempted, measured, reverted
+## Timing harness
+
+`tests/benchmark/timeit.sh` runs a command N times and reports **min, median, max
+and spread**, not a single number. The spread is the point: on this shared vCPU,
+identical work has measured 72 s, 86 s and 124 s, so one timing is worthless and
+even an average hides how untrustworthy it is. The script prints a warning when
+the spread exceeds 20%.
+
+For comparing two configurations it is not enough on its own — runs must be
+**interleaved** (A, B, A, B...) so that drift in machine load affects both
+equally. That is how the measurement below was taken.
+
+## Phase 12 — the cheap selector: attempted, measured, rejected (twice)
 
 The plan's remaining speed item was to stop trying every backend on every block.
 I implemented it: a 64 KiB sample from the middle of the block runs BWT and PPMd,
@@ -931,10 +943,38 @@ has been measured throughout on sizes, which are exact and reproducible; the
 throughput numbers in earlier phases (0.3-0.5 MB/s, 10-72 MB/s decode) are
 therefore order-of-magnitude figures, not precise ones.
 
-What a proper attempt needs: a quiet machine, a timing harness that runs each
-configuration several times and reports a median, and a ratio budget agreed in
-advance (the 0.2% above may well be an acceptable price for halving the time —
-that judgement needs real numbers).
+### The second attempt, with the harness
+
+The first attempt could not measure anything. With `timeit.sh` and interleaved
+A/B runs on `xml`, it can — and the answer is still no.
+
+Baseline, 5 runs: 24,349 / 24,559 / 22,182 / 22,226 / 26,311 ms
+(median 24,349, **spread 17%**).
+
+Interleaved A/B, 5 pairs, same binary, selector behind `CHCE_SELECTOR`:
+
+| pair | baseline | selector |
+|---|---|---|
+| 1 | 24,349 ms | 25,645 ms |
+| 2 | 24,559 ms | 23,908 ms |
+| 3 | 22,182 ms | 21,388 ms |
+| 4 | 22,226 ms | 24,396 ms |
+| 5 | 26,311 ms | 23,627 ms |
+
+- **Speed: median 24,349 -> 23,908 ms, -1.8%.** The spread on both sides is 17-18%,
+  so this is inside the noise: the selector does not demonstrably save time.
+- **Ratio: 374,682 -> 384,728 bytes, +2.68%.** That one is exact, and it is bad.
+
+A 64 KiB sample does not predict a 4 MiB block well enough. A 2.7% size loss for
+an unmeasurable speed gain is a bad trade, so the change is rejected again — this
+time with numbers behind the decision rather than a shrug.
+
+**What would actually help throughput:** the cost is dominated by running two
+expensive backends over every full block, and sampling is the wrong instrument
+for deciding between them. Real options are (a) parallelism, which the two-mode
+plan covers, or (b) a much cheaper predictor built from the parse the engine
+already performs — match coverage and literal entropy per block — rather than a
+trial compression of a sample.
 
 ## Final corpus measurement (the standing result)
 
