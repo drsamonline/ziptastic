@@ -1337,3 +1337,32 @@ inner loop does less work per symbol — not more lanes.
 *backwards* (rANS is LIFO), so a call-order counter assigns lanes in reverse and
 desynchronises from the decoder, which walks forwards. `put()` therefore takes the
 symbol's **logical index** and derives the lane from it.
+
+## Corpus refresh (after dedup, checksum, 4 MiB default, interleaved rANS)
+
+The earlier standing result was measured before the dedup stage, the CRC-32 and
+the interleaved rANS. Re-measured on the final binary, `-9`, defaults:
+
+| file | raw | `xz -9` | ziptastic | vs `xz -9` |
+|---|---|---|---|---|
+| `reymont` | 6,627,202 | 1,317,152 | 1,024,583 | **-22.212%** |
+| `mr` | 9,970,564 | 2,750,272 | 2,249,536 | **-18.207%** |
+| `osdb` | 10,085,684 | 2,849,908 | 2,347,698 | **-17.622%** |
+| `xml` | 5,345,280 | 453,260 | 374,686 | **-17.335%** |
+| `dickens` | 10,192,446 | 2,830,604 | 2,355,517 | **-16.784%** |
+| `nci` | 33,553,445 | 1,738,884 | 1,449,234 | **-16.657%** |
+| `x-ray` | 8,474,240 | 4,489,868 | 3,798,296 | **-15.403%** |
+| `ooffice` | 6,152,192 | 2,426,816 | 2,083,958 | **-14.128%** |
+| `samba` | 21,606,400 | 3,763,616 | 3,739,490 | **-0.641%** |
+| `sao` | 7,251,944 | 4,415,072 | 4,415,037 | **-0.001%** |
+
+**10 files, 119,259,397 bytes in: 27,035,452 with `xz -9` against 23,838,035 with
+ziptastic — 11.83% smaller.**
+
+The figure is unchanged from before those three changes, and that is the expected
+answer rather than a disappointment: each one was verified not to regress before
+it shipped. The only difference is **+4 bytes per file**, which is the CRC-32 now
+carried in the header (40 bytes across ten files).
+
+Still unmeasured: `webster` (41 MiB) and `mozilla` (51 MiB), which exceed the
+300 s per-command limit at every block size tried.
