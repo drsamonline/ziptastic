@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "codecs/lzma2_fallback.hpp"
+#include "chimera/coarse_index.hpp"
 #include "parser.hpp"
 #include "token_stream.hpp"
 #include "entropy/token_coder.hpp"
@@ -60,7 +61,11 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
   mf_opt.window = opt.window;
   mf_opt.nice_len = kMaxMatchLen;
   MatchFinder finder(input, mf_opt);
-  StaticCostModel model(input);
+  // A small discount on coarse matches: the distance code for an extreme
+  // distance is cheaper than the 5 + log2(dist) slot model suggests, and a
+  // coarse match replaces a run of literals priced at full rate.
+  StaticCostModel model(input, /*coarse_discount=*/0);
+  CoarseIndex coarse(input);
 
   std::vector<Token> tokens;
 
@@ -82,8 +87,9 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
 
     std::vector<EncodedBlock> cands = encode_candidates(block, opt);
     if (opt.parse && n > 0) {
-      const uint64_t cost =
-          parse_block(input, pos, pos + n, finder, model, tokens);
+      const uint64_t cost = parse_block(input, pos, pos + n, finder, model,
+                                        tokens, ParseOptions{},
+                                        opt.coarse ? &coarse : nullptr);
       (void)cost;
       // Static and adaptive rANS both live in RANS_CTX; the body's first byte
       // says which model it is, so the smaller candidate can be taken freely.

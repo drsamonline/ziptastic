@@ -97,8 +97,8 @@ measured results.
 | 4 | Context-modelled rANS backend | **done** (ratio pass, speed gate not met) |
 | 5 | Adaptive frequency tables | **done** (via range coder) — corpus -5.72% |
 | 5b | x86 BCJ transform | **done** — ooffice now beats `xz -9` |
-| 6 | Coarse (SREP-style) long-range index | next |
-| 7 | Static + adaptive Huffman | |
+| 6 | Coarse long-range index | **done** (written from scratch — SREP is not public domain) |
+| 7 | Static + adaptive Huffman | next |
 | 8 | Semantic precompression (Preflate) | |
 | 9 | BWT, Brotli, Zstd, LZ4 backends | |
 | 10 | CM backend (`--max-ratio`) | |

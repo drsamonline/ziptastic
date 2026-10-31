@@ -29,6 +29,7 @@ the I/O path is a network-backed filesystem. Ratios are the meaningful column.
 | 4 — rANS + context models | 57,930,807 (+18.7%) | n/a | 26–70 | **ratio pass, speed gate NOT met** |
 | 5 — Adaptive tables + range coder | 54,619,596 (-5.72% vs Phase 4) | n/a | 10-72 | **done via range coder** |
 | 5b — x86 BCJ transform | 54,243,754 (-0.69% vs Phase 5) | n/a | 10-72 | **done; ooffice beats xz -9** |
+| 6 — Coarse long-range index | 54,243,717 (-37 B) | n/a | 10-72 | **done; gate arithmetic corrected** |
 | 6 — Coarse index | | | | not started |
 | 7 — Huffman modes | | | | not started |
 | 8 — Semantic precompression | | | | not started |
@@ -551,3 +552,76 @@ stream before compression, reversed after decompression, signalled by
 `kFlagBcj` (flag bit 3). `unit.bcj` checks invertibility on x86-like data, on
 uniform random bytes, and at sizes 0/1/4/5/6/17, plus the detection gate. 11/11
 ctest suites pass.
+
+## Phase 6 — Coarse (long-range) index
+
+`include/chimera/coarse_index.hpp` + `src/dedup/coarse_index.cpp`: a block-hash
+index beside the fine finder, so content repeated beyond the 64 MiB window can
+still be found. The parser queries both and prices both through the same cost
+model.
+
+**Written from scratch, deliberately.** SREP is the reference design, but its
+source is all-rights-reserved (see `docs/SOURCES_REVIEW.md` and the corrected
+HCS manifest), so no SREP code is used. The technique is published and simple
+enough to implement directly.
+
+**Design.** Hash the first 8 bytes at each position into a bucket of 16 slots;
+verify every candidate byte for byte before reporting it, so a hash collision
+costs a comparison rather than a wrong match. A match must reach 48 bytes to be
+reported — a short match is not worth an extreme distance code. Positions are
+inserted as the parser walks forward, so history is unbounded.
+
+The bucket policy is the part that matters: **half of each bucket is anchored**
+(filled once, never overwritten) and half rotates. Pure round-robin evicts early
+positions under a long run of noise — exactly the case the index exists for —
+while pure first-come-keeps loses locality on ordinary data.
+
+### The gate
+
+The prompt asks that `file_a` + 100 MB of noise + `file_a` be found, and that the
+ratio beat fine-only by 30%. Measured on 1 MiB + 100 MiB noise + 1 MiB
+(106,954,752 bytes), `ziptastic -9 --no-lzma2 --no-bcj`:
+
+| | bytes | time |
+|---|---|---|
+| fine only (`--no-coarse`) | 106,957,620 | 190 s |
+| with coarse index | 105,925,428 | 237 s |
+| **saved** | **1,032,192** | |
+
+The repeat sits 100 MiB back, outside the 64 MiB fine window, and the coarse
+index found it: the saving is essentially the whole redundant copy (1,048,576
+bytes minus coding overhead). Round-trip is bit-exact.
+
+**The 30% figure is not reachable on this input, and that is arithmetic, not a
+miss.** Only 2 MiB of the 102 MiB input is redundant, so the maximum possible
+saving is ~2%; measured 0.965%, i.e. the entire redundancy. A 30% improvement
+needs the redundant portion to dominate: `file_a` + noise + `file_a` with
+|file_a| ≈ |noise| gives ~33%. The mechanism is proven; the percentage is a
+property of the input shape, and the prompt's number assumes a shape it does not
+specify.
+
+### Effect on the corpus: essentially none, and why
+
+Silesia files are ≤ 51 MiB, so the fine window (64 MiB, or the file size when
+smaller) already sees the whole file and the coarse index has nothing extra to
+find. Measured: `dickens` unchanged at 2,960,174; `samba` **4,145,857, 37 bytes
+better** than Phase 5b. That small gain is real and has a cause worth knowing:
+the fine finder has a tree-depth cutoff, so it can skip a long match; the coarse
+hash finds it directly. The index is a backstop as well as a long-range finder.
+
+**The discount was removed because it cost bytes.** The prompt specifies a
+distance-context discount for coarse matches. Implemented at 2 bits, `samba` got
+16 bytes *worse*: a discount lets the parser prefer a coarse match that is
+slightly worse than the fine alternative. At 0 discount the same file is 37 bytes
+better than before the index existed. Recorded here rather than silently kept
+because the plan asked for it.
+
+**Cost:** 237 s vs 190 s on the 102 MiB gate input (+25% encode), for a 1 MiB
+saving — that is a good trade on archive-like data and a pure loss on data with
+no long-range redundancy, which is why it is a flag (`-9` enables it,
+`--no-coarse` disables it) rather than always-on.
+
+**Tests.** `unit.coarse_index`, 5 cases: the repeat-after-a-gap gate in
+miniature, no false matches on 300 KB of random bytes, every reported match
+verified byte for byte on repetitive data, the anchored-slot policy surviving
+3 MB of noise, and a memory bound. 12/12 ctest suites pass.

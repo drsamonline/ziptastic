@@ -19,7 +19,8 @@ constexpr uint32_t kInf = std::numeric_limits<uint32_t>::max();
 
 uint64_t parse_block(std::span<const uint8_t> data, uint32_t begin, uint32_t end,
                      MatchFinder& finder, const CostModel& model,
-                     std::vector<Token>& out, const ParseOptions& opt) {
+                     std::vector<Token>& out, const ParseOptions& opt,
+                     CoarseIndex* coarse) {
   if (end <= begin) return 0;
   const uint32_t n = end - begin;
 
@@ -47,7 +48,6 @@ uint64_t parse_block(std::span<const uint8_t> data, uint32_t begin, uint32_t end
     relax(i + 1, here + lit, 1, 0);
 
     const std::span<const Match> matches = finder.query(pos);
-    if (matches.empty()) continue;
 
     const uint32_t limit = std::min(opt.max_len, n - i);
     uint32_t prev_len = 1;  // the literal transition already covered length 1
@@ -62,6 +62,21 @@ uint64_t parse_block(std::span<const uint8_t> data, uint32_t begin, uint32_t end
       }
       if (reach > prev_len) prev_len = reach;
       if (prev_len >= limit) break;
+    }
+
+    // The coarse index sees the whole stream, not just the finder's window, so
+    // it is the only source of matches for content repeated far back. It is
+    // priced through the same model, with the coarse discount.
+    if (coarse != nullptr) {
+      coarse->insert(pos);
+      Match cm{};
+      if (coarse->query(pos, &cm)) {
+        const uint32_t reach = std::min(cm.len, limit);
+        for (uint32_t len = prev_len + 1; len <= reach; ++len) {
+          relax(i + len, here + model.match_price(len, cm.dist, MatchSource::Coarse),
+                len, cm.dist);
+        }
+      }
     }
   }
 

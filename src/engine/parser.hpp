@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "chimera/cost_model.hpp"
+#include "chimera/coarse_index.hpp"
 #include "chimera/match_finder.hpp"
 
 namespace chce {
@@ -44,7 +45,8 @@ struct ParseOptions {
 // Returns the modelled cost of the parse in 1/16 bit units.
 uint64_t parse_block(std::span<const uint8_t> data, uint32_t begin, uint32_t end,
                      MatchFinder& finder, const CostModel& model,
-                     std::vector<Token>& out, const ParseOptions& opt = {});
+                     std::vector<Token>& out, const ParseOptions& opt = {},
+                     CoarseIndex* coarse = nullptr);
 
 // A greedy parse: take the longest match at each position, else a literal.
 // Not used by the encoder — it exists so tests and benchmarks can show what the
