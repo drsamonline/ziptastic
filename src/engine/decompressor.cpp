@@ -13,6 +13,7 @@
 #include "chimera/huffman.hpp"
 #include "entropy/token_coder.hpp"
 #include "precompressors/bcj_x86.hpp"
+#include "precompressors/preflate_wrap.hpp"
 
 namespace chce {
 namespace {
@@ -142,11 +143,15 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   if (!r.at_end()) return Err::TrailingData;
   if (dst.size() != fh.original_size) return Err::SizeMismatch;
 
-  // Undo the Layer 0 transform, if the stream was written with it. The
-  // transform is applied over the whole stream, so it is reversed over the
-  // whole output rather than per block.
+  // Undo the Layer 0 transforms in the reverse order they were applied:
+  // BCJ first, then DEFLATE recompression.
   if ((fh.flags & kFlagBcj) != 0) {
     bcj_x86_transform(dst, false);
+  }
+  if ((fh.flags & kFlagPrecomp) != 0) {
+    std::vector<uint8_t> original;
+    if (!preflate_repack(dst, original)) return Err::Corrupt;
+    dst = std::move(original);
   }
 
   out = std::move(dst);

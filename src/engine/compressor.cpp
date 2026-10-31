@@ -12,6 +12,7 @@
 #include "chimera/huffman.hpp"
 #include "entropy/token_coder.hpp"
 #include "precompressors/bcj_x86.hpp"
+#include "precompressors/preflate_wrap.hpp"
 
 namespace chce {
 namespace {
@@ -42,11 +43,11 @@ std::vector<EncodedBlock> encode_candidates(std::span<const uint8_t> block,
   return cands;
 }
 
-uint8_t header_flags(const CompressOptions& opt, bool bcj) {
+uint8_t header_flags(const CompressOptions& opt, bool bcj, bool precomp) {
   uint8_t f = 0;
   if (opt.coarse) f |= kFlagCoarse;
   if (opt.max_ratio) f |= kFlagMaxRatio;
-  if (opt.precomp) f |= kFlagPrecomp;
+  if (opt.precomp && precomp) f |= kFlagPrecomp;
   if (bcj) f |= kFlagBcj;
   return f;
 }
@@ -54,7 +55,8 @@ uint8_t header_flags(const CompressOptions& opt, bool bcj) {
 // The CHCE-native encoding: one block per `block_size` chunk, each block
 // optimally parsed against the fine match finder.
 Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
-                  bool bcj, std::vector<uint8_t>& out, CompressStats& stats) {
+                  bool bcj, bool precomp, std::vector<uint8_t>& out,
+                  CompressStats& stats) {
   // The finder and the cost model live for the whole stream: the dictionary
   // carries across blocks, and the model is fitted to the whole input rather
   // than re-learned per block.
@@ -72,7 +74,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
 
   FileHeader fh;
   fh.version = kFormatVersion;
-  fh.flags = header_flags(opt, bcj);
+  fh.flags = header_flags(opt, bcj, precomp);
   fh.original_size = input.size();
   fh.block_count =
       input.empty() ? 0 : (input.size() + opt.block_size - 1) / opt.block_size;
@@ -176,7 +178,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
 // single LZMA2_FALLBACK block. Block body layout (docs/FORMAT.md):
 //   props_len varint | props bytes | raw LZMA2 payload
 Err encode_lzma2_stream(std::span<const uint8_t> input,
-                        const CompressOptions& opt, bool bcj,
+                        const CompressOptions& opt, bool bcj, bool precomp,
                         std::vector<uint8_t>& out) {
   std::vector<uint8_t> payload;
   std::vector<uint8_t> props;
@@ -189,7 +191,7 @@ Err encode_lzma2_stream(std::span<const uint8_t> input,
 
   FileHeader fh;
   fh.version = kFormatVersion;
-  fh.flags = header_flags(opt, bcj);
+  fh.flags = header_flags(opt, bcj, precomp);
   fh.original_size = input.size();
   fh.block_count = 1;
 
@@ -213,6 +215,51 @@ Err encode_lzma2_stream(std::span<const uint8_t> input,
 // enough: `mozilla` is a tar of executables and has plenty of CALL/JMP bytes,
 // but the transform makes it 0.8% WORSE there, while on `ooffice` it is worth
 // 13.9%. Two small compressions settle it in well under a second.
+// Decides whether inflating a DEFLATE container actually pays. The payload is
+// BIGGER than the input (it holds inflated data), so comparing raw sizes is
+// meaningless — what matters is which one compresses smaller. Judged on a
+// sample, which is cheap and decisive: inflated text compresses several times
+// better than the DEFLATE stream it came from.
+bool precomp_helps(std::span<const uint8_t> payload, std::span<const uint8_t> original) {
+  const size_t kSample = 256 * 1024;
+  auto coded = [](std::span<const uint8_t> sample) -> size_t {
+    StaticCostModel model(sample);
+    MatchFinder::Options o;
+    o.window = 16u << 20;
+    o.nice_len = kMaxMatchLen;
+    MatchFinder finder(sample, o);
+    std::vector<Token> tokens;
+    parse_block(sample, 0, static_cast<uint32_t>(sample.size()), finder, model, tokens);
+    ByteWriter w;
+    encode_tokens_range(w, sample, 0, static_cast<uint32_t>(sample.size()), tokens);
+    return w.size();
+  };
+
+  // Sample from the MIDDLE of each buffer, not the start: the payload begins
+  // with the stream table and the preflate diffs, which are not representative
+  // of the inflated data that dominates it. Sampling the start made a 38 MiB
+  // payload of text look 60% less compressible than it is, and the decision
+  // went the wrong way.
+  auto mid = [kSample](std::span<const uint8_t> buf) {
+    if (buf.size() <= kSample) return buf;
+    const size_t off = (buf.size() - kSample) / 2;
+    return buf.subspan(off, kSample);
+  };
+  const std::span<const uint8_t> psample = mid(payload);
+  const std::span<const uint8_t> osample = mid(original);
+  const size_t pn = psample.size();
+  const size_t on = osample.size();
+  if (pn < 4096 || on < 4096) return false;
+
+  // Scale each sample's coded size to the full stream before comparing, since
+  // the two samples cover different amounts of data.
+  const double pay_est =
+      static_cast<double>(coded(psample)) / pn * payload.size();
+  const double orig_est =
+      static_cast<double>(coded(osample)) / on * original.size();
+  return pay_est < orig_est;
+}
+
 bool bcj_helps(std::span<const uint8_t> input) {
   const size_t kSample = 128 * 1024;
   const size_t n = std::min(input.size(), kSample);
@@ -250,29 +297,52 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   }
   if (input.size() > kMaxStreamSize) return Err::BadBlockSize;
 
+  // Layer 0a: DEFLATE recompression. A ZIP/PNG/JAR is already DEFLATE, so we
+  // inflate it and compress the inflated bytes instead, keeping preflate's
+  // correction so the exact original can be recreated. Only used when the round
+  // trip is verified here, on this input — an unverified transform would be a
+  // data-loss bug waiting to happen.
+  std::vector<uint8_t> precomp_payload;
+  bool precomp = false;
+  if (opt.precomp && preflate_available() && !input.empty()) {
+    const std::vector<uint8_t> in(input.begin(), input.end());
+    std::vector<uint8_t> payload;
+    if (preflate_unpack(in, payload) &&
+        precomp_helps(std::span<const uint8_t>(payload), input)) {
+      precomp_payload = std::move(payload);
+      precomp = true;
+    }
+  }
+
   // Layer 0: the x86 BCJ transform. Applied to the whole stream before
   // anything else, so the filter's state carries across block boundaries the
   // same way it does inside `xz --x86`. It is exactly invertible, so a wrong
   // guess costs ratio and never correctness.
   std::vector<uint8_t> transformed;
-  std::span<const uint8_t> data = input;
-  const bool bcj = opt.bcj && bcj_x86_likely(input) && bcj_helps(input);
+  // Everything downstream codes `data`: the inflated payload when precompression
+  // applied, otherwise the original. The flag and the data must agree or the
+  // decoder will run the inverse transform on bytes that never had it.
+  std::span<const uint8_t> data =
+      precomp ? std::span<const uint8_t>(precomp_payload) : input;
+  const bool bcj = opt.bcj && bcj_x86_likely(data) && bcj_helps(data);
   if (bcj) {
-    transformed.assign(input.begin(), input.end());
+    transformed.assign(data.begin(), data.end());
     bcj_x86_transform(transformed, true);
     data = transformed;
   }
 
   CompressStats local;
   std::vector<uint8_t> native;
-  if (Err e = encode_native(data, opt, bcj, native, local); e != Err::Ok) return e;
+  if (Err e = encode_native(data, opt, bcj, precomp, native, local); e != Err::Ok) {
+    return e;
+  }
 
   // Tier-1 guarantee: if LZMA2 does better on the whole stream, ship that.
   // Comparison is on total stream size, framing included, so the promise is
   // about the bytes the user actually gets.
   if (opt.lzma2_fallback && lzma2_available() && !input.empty()) {
     std::vector<uint8_t> fallback;
-    const Err e = encode_lzma2_stream(data, opt, bcj, fallback);
+    const Err e = encode_lzma2_stream(data, opt, bcj, precomp, fallback);
     if (e == Err::Ok && fallback.size() < native.size()) {
       CompressStats fb;
       fb.blocks = 1;

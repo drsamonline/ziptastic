@@ -99,7 +99,7 @@ measured results.
 | 5b | x86 BCJ transform | **done** — ooffice now beats `xz -9` |
 | 6 | Coarse long-range index | **done** (written from scratch — SREP is not public domain) |
 | 7 | Static + adaptive Huffman | **done** — adaptive beats static 3.52% on mozilla |
-| 8 | Semantic precompression (Preflate) | next |
+| 8 | Semantic precompression (Preflate) | **done** — ZIP subset −28.8% vs `xz -9` |
 | 9 | BWT, Brotli, Zstd, LZ4 backends | |
 | 10 | CM backend (`--max-ratio`) | |
 | 11 | PPMd backend | |

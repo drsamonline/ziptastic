@@ -48,6 +48,64 @@ add_subdirectory(${XZ_DIR} ${CMAKE_BINARY_DIR}/xz EXCLUDE_FROM_ALL)
 # Nothing GPL/LGPL is ever added — see AGENT_PROMPT.md §2.
 # ---------------------------------------------------------------------------
 
+
+# ---------------------------------------------------------------------------
+# Preflate (Phase 8) — DEFLATE recompressor, Apache-2.0.
+#
+# Compiled directly rather than through its own CMakeLists: that file declares
+# cmake_minimum_required(3.2), which CMake 4 refuses, and it also builds two demo
+# executables we do not want. The file list is the one its LIB_SRC declares.
+# ---------------------------------------------------------------------------
+set(PREFLATE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/hcs/old/preflate-master)
+set(PREFLATE_SRC
+  ${PREFLATE_DIR}/preflate_block_decoder.cpp
+  ${PREFLATE_DIR}/preflate_block_reencoder.cpp
+  ${PREFLATE_DIR}/preflate_block_trees.cpp
+  ${PREFLATE_DIR}/preflate_complevel_estimator.cpp
+  ${PREFLATE_DIR}/preflate_constants.cpp
+  ${PREFLATE_DIR}/preflate_decoder.cpp
+  ${PREFLATE_DIR}/preflate_hash_chain.cpp
+  ${PREFLATE_DIR}/preflate_info.cpp
+  ${PREFLATE_DIR}/preflate_parameter_estimator.cpp
+  ${PREFLATE_DIR}/preflate_parser_config.cpp
+  ${PREFLATE_DIR}/preflate_predictor_state.cpp
+  ${PREFLATE_DIR}/preflate_reencoder.cpp
+  ${PREFLATE_DIR}/preflate_seq_chain.cpp
+  ${PREFLATE_DIR}/preflate_statistical_codec.cpp
+  ${PREFLATE_DIR}/preflate_statistical_model.cpp
+  ${PREFLATE_DIR}/preflate_token.cpp
+  ${PREFLATE_DIR}/preflate_token_predictor.cpp
+  ${PREFLATE_DIR}/preflate_tree_predictor.cpp
+  ${PREFLATE_DIR}/support/arithmetic_coder.cpp
+  ${PREFLATE_DIR}/support/array_helper.cpp
+  ${PREFLATE_DIR}/support/bit_helper.cpp
+  ${PREFLATE_DIR}/support/bitstream.cpp
+  ${PREFLATE_DIR}/support/const_division.cpp
+  ${PREFLATE_DIR}/support/huffman_decoder.cpp
+  ${PREFLATE_DIR}/support/huffman_encoder.cpp
+  ${PREFLATE_DIR}/support/huffman_helper.cpp
+  ${PREFLATE_DIR}/support/memstream.cpp
+  ${PREFLATE_DIR}/support/outputcachestream.cpp
+  ${PREFLATE_DIR}/support/task_pool.cpp
+)
+add_library(preflate_vendor STATIC ${PREFLATE_SRC})
+target_include_directories(preflate_vendor PUBLIC ${PREFLATE_DIR} ${PREFLATE_DIR}/support)
+# Preflate is C++14-era code: it uses std::result_of, which C++20 removed. Build
+# just this target as C++17 rather than patching vendored source.
+set_target_properties(preflate_vendor PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+# Our wrapper includes preflate's headers, which are C++14-era, so it is built as
+# C++17 in its own target. The rest of the engine stays C++20 and only sees our
+# own header, which does not include theirs.
+add_library(preflate_shim STATIC src/precompressors/preflate_wrap.cpp)
+set_target_properties(preflate_shim PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_link_libraries(preflate_shim PUBLIC preflate_vendor)
+target_include_directories(preflate_shim PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+# Vendored third-party code: keep its warnings out of our build log.
+if(NOT MSVC)
+  target_compile_options(preflate_vendor PRIVATE -w)
+endif()
+
 add_library(chce_core STATIC
   src/engine/block_writer.cpp
   src/engine/compressor.cpp
@@ -70,7 +128,7 @@ target_include_directories(chce_core
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(chce_core PRIVATE liblzma)
+target_link_libraries(chce_core PRIVATE liblzma preflate_shim)
 target_include_directories(chce_core PRIVATE ${XZ_DIR}/src/liblzma/api)
 
 if(MSVC)

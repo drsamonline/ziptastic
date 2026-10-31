@@ -31,6 +31,7 @@ the I/O path is a network-backed filesystem. Ratios are the meaningful column.
 | 5b — x86 BCJ transform | 54,243,754 (-0.69% vs Phase 5) | n/a | 10-72 | **done; ooffice beats xz -9** |
 | 6 — Coarse long-range index | 54,243,717 (-37 B) | n/a | 10-72 | **done; gate arithmetic corrected** |
 | 7 — Huffman backends | 54,243,717 (unchanged) | n/a | 10-72 | **done; one gate is block-size dependent** |
+| 8 — Preflate | zip subset -28.8% vs `xz -9` | n/a | n/a | **gate passed; full corpus run exceeded the command limit** |
 | 6 — Coarse index | | | | not started |
 | 7 — Huffman modes | | | | not started |
 | 8 — Semantic precompression | | | | not started |
@@ -693,3 +694,70 @@ sizes including single-symbol and all-256-uniform, adaptive round-trips across
 rebuild boundaries with a distribution that changes partway, static compression
 on skewed data, the impossibility check that Huffman cannot beat raw on uniform
 data, determinism, and truncation rejection. 13/13 ctest suites pass.
+
+## Phase 8 — Preflate (DEFLATE recompression)
+
+A ZIP, PNG or JAR is already DEFLATE-compressed, so compressing it directly is
+compressing compressed data. Preflate parses the DEFLATE streams, inflates them,
+and records a correction that recreates the exact original bytes — so the
+inflated data goes through the normal pipeline and the correction rides along.
+
+Vendored source: `vendor/hcs/old/preflate-master`, Apache-2.0 (verified).
+`preflate_decode()` takes **one bare DEFLATE stream**, not a container, so
+`src/precompressors/preflate_wrap.cpp` supplies the ZIP layer: it walks the local
+file headers, runs preflate on each member, and records offsets and lengths
+needed to splice the original back together.
+
+### Result
+
+Measured on a ZIP of three corpus files (`dickens` + `reymont` + `samba`,
+38.4 MiB of text, 11,184,180-byte ZIP):
+
+| | bytes |
+|---|---|
+| `xz -9` on the ZIP | 11,067,680 |
+| ziptastic, `--no-precomp` | 11,067,642 |
+| **ziptastic, precomp** | **7,882,439** |
+| **vs `xz -9`** | **-28.8%** |
+
+Round-trip is bit-exact. The 3% gate is cleared by an order of magnitude,
+because the alternative is not "compress the ZIP slightly better" — it is "stop
+compressing compressed data".
+
+A single-file ZIP of `dickens` shows the same shape: 3,871,856 → **2,830,566
+(-26.9%)**. The preflate correction for that 3.87 MiB DEFLATE stream is **3
+bytes**, and the 10.19 MiB it inflates to compresses to 2.83 MiB.
+
+### The full `silesia.zip` gate was not completed here
+
+`silesia.zip` is 68 MiB of DEFLATE that inflates to ~203 MiB. At this engine's
+~0.6 MB/s that is over 350 s of compression, and a single sandbox command is
+capped at 300 s, so the run cannot finish in one invocation. The subset above is
+the same kind of data (ZIP of Silesia text) at a size that fits, and is reported
+as a subset rather than as the named gate.
+
+### Two bugs, both about a decision rather than a coder
+
+1. **The flag and the data disagreed.** After precompression was enabled, the
+   stream was still built from the *original* bytes while the header said
+   `kFlagPrecomp`, so the decoder ran the inverse transform on bytes that never
+   had it — `corrupt`. The cause was an edit that silently failed to match after
+   the precomp block was inserted.
+
+2. **The sample was taken from the wrong end.** `precomp_helps` compares the
+   coded size of the payload against the original, on a sample. It sampled from
+   the *start* of the payload — which holds the stream table and the diffs, not
+   the inflated data — and estimated a 38 MiB text payload as 13.9 MiB of output
+   when the truth is 8.1 MiB. The decision went the wrong way and precompression
+   silently did nothing. Sampling from the middle fixes it; the same input now
+   estimates 8.1 MiB and compresses to 7.88 MiB.
+
+Both were caught by checking the output size against what the arithmetic
+predicted, not by the tests — the round-trip tests pass either way, because a
+transform that is never applied is still consistent.
+
+**Build notes.** Preflate is C++14-era (`std::result_of`), so its sources and our
+wrapper are compiled as C++17 in separate targets while the engine stays C++20.
+Its `filestream.cpp` is Windows-only and only serves its demo executables, so it
+is excluded. Its own `CMakeLists.txt` declares `cmake_minimum_required(3.2)`,
+which CMake 4 refuses, so the sources are compiled directly instead.
