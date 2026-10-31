@@ -47,7 +47,7 @@ opinion; where I disagree with it I say so.
 | `brotli-master` | MIT | link | yes | static-dictionary backend; strong on web text. |
 | `zstd-dev` | BSD-3-Clause | link | yes | fast mode / fallback. |
 | `lz4-dev` | BSD-2-Clause | link | yes | ultra-fast mode. |
-| `srep-main` | Public-Domain | copy-src | yes (3.1k lines core) | **long-range matching** (Phase 6). Design reference; adapt, do not link. |
+| `srep-main` | **all-rights-reserved** (manifest said Public-Domain — corrected) | copy-src -> **reference** | yes (3.1k lines core) | **long-range matching** (Phase 6) — *design only*, see the licence note below. |
 | `preflate-master` | Apache-2.0 | link | yes | **DEFLATE recompression** (Phase 8) — the archive gate. |
 | `zopfli-master` | Apache-2.0 | link | yes | helps preflate re-encode DEFLATE streams. |
 | `libdeflate-master` | MIT | link | yes | same role, much faster than zopfli. |
@@ -113,6 +113,23 @@ splitter, applied when the block's byte-pair correlation suggests it, with the
 element width recorded in the body.
 
 ### 3. Long-range redundancy: archives, `samba`, source tarballs
+
+> **Licence correction.** `SOURCES` lists `srep` as Public-Domain with
+> integration `copy-src`. It is neither. `old/srep-main/Compression/SREP/srep.cpp`
+> opens with "Copyright (C) 2009-2014 Bulat Ziganshin. **All rights reserved.**
+> Mail Bulat.Ziganshin@gmail.com ... if you want to buy a commercial license for
+> the source code", there is no LICENSE file in the tree, and the same notice is
+> on the copy embedded in `freearc-main`. So SREP is a **design reference only**:
+> its block-hash technique is published and can be implemented independently, but
+> its code must not be copied into a closed-source binary. The manifest row has
+> been corrected in HCS.
+>
+> This does not block Phase 6. It changes it from "adapt SREP" to "write the
+> block-hash index ourselves", which is a well-understood design (hash fixed-size
+> blocks into buckets, keep the most recent N positions per bucket, look up
+> candidate long-range matches) and needs no borrowed code. The parameters worth
+> borrowing from the published description: 48-byte blocks, 16-entry buckets,
+> unbounded history.
 
 **Cause.** Our fine finder has a 64 MiB window and the parser only sees matches
 inside it. A ZIP or tar that repeats a file 100 MB later is invisible.
