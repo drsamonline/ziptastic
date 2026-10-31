@@ -41,6 +41,9 @@ struct CompressOptions {
   // Parallel mode: blocks become self-contained (no cross-block matches) so they
   // can be compressed and decompressed on several threads. Archive mode, the
   // default, keeps them coupled for ratio.
+  // Coarse dedup stage (SREP-style): remove long-range duplicates before block
+  // splitting, so backends that cannot look across blocks still benefit.
+  bool dedup = true;
   bool parallel = false;
   unsigned threads = 0;  // 0 = hardware concurrency
   uint32_t window = 64u << 20; // match-finder window

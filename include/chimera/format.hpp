@@ -44,9 +44,11 @@ enum Flags : uint8_t {
   // Every block is self-contained, so a decoder may decode them in parallel.
   // Absent means a block may reference data in earlier blocks.
   kFlagParallel = 1u << 4,
+  // A coarse dedup stage ran before block splitting.
+  kFlagDedup = 1u << 5,
 };
 inline constexpr uint8_t kFlagMask =
-    kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel;
+    kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup;
 
 // ---------------------------------------------------------------------------
 // Block modes

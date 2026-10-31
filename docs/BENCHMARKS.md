@@ -1187,5 +1187,55 @@ cross-block redundancy, and the coarse index only feeds the *token* path.
   emit literals plus back-references, and compress that payload normally.
 - A new header flag, and the same verify-before-use discipline used for preflate
   (reconstruct and compare before committing to the transform).
-- Expected: ~10% on archives with duplicate members, ~0 on files without them.
-  Not built yet; this is a measurement, not a result.
+- **Built.** See the next section for the result.
+
+## SREP-style dedup stage (built)
+
+`src/precompressors/dedup.cpp`, a Layer 0 stage that runs after BCJ and before
+block splitting. It scans with the existing `CoarseIndex`, replaces long repeated
+runs with back-references, and hands the result to the normal pipeline. The
+header carries `kFlagDedup` (bit 5).
+
+Stream layout: `varint original_size`, then repeated `0x00 varint len <literals>`
+and `0x01 varint dist varint len`. The original length lives in the stream, so no
+extra format field was needed.
+
+**Result:**
+
+| | bytes |
+|---|---|
+| `dup2.tar` without dedup | 1,326,180 |
+| **`dup2.tar` with dedup** | **1,183,152 (-10.8%)** |
+| ideal (duplicate removed by hand) | 1,188,707 |
+
+It slightly beats the hand-made ideal, because it also deduplicates across the
+tar's own block boundaries. Round-trip exact.
+
+**No regressions:** `xml` 374,682, `reymont` 1,024,579, `ooffice` 2,083,954 — all
+byte-identical to before, because the stage declines data it should not touch.
+
+### The bug that mattered: short repeats must be left alone
+
+First version used a **64-byte minimum match**, and it made **`xml` 20.8% worse**
+(374,682 -> 452,747). XML is full of repeated tags: lifting them into commands
+destroys exactly the structure BWT and PPMd exploit. Two changes fixed it:
+
+- **Minimum match 4096 bytes.** Only substantial duplicates — whole files inside
+  an archive — are worth lifting out.
+- **Engage only when the removal exceeds 25%** of the input. A small reduction is
+  a strong signal that the repeats were short and structural, and the command
+  stream will compress worse than the original.
+
+With both, `xml` is untouched and the duplicate archive still gains 10.8%.
+
+**Known gap, unrelated to this stage:** the format has no checksum. A flipped
+literal byte inside a dedup packet is undetectable and decodes to wrong content of
+the right length. `corruption_never_produces_a_wrong_length` pins what is actually
+guaranteed (a correct length, never a crash or a hang); the missing integrity
+field is a format-level gap worth closing separately.
+
+**Tests.** `unit.dedup`, 5 cases: round-trip with a large duplicate, declining
+XML-like short repetition, accepting a genuinely periodic pattern (an earlier
+version of this test asserted the opposite and was wrong about the data),
+declining unique data, and corruption never producing a wrong length. 18/18 ctest
+suites pass.

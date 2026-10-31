@@ -16,6 +16,7 @@
 #include "entropy/ppmd.hpp"
 #include "entropy/token_coder.hpp"
 #include "precompressors/bcj_x86.hpp"
+#include "precompressors/dedup.hpp"
 #include "precompressors/preflate_wrap.hpp"
 
 namespace chce {
@@ -179,6 +180,11 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   // BCJ first, then DEFLATE recompression.
   if ((fh.flags & kFlagBcj) != 0) {
     bcj_x86_transform(dst, false);
+  }
+  if ((fh.flags & kFlagDedup) != 0) {
+    std::vector<uint8_t> expanded;
+    if (!dedup_unpack(dst, expanded)) return Err::Corrupt;
+    dst = std::move(expanded);
   }
   if ((fh.flags & kFlagPrecomp) != 0) {
     std::vector<uint8_t> original;

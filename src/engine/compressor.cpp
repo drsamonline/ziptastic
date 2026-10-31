@@ -17,6 +17,7 @@
 #include "entropy/ppmd.hpp"
 #include "entropy/token_coder.hpp"
 #include "precompressors/bcj_x86.hpp"
+#include "precompressors/dedup.hpp"
 #include "precompressors/preflate_wrap.hpp"
 
 namespace chce {
@@ -49,12 +50,13 @@ std::vector<EncodedBlock> encode_candidates(std::span<const uint8_t> block,
 }
 
 uint8_t header_flags(const CompressOptions& opt, bool bcj, bool precomp,
-                     bool parallel) {
+                     bool parallel, bool dedup) {
   uint8_t f = 0;
   if (opt.coarse) f |= kFlagCoarse;
   if (opt.max_ratio) f |= kFlagMaxRatio;
   if (opt.precomp && precomp) f |= kFlagPrecomp;
   if (parallel) f |= kFlagParallel;
+  if (dedup) f |= kFlagDedup;
   if (bcj) f |= kFlagBcj;
   return f;
 }
@@ -190,7 +192,7 @@ EncodedBlock encode_one_block(std::span<const uint8_t> input, size_t pos, size_t
 }
 
 Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
-                  bool bcj, bool precomp, std::vector<uint8_t>& out,
+                  bool bcj, bool precomp, bool dedup, std::vector<uint8_t>& out,
                   CompressStats& stats) {
   const size_t block_count =
       input.empty() ? 0 : (input.size() + opt.block_size - 1) / opt.block_size;
@@ -198,7 +200,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
 
   FileHeader fh;
   fh.version = kFormatVersion;
-  fh.flags = header_flags(opt, bcj, precomp, parallel);
+  fh.flags = header_flags(opt, bcj, precomp, parallel, dedup);
   fh.original_size = input.size();
   fh.block_count = block_count;
 
@@ -291,7 +293,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
 //   props_len varint | props bytes | raw LZMA2 payload
 Err encode_lzma2_stream(std::span<const uint8_t> input,
                         const CompressOptions& opt, bool bcj, bool precomp,
-                        std::vector<uint8_t>& out) {
+                        bool dedup, std::vector<uint8_t>& out) {
   std::vector<uint8_t> payload;
   std::vector<uint8_t> props;
   if (Err e = lzma2_encode(input, payload, props); e != Err::Ok) return e;
@@ -303,7 +305,7 @@ Err encode_lzma2_stream(std::span<const uint8_t> input,
 
   FileHeader fh;
   fh.version = kFormatVersion;
-  fh.flags = header_flags(opt, bcj, precomp, false);
+  fh.flags = header_flags(opt, bcj, precomp, false, dedup);
   fh.original_size = input.size();
   fh.block_count = 1;
 
@@ -443,9 +445,27 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
     data = transformed;
   }
 
+  // Layer 0b: coarse dedup. Applied after BCJ so the filter still sees real x86
+  // bytes, and before block splitting so every backend benefits from the
+  // removed duplicates. Verified here before use, like every other transform.
+  std::vector<uint8_t> dedup_payload;
+  bool dedup = false;
+  if (opt.dedup && data.size() >= (1u << 20)) {
+    std::vector<uint8_t> packed;
+    if (dedup_pack(data, packed) && packed.size() < data.size()) {
+      std::vector<uint8_t> check;
+      if (dedup_unpack(packed, check) && check.size() == data.size() &&
+          std::memcmp(check.data(), data.data(), data.size()) == 0) {
+        dedup_payload = std::move(packed);
+        dedup = true;
+      }
+    }
+  }
+  if (dedup) data = dedup_payload;
+
   CompressStats local;
   std::vector<uint8_t> native;
-  if (Err e = encode_native(data, opt, bcj, precomp, native, local); e != Err::Ok) {
+  if (Err e = encode_native(data, opt, bcj, precomp, dedup, native, local); e != Err::Ok) {
     return e;
   }
 
@@ -454,7 +474,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // about the bytes the user actually gets.
   if (opt.lzma2_fallback && lzma2_available() && !input.empty()) {
     std::vector<uint8_t> fallback;
-    const Err e = encode_lzma2_stream(data, opt, bcj, precomp, fallback);
+    const Err e = encode_lzma2_stream(data, opt, bcj, precomp, dedup, fallback);
     if (e == Err::Ok && fallback.size() < native.size()) {
       CompressStats fb;
       fb.blocks = 1;

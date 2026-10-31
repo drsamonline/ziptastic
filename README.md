@@ -109,6 +109,7 @@ measured results.
 | 9 | BWT, Brotli, Zstd, LZ4 backends | |
 | 10 | CM backend (`--max-ratio`) | |
 | 11 | PPMd backend | |
+| 13 | SREP-style dedup stage | **done** — −10.8% on duplicate archives, no regressions |
 | 12 | Speed/ratio optimisation | **block size tuned** (4 MiB); CLI fuzzing; **parallel mode** (`--parallel`) |
 
 ## Layout
