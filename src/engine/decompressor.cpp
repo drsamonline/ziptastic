@@ -278,6 +278,13 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     if (!dedup_unpack(dst, expanded)) return Err::Corrupt;
     dst = std::move(expanded);
   }
+  // Recursion: the nested numeric transform was applied AFTER precomp on encode,
+  // so it is undone BEFORE it here. Order is the whole correctness argument.
+  if ((fh.layers & kLayerNumericNested) != 0) {
+    std::vector<uint8_t> original;
+    if (!numeric_unpack(dst, original)) return Err::Corrupt;
+    dst = std::move(original);
+  }
   if ((fh.flags & kFlagPrecomp) != 0) {
     std::vector<uint8_t> original;
     if (!preflate_repack(dst, original)) return Err::Corrupt;

@@ -62,3 +62,67 @@ Recursion stays first, and this is why: it is the only item that makes the other
 eight more effective. Base64 was measured at 4.5% on dense data and 71.8% on
 structured data — and recursion is what *finds* the structured data. The two compound
 in exactly the way the experiment shows.
+
+---
+
+# Implementation attempt: wired, but the gate blocks it
+
+Recursion is implemented — a `kLayerNumericNested` layer bit, the numeric transform
+re-entered on what precomp inflated, and undone *before* precomp on decode because
+that is the order it was applied. It round-trips exactly.
+
+**But it does not fire on the case it was built for**, and the reason is a genuine
+bug worth recording.
+
+## The numbers that show it should fire
+
+| what | our engine's output |
+|---|---|
+| the XLSX as given (573,983 B) | 369,080 |
+| the sheet XML inside it (3,262,191 B) | **181,633** |
+
+Reaching the XML is worth **2×**. `preflate_unpack` succeeds and produces exactly
+that XML. And yet `precomp_helps()` declines.
+
+## Why
+
+`precomp_helps()` estimates the cost of both sides by running **one** code path —
+`StaticCostModel` + `parse_block` + `encode_tokens_range`, i.e. the range-coder token
+path — and comparing the two estimates.
+
+The full engine, on the same XML, picks **BWT** and gets 181,633. The range-coder
+path is much weaker on XML, so its estimate for the payload lands near or above its
+estimate for the deflated original, and the comparison fails.
+
+**The gate is measuring a different backend from the one that will actually be used.**
+That is the same class of error as the sample-based selector (+2.68% size) and the
+256 KiB mid-sample that once made a 38 MiB text payload look 60% less compressible
+than it was. Three instances now, all the same shape: a cheap predictor standing in
+for a measurement, and getting it wrong in the direction that costs ratio.
+
+## The fix, and why it is not a one-liner
+
+The honest fix is to compare the way the engine will actually decide: best-of-backends
+on both sides. That is expensive at file level, which is why the predictor exists.
+
+Two options:
+
+1. **Add a BWT term to `coded()`** — sample both sides, run libbsc as well, take the
+   smaller. Costs one extra BWT pass per decision on the sample only.
+2. **Drop the gate for verified transforms.** `preflate_unpack` only succeeds on real
+   DEFLATE, and the round trip is verified before use. The gate exists to avoid
+   pathological cases, but it has now been wrong three times, and every one of those
+   errors cost ratio rather than correctness.
+
+Option 1 is the smaller change and keeps the gate doing its job. It is the next
+commit.
+
+## What is already in the tree
+
+- `kLayerNumericNested` (bit 1 of `layers`), with `kLayerMask` widened.
+- Encode: after precomp inflates, `numeric_pack` is re-entered on the payload, and
+  the result is accepted only if `numeric_unpack` reproduces the payload exactly.
+- Decode: nested numeric undone **before** `preflate_repack`.
+- `precomp_helps` gained an exact path below 8 MiB that codes both sides in full
+  instead of extrapolating from a 256 KiB sample. It does not fix this case, because
+  the problem is *which* code path it uses, not how much of the input it sees.

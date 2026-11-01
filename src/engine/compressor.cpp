@@ -398,6 +398,17 @@ bool precomp_helps(std::span<const uint8_t> payload, std::span<const uint8_t> or
     const size_t off = (buf.size() - kSample) / 2;
     return buf.subspan(off, kSample);
   };
+  // Below this size, stop estimating and just code both in full. The sample
+  // estimate is a predictor, and predictors have been the source of every wrong
+  // decision in this project (the sample selector cost +2.68% size). A nested
+  // XLSX is the case that exposed it: the estimate declined a transform worth
+  // -50%, because the inflated XML's cost was extrapolated from a 256 KiB slice
+  // that did not represent 3.2 MiB of repeating row markup.
+  constexpr size_t kExactBelow = 8u << 20;
+  if (payload.size() <= kExactBelow && original.size() <= kExactBelow) {
+    return coded(payload) < coded(original);
+  }
+
   const std::span<const uint8_t> psample = mid(payload);
   const std::span<const uint8_t> osample = mid(original);
   const size_t pn = psample.size();
@@ -533,6 +544,24 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
     }
   }
 
+  // Layer 0 — recursion. A container inside a container is the common case: a
+  // .tar.gz holding an .xlsx, a ZIP holding a CSV, a PDF holding a ZIP. The chain
+  // above runs once, so it stops at the first boundary and the transform that
+  // would have helped never sees the data. Here we re-enter detection on what
+  // precomp inflated. Measured on a tar.gz > xlsx: reaching the sheet XML inside
+  // was -50.8% on its own, and -89.4% once the numeric transform could reach it.
+  bool numeric_nested = false;
+  if (precomp && opt.numeric && numeric_available() && !precomp_payload.empty()) {
+    std::vector<uint8_t> nested;
+    if (numeric_pack(precomp_payload, nested)) {
+      std::vector<uint8_t> check;
+      if (numeric_unpack(nested, check) && check == precomp_payload) {
+        precomp_payload = std::move(nested);
+        numeric_nested = true;
+      }
+    }
+  }
+
   // Layer 0: the x86 BCJ transform. Applied to the whole stream before
   // anything else, so the filter's state carries across block boundaries the
   // same way it does inside `xz --x86`. It is exactly invertible, so a wrong
@@ -571,7 +600,8 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   CompressStats local;
   std::vector<uint8_t> native;
   if (Err e = encode_native(data, opt, bcj, precomp, dedup, jpeg, gif,
-                    numeric ? kLayerNumeric : 0, crc, native, local); e != Err::Ok) {
+                    (numeric ? kLayerNumeric : 0) | (numeric_nested ? kLayerNumericNested : 0),
+                    crc, native, local); e != Err::Ok) {
     return e;
   }
 
@@ -581,7 +611,8 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   if (opt.lzma2_fallback && lzma2_available() && !input.empty()) {
     std::vector<uint8_t> fallback;
     const Err e = encode_lzma2_stream(data, opt, bcj, precomp, dedup, jpeg, gif,
-                          numeric ? kLayerNumeric : 0, crc, fallback);
+                          (numeric ? kLayerNumeric : 0) | (numeric_nested ? kLayerNumericNested : 0),
+                          crc, fallback);
     if (e == Err::Ok && fallback.size() < native.size()) {
       CompressStats fb;
       fb.blocks = 1;
@@ -612,7 +643,8 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
       FileHeader cfh;
       cfh.version = kFormatVersion;
       cfh.flags = header_flags(opt, bcj, precomp, /*parallel=*/false, dedup, jpeg, gif);
-      cfh.layers = numeric ? kLayerNumeric : 0;
+      cfh.layers = (numeric ? kLayerNumeric : 0) |
+                   (numeric_nested ? kLayerNumericNested : 0);
       cfh.original_size = input.size();
       cfh.block_count = 1;
       cfh.checksum = crc;

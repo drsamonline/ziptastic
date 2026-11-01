@@ -59,9 +59,13 @@ enum Flags : uint8_t {
 // because that byte is full.
 enum LayerFlags : uint8_t {
   kLayerNumeric = 1u << 0,  // integer CSV/TSV columns coded as delta+varint
+  // Recursion: the numeric transform was applied to the payload that precomp
+  // inflated, i.e. one container level deeper than the input. Undone BEFORE
+  // precomp on decode, because it was applied after precomp on encode.
+  kLayerNumericNested = 1u << 1,
 };
 
-inline constexpr uint8_t kLayerMask = kLayerNumeric;
+inline constexpr uint8_t kLayerMask = kLayerNumeric | kLayerNumericNested;
 
 inline constexpr uint8_t kFlagMask =
     kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup | kFlagJpeg | kFlagGif;
