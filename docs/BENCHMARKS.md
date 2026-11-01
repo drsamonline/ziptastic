@@ -1486,3 +1486,38 @@ is accepted. The next capability needs a new header field, not another bit.
 
 **Tests:** `unit.gif`, 3 cases — signature detection, declining non-GIF data, and a
 bit-exact round trip of a vendored sample. 20/20 suites pass.
+
+## LZ4 precompression — potential measured, not yet integrated
+
+LZ4 was identified as the highest-value unhandled container (see
+`docs/REPACK_SOURCES.md`). Before writing any integration, the payoff was measured
+directly: take a Silesia file, compress it with liblz4's frame format, then compare
+compressing the resulting `.lz4` file against compressing the payload inside it.
+
+| file | raw | LZ4 file | our engine on the `.lz4` | our engine on the payload | gain |
+|---|---|---|---|---|---|
+| `xml` | 5,345,280 | 1,177,119 | 897,038 | **374,686** | **-58.2%** |
+| `dickens` | 10,192,446 | 6,404,486 | 4,246,906 | **2,355,517** | **-44.5%** |
+| `mr` | 9,970,564 | 5,428,613 | 3,159,203 | **2,249,536** | **-28.8%** |
+
+This is the same order as the JPEG (-19.4%), GIF (-29.5%) and PDF (-79%) wins, and
+far above anything the entropy-level ideas promised (1-3%). It confirms the pattern:
+**containers pay, codecs do not.**
+
+Note what the middle column says on its own: compressing an LZ4 file with a strong
+compressor still recovers 24-34% of it. LZ4 is a *speed* codec and leaves a great
+deal of redundancy for a BWT/PPMd-class engine to find.
+
+### The honest caveat before integration
+
+The table shows the **ideal** case — the payload compressed as if it were free to
+extract. A real implementation must also reproduce the `.lz4` bytes exactly, which
+means storing the parse (literal runs, match offsets and lengths) alongside the
+payload. That overhead is real and will eat into the gain, most on `mr`, where the
+matches are long and dense.
+
+The encouraging difference from the GIF work: **LZ4 does not need its encoder
+reproduced.** A GIF's LZW is not canonical, so a re-encode either matches exactly or
+the file is rejected. An LZ4 frame is an explicit sequence of literals and matches,
+so the parse can simply be *stored* and re-emitted — exactness is structural rather
+than a lucky match. That makes LZ4 a more predictable job than GIF was.
