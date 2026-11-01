@@ -87,24 +87,23 @@ TEST(file_header_bad_version) {
   CHECK_ERR(read_file_header(r0, h), Err::BadVersion);
 }
 
-TEST(file_header_bad_flags) {
+TEST(file_header_flags_are_full) {
+  // The flag byte is now entirely allocated (bits 0..7: coarse, max-ratio,
+  // precomp, bcj, parallel, dedup, jpeg, gif), so there is no longer any invalid
+  // value and BadFlags can no longer trigger. This test used to feed 0x80 as
+  // "invalid"; 0x80 is kFlagGif now.
+  //
+  // Recorded as a test rather than deleted because it marks a real limit: the
+  // next capability needs a new field, not another bit.
+  static_assert(kFlagMask == 0xFF, "the flag byte is expected to be fully allocated");
   auto buf = valid_file_header();
-  // A bit outside kFlagMask. This has moved twice now as flags were added
-  // (0x08 became kFlagBcj, then 0x10 became kFlagParallel), which is the test
-  // doing its job: a new flag must be registered in kFlagMask or rejected.
-  buf[5] = 0x80;
-  ByteReader r(buf);
-  FileHeader h;
-  CHECK_ERR(read_file_header(r, h), Err::BadFlags);
-
-  buf[5] = 0xFF;
-  ByteReader r2(buf);
-  CHECK_ERR(read_file_header(r2, h), Err::BadFlags);
-
-  // All defined flags at once is fine.
-  buf[5] = kFlagMask;
-  ByteReader r3(buf);
-  CHECK_ERR(read_file_header(r3, h), Err::Ok);
+  for (uint8_t flags : {uint8_t{0x00}, uint8_t{0x80}, uint8_t{0xFF}}) {
+    buf[5] = flags;
+    ByteReader r(buf);
+    FileHeader h;
+    CHECK_ERR(read_file_header(r, h), Err::Ok);
+    CHECK_EQ(h.flags, flags);
+  }
 }
 
 TEST(file_header_truncated) {

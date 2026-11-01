@@ -1446,3 +1446,43 @@ code did nothing at all.
 it is blocked by the same MIT-only rule as bzip3. GIF and PDF handling inside
 precomp-cpp live in its 8,512-line `precomp.cpp` rather than in modules — GIF would
 mean lifting code out of a monolith, so PDF was written from scratch instead.
+
+## GIF recompression
+
+`src/precompressors/gif_wrap.cpp`, a Layer 0 stage after JPEG. A GIF is LZW-coded
+palette indices, and LZW is a 1980s coder; the indices compress far better through
+this engine.
+
+The transform is used **only when the original LZW stream can be reproduced
+byte-exactly**. A GIF's LZW is not canonical — clear-code placement and code-width
+changes are encoder choices — so a re-encode that differs by one bit disqualifies
+the file. Verification runs before the transform is committed, like every other
+layer.
+
+**Measured through the CLI, all round-trips exact:**
+
+| file | GIF | engine alone | with GIF layer | gain |
+|---|---|---|---|---|
+| photo-like, dithered (`real.gif`) | 179,006 | 175,946 | **126,127** | **-29.5%** |
+| smooth gradient (`t1.gif`) | 80,586 | 80,389 | **12,644** | -84.3% |
+| `x*y mod 64` pattern (`t2.gif`) | 26,839 | 24,027 | **2,415** | -91.0% |
+
+The first row is the honest one: **-29.5% on a dithered photo-like image**, which
+is what real GIFs contain. The other two are synthetic patterns and represent the
+ceiling, not the norm.
+
+**A bug worth recording, because the design caught it.** The first version packed
+correctly but failed to unpack, and the engine silently declined the transform
+because verification failed. The cause: I compared the re-emitted sub-block chain
+against `lzw.size() + 1`, but the chain also carries a length byte per 255-byte
+chunk, so the framing never matched. The safety net meant this cost a rebuild
+rather than a corrupted archive — and it is the second time this session that
+"did the transform actually engage?" was the question that found the bug.
+
+**Flag space is now exhausted.** `kFlagGif` took bit 7, so `kFlagMask` is 0xFF and
+there is no invalid flags byte any more. `file_header_bad_flags` was rewritten as
+`file_header_flags_are_full`: it asserts the mask is full and that every byte value
+is accepted. The next capability needs a new header field, not another bit.
+
+**Tests:** `unit.gif`, 3 cases — signature detection, declining non-GIF data, and a
+bit-exact round trip of a vendored sample. 20/20 suites pass.

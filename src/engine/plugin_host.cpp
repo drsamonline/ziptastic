@@ -26,7 +26,11 @@ std::vector<LoadedPlugin> load_plugins(const std::string& dir) {
   std::vector<LoadedPlugin> out;
   std::error_code ec;
   if (!std::filesystem::is_directory(dir, ec)) {
-    std::fprintf(stderr, "chce: plugin directory '%s' not found\n", dir.c_str());
+    // Only complain when the user asked for a specific directory. A missing
+    // default ./plugins is the normal case for a build without plugins.
+    if (std::getenv("CHCE_PLUGIN_DIR")) {
+      std::fprintf(stderr, "chce: plugin directory '%s' not found\n", dir.c_str());
+    }
     return out;
   }
   for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {

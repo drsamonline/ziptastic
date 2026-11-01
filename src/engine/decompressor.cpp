@@ -19,6 +19,7 @@
 #include "entropy/token_coder.hpp"
 #include "precompressors/bcj_x86.hpp"
 #include "precompressors/dedup.hpp"
+#include "precompressors/gif_wrap.hpp"
 #include "precompressors/jpeg_wrap.hpp"
 #include "plugin_host.hpp"
 #include "precompressors/preflate_wrap.hpp"
@@ -282,6 +283,11 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     dst = std::move(original);
   }
 
+  if ((fh.flags & kFlagGif) != 0) {
+    std::vector<uint8_t> original;
+    if (!gif_unpack(dst, original)) return Err::Corrupt;
+    dst = std::move(original);
+  }
   if ((fh.flags & kFlagJpeg) != 0) {
     std::vector<uint8_t> original;
     if (!jpeg_unpack(dst, original)) return Err::Corrupt;

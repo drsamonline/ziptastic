@@ -47,6 +47,8 @@ struct CompressOptions {
   // coefficients, which is worth ~19% on a photo where compressing the JPEG
   // bytes is worth ~2%.
   bool jpeg = true;
+  // GIF recompression: decode LZW to indices, which compress far better.
+  bool gif = true;
   bool dedup = true;
   bool parallel = false;
   unsigned threads = 0;  // 0 = hardware concurrency

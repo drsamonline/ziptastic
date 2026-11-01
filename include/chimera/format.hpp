@@ -49,9 +49,13 @@ enum Flags : uint8_t {
   kFlagDedup = 1u << 5,
   // A JPEG was recompressed with brunsli before block splitting.
   kFlagJpeg = 1u << 6,
+  // A GIF was recompressed from its LZW to palette indices.
+  kFlagGif = 1u << 7,
 };
+// NOTE: all eight bits are now allocated. The next capability needs a new
+// header field rather than another bit here.
 inline constexpr uint8_t kFlagMask =
-    kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup | kFlagJpeg;
+    kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup | kFlagJpeg | kFlagGif;
 
 // ---------------------------------------------------------------------------
 // Block modes

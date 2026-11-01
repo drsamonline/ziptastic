@@ -109,6 +109,7 @@ measured results.
 | 9 | BWT, Brotli, Zstd, LZ4 backends | |
 | 10 | CM backend (`--max-ratio`) | |
 | 11 | PPMd backend | |
+| 19 | GIF recompression | **done** — −29.5% on a dithered image, bit-exact |
 | 18 | JPEG recompression (brunsli) | **done** — −19.4% on a real photo, bit-exact |
 | 17 | Interleaved rANS | **done** — ~12% faster decode, 9 bytes of payload |
 | 16 | Parallel decode | **done** — −17% at 82 blocks; gated at 8 blocks |

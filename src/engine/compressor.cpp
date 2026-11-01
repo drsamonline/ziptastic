@@ -18,6 +18,7 @@
 #include "entropy/token_coder.hpp"
 #include "precompressors/bcj_x86.hpp"
 #include "precompressors/dedup.hpp"
+#include "precompressors/gif_wrap.hpp"
 #include "precompressors/jpeg_wrap.hpp"
 #include "plugin_host.hpp"
 #include "precompressors/preflate_wrap.hpp"
@@ -52,7 +53,7 @@ std::vector<EncodedBlock> encode_candidates(std::span<const uint8_t> block,
 }
 
 uint8_t header_flags(const CompressOptions& opt, bool bcj, bool precomp,
-                     bool parallel, bool dedup, bool jpeg) {
+                     bool parallel, bool dedup, bool jpeg, bool gif) {
   uint8_t f = 0;
   if (opt.coarse) f |= kFlagCoarse;
   if (opt.max_ratio) f |= kFlagMaxRatio;
@@ -60,6 +61,7 @@ uint8_t header_flags(const CompressOptions& opt, bool bcj, bool precomp,
   if (parallel) f |= kFlagParallel;
   if (dedup) f |= kFlagDedup;
   if (jpeg) f |= kFlagJpeg;
+  if (gif) f |= kFlagGif;
   if (bcj) f |= kFlagBcj;
   return f;
 }
@@ -222,7 +224,8 @@ EncodedBlock encode_one_block(std::span<const uint8_t> input, size_t pos, size_t
 }
 
 Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
-                  bool bcj, bool precomp, bool dedup, bool jpeg, uint32_t checksum,
+                  bool bcj, bool precomp, bool dedup, bool jpeg, bool gif,
+                  uint32_t checksum,
                   std::vector<uint8_t>& out, CompressStats& stats) {
   const size_t block_count =
       input.empty() ? 0 : (input.size() + opt.block_size - 1) / opt.block_size;
@@ -230,7 +233,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
 
   FileHeader fh;
   fh.version = kFormatVersion;
-  fh.flags = header_flags(opt, bcj, precomp, parallel, dedup, jpeg);
+  fh.flags = header_flags(opt, bcj, precomp, parallel, dedup, jpeg, gif);
   fh.original_size = input.size();
   fh.block_count = block_count;
   fh.checksum = checksum;
@@ -324,7 +327,8 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
 //   props_len varint | props bytes | raw LZMA2 payload
 Err encode_lzma2_stream(std::span<const uint8_t> input,
                         const CompressOptions& opt, bool bcj, bool precomp,
-                        bool dedup, bool jpeg, uint32_t checksum, std::vector<uint8_t>& out) {
+                        bool dedup, bool jpeg, bool gif, uint32_t checksum,
+                        std::vector<uint8_t>& out) {
   std::vector<uint8_t> payload;
   std::vector<uint8_t> props;
   if (Err e = lzma2_encode(input, payload, props); e != Err::Ok) return e;
@@ -336,7 +340,7 @@ Err encode_lzma2_stream(std::span<const uint8_t> input,
 
   FileHeader fh;
   fh.version = kFormatVersion;
-  fh.flags = header_flags(opt, bcj, precomp, false, dedup, jpeg);
+  fh.flags = header_flags(opt, bcj, precomp, false, dedup, jpeg, gif);
   fh.original_size = input.size();
   fh.block_count = 1;
   fh.checksum = checksum;
@@ -467,6 +471,27 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
     }
   }
 
+  // Layer 0 — GIF. Same reasoning as JPEG: LZW is a 1980s coder and the palette
+  // indices behind it compress far better through this engine. Only applied when
+  // the original LZW stream can be reproduced byte-exactly.
+  std::vector<uint8_t> gif_payload;
+  bool gif = false;
+  {
+    const std::span<const uint8_t> src =
+        jpeg ? std::span<const uint8_t>(jpeg_payload) : input;
+    if (opt.gif && gif_available() && !src.empty()) {
+      std::vector<uint8_t> packed;
+      if (gif_pack(src, packed)) {
+        std::vector<uint8_t> check;
+        if (gif_unpack(packed, check) && check.size() == src.size() &&
+            std::memcmp(check.data(), src.data(), src.size()) == 0) {
+          gif_payload = std::move(packed);
+          gif = true;
+        }
+      }
+    }
+  }
+
   // Layer 0a: DEFLATE recompression. A ZIP/PNG/JAR is already DEFLATE, so we
   // inflate it and compress the inflated bytes instead, keeping preflate's
   // correction so the exact original can be recreated. Only used when the round
@@ -475,7 +500,8 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   std::vector<uint8_t> precomp_payload;
   bool precomp = false;
   const std::span<const uint8_t> stage0 =
-      jpeg ? std::span<const uint8_t>(jpeg_payload) : input;
+      gif ? std::span<const uint8_t>(gif_payload)
+          : (jpeg ? std::span<const uint8_t>(jpeg_payload) : input);
   if (opt.precomp && preflate_available() && !stage0.empty()) {
     const std::vector<uint8_t> in(stage0.begin(), stage0.end());
     std::vector<uint8_t> payload;
@@ -523,7 +549,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
 
   CompressStats local;
   std::vector<uint8_t> native;
-  if (Err e = encode_native(data, opt, bcj, precomp, dedup, jpeg, crc, native, local); e != Err::Ok) {
+  if (Err e = encode_native(data, opt, bcj, precomp, dedup, jpeg, gif, crc, native, local); e != Err::Ok) {
     return e;
   }
 
@@ -532,7 +558,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // about the bytes the user actually gets.
   if (opt.lzma2_fallback && lzma2_available() && !input.empty()) {
     std::vector<uint8_t> fallback;
-    const Err e = encode_lzma2_stream(data, opt, bcj, precomp, dedup, jpeg, crc, fallback);
+    const Err e = encode_lzma2_stream(data, opt, bcj, precomp, dedup, jpeg, gif, crc, fallback);
     if (e == Err::Ok && fallback.size() < native.size()) {
       CompressStats fb;
       fb.blocks = 1;
@@ -562,7 +588,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
       cw.reserve(packed.size() + 64);
       FileHeader cfh;
       cfh.version = kFormatVersion;
-      cfh.flags = header_flags(opt, bcj, precomp, /*parallel=*/false, dedup, jpeg);
+      cfh.flags = header_flags(opt, bcj, precomp, /*parallel=*/false, dedup, jpeg, gif);
       cfh.original_size = input.size();
       cfh.block_count = 1;
       cfh.checksum = crc;
