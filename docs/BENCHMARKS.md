@@ -1521,3 +1521,39 @@ reproduced.** A GIF's LZW is not canonical, so a re-encode either matches exactl
 the file is rejected. An LZ4 frame is an explicit sequence of literals and matches,
 so the parse can simply be *stored* and re-emitted — exactness is structural rather
 than a lucky match. That makes LZ4 a more predictable job than GIF was.
+
+## Integer CSV/TSV columns — shipped
+
+`src/precompressors/numeric_wrap.cpp`, the first transform carried in
+`FileHeader::layers` rather than in `flags` (which was full). Format version 3.
+
+**Measured through the shipped CLI, post-compression, round-trip exact:**
+
+| file | engine without | engine with | gain |
+|---|---|---|---|
+| `data.csv` (4 columns x 40k rows, with header) | 164,257 | **37,174** | **-77.4%** |
+| `data.tsv` (2 columns x 40k rows) | 74,935 | **37,090** | **-50.5%** |
+
+Decline paths verified: a quoted CSV and a column with `007` are both left
+untouched, and both still round-trip exactly.
+
+**Design, as settled by measurement:**
+
+- **integers only** — floats gave -0.6% on smooth data, not worth the gating.
+- **delta + zigzag + varint** — Rice coding lost by 10-20%, the same bit-alignment
+  lesson as Gorilla.
+- **per-column accept/reject** — a column is transformed only if its varint stream
+  beats its raw text; the trial declined on random and noisy columns as designed.
+- **canonical integers only** — `007`, `+5`, `5.0`, `1,234` are declined, never
+  normalised. Quoted CSV is declined wholesale in v1.
+- **header row detected** — if row 0 fails to parse while rows 1..n parse, it is
+  stored raw and marked as a header, so the transform fires on real CSVs rather
+  than only on headerless synthetic ones.
+- **delimiter sniffed** — `,` `\t` `;` `|`, requiring every row to split to the same
+  column count.
+- **first value absolute**, the rest deltas.
+
+**Why this needed a format change:** `flags` had no free bit left after
+`kFlagGif`. Rather than overload it, `FileHeader` gained a `layers` byte and the
+version went to 3 — the change this project had already flagged as due when the
+last flag bit was consumed. Two tests that build headers by hand were updated.

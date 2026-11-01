@@ -249,6 +249,7 @@ add_library(chce_core STATIC
   src/entropy/range_coder.cpp
   src/precompressors/bcj_x86.cpp
   src/precompressors/gif_wrap.cpp
+  src/precompressors/numeric_wrap.cpp
   src/precompressors/dedup.cpp
   src/dedup/coarse_index.cpp
   src/entropy/token_coder.cpp

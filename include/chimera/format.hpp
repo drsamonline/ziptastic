@@ -20,7 +20,8 @@ namespace chce {
 
 inline constexpr uint8_t kMagic[4] = {'C', 'H', 'C', 'E'};
 // Version 2 added the trailing CRC-32 of the original bytes.
-inline constexpr uint8_t kFormatVersion = 2;
+// v3 added FileHeader::layers (Layer 0 transform bits), because `flags` is full.
+inline constexpr uint8_t kFormatVersion = 3;
 
 // Default block size. The prompt starts at 256 KB; Phase 12 tunes it.
 // 4 MiB. Measured: on dickens, 256 KiB gives 2,743,444 bytes, 1 MiB 2,496,909,
@@ -54,6 +55,14 @@ enum Flags : uint8_t {
 };
 // NOTE: all eight bits are now allocated. The next capability needs a new
 // header field rather than another bit here.
+// Layer 0 transforms, carried in FileHeader::layers. Separate from `flags`
+// because that byte is full.
+enum LayerFlags : uint8_t {
+  kLayerNumeric = 1u << 0,  // integer CSV/TSV columns coded as delta+varint
+};
+
+inline constexpr uint8_t kLayerMask = kLayerNumeric;
+
 inline constexpr uint8_t kFlagMask =
     kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup | kFlagJpeg | kFlagGif;
 

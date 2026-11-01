@@ -127,7 +127,8 @@ TEST(file_header_impossible_counts) {
   ByteWriter w;
   w.bytes(kMagic, sizeof(kMagic));
   w.u8(kFormatVersion);
-  w.u8(0);
+  w.u8(0);   // flags
+  w.u8(0);   // layers
   w.varint(kMaxStreamSize + 1);
   w.varint(1);
   ByteReader r2(w.span());

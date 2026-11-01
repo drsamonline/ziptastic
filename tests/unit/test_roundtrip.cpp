@@ -275,9 +275,9 @@ TEST(size_mismatch_rejected) {
   ByteReader r(mutated);
   FileHeader fh;
   read_file_header(r, fh);
-  // Header is: 4 magic + 1 version + 1 flags + varint original + varint blocks.
-  // original_size is a 2-byte varint here (300 = 0xAC 0x02).
-  mutated[6] = 0xAB;  // 299
+  // Header is: 4 magic + 1 version + 1 flags + 1 layers + varint original +
+  // varint blocks. original_size is a 2-byte varint here (300 = 0xAC 0x02).
+  mutated[7] = 0xAB;  // 299
   std::vector<uint8_t> out;
   CHECK_ERR(decompress(mutated, out), Err::SizeMismatch);
 }

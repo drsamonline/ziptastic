@@ -17,6 +17,10 @@ namespace chce {
 struct FileHeader {
   uint8_t version = kFormatVersion;
   uint8_t flags = 0;
+  // Which Layer 0 transforms were applied, as a bitfield. This exists because
+  // `flags` above is fully allocated (see format.hpp) and the next capability
+  // needed somewhere to live. Adding a field is a format change, hence version 3.
+  uint8_t layers = 0;
   uint64_t original_size = 0;  // exact byte count of the uncompressed input
   uint64_t block_count = 0;    // number of blocks that follow
   // CRC-32 of the original (pre-transform) bytes. Verified after every inverse
