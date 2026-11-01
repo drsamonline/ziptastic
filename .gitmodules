@@ -135,3 +135,18 @@
 [submodule "vendor/hcs/old/rep4cks"]
 	path = vendor/hcs/old/rep4cks
 	url = https://github.com/softfxc/rep4cks
+[submodule "vendor/hcs/old/ICS23-GPULZ"]
+	path = vendor/hcs/old/ICS23-GPULZ
+	url = https://github.com/hpdps-group/ICS23-GPULZ
+[submodule "vendor/hcs/old/openzl"]
+	path = vendor/hcs/old/openzl
+	url = https://github.com/meta/openzl
+[submodule "vendor/hcs/old/compressor"]
+	path = vendor/hcs/old/compressor
+	url = https://github.com/nadavrot/compressor
+[submodule "vendor/hcs/old/data-compression"]
+	path = vendor/hcs/old/data-compression
+	url = https://github.com/ijleesw/data-compression
+[submodule "vendor/hcs/old/SPERR"]
+	path = vendor/hcs/old/SPERR
+	url = https://github.com/NCAR/SPERR
