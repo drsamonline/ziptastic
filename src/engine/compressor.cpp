@@ -385,7 +385,17 @@ bool precomp_helps(std::span<const uint8_t> payload, std::span<const uint8_t> or
     parse_block(sample, 0, static_cast<uint32_t>(sample.size()), finder, model, tokens);
     ByteWriter w;
     encode_tokens_range(w, sample, 0, static_cast<uint32_t>(sample.size()), tokens);
-    return w.size();
+    size_t best = w.size();
+    // The estimate must be able to see what the engine will actually choose. On
+    // XML and other structured text the engine picks BWT and beats the range-coder
+    // token path by ~2x; measuring only the token path made this gate decline a
+    // transform worth -50% on a nested XLSX. This is the third time a predictor has
+    // stood in for a measurement and been wrong in the direction that costs ratio.
+    if (bsc_available()) {
+      std::vector<uint8_t> bb;
+      if (bsc_compress_block(sample, bb) && bb.size() < best) best = bb.size();
+    }
+    return best;
   };
 
   // Sample from the MIDDLE of each buffer, not the start: the payload begins
@@ -405,6 +415,18 @@ bool precomp_helps(std::span<const uint8_t> payload, std::span<const uint8_t> or
   // -50%, because the inflated XML's cost was extrapolated from a 256 KiB slice
   // that did not represent 3.2 MiB of repeating row markup.
   constexpr size_t kExactBelow = 8u << 20;
+  // A structural signal beats a predictor here. If inflating expanded the data by
+  // 2x or more, the original was DEFLATE over something highly compressible, and
+  // taking the payload is right almost regardless of what the estimator says.
+  //
+  // This exists because the estimator is demonstrably biased on structured text:
+  // on a nested XLSX it scored the payload 390,766 while the real engine scored the
+  // same bytes at 181,633 - a 2.1x pessimism that made the gate decline a transform
+  // worth 2x. That is the third predictor failure in this project and the second
+  // that cost ratio; the honest conclusion is to stop predicting where a structural
+  // fact is available.
+  if (payload.size() >= original.size() * 2) return true;
+
   if (payload.size() <= kExactBelow && original.size() <= kExactBelow) {
     return coded(payload) < coded(original);
   }
@@ -444,7 +466,17 @@ bool bcj_helps(std::span<const uint8_t> input) {
                 tokens);
     ByteWriter w;
     encode_tokens_range(w, sample, 0, static_cast<uint32_t>(sample.size()), tokens);
-    return w.size();
+    size_t best = w.size();
+    // The estimate must be able to see what the engine will actually choose. On
+    // XML and other structured text the engine picks BWT and beats the range-coder
+    // token path by ~2x; measuring only the token path made this gate decline a
+    // transform worth -50% on a nested XLSX. This is the third time a predictor has
+    // stood in for a measurement and been wrong in the direction that costs ratio.
+    if (bsc_available()) {
+      std::vector<uint8_t> bb;
+      if (bsc_compress_block(sample, bb) && bb.size() < best) best = bb.size();
+    }
+    return best;
   };
 
   const size_t plain_size = coded_size(plain);

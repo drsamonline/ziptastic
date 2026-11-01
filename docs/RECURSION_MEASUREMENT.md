@@ -126,3 +126,53 @@ commit.
 - `precomp_helps` gained an exact path below 8 MiB that codes both sides in full
   instead of extrapolating from a 256 KiB sample. It does not fix this case, because
   the problem is *which* code path it uses, not how much of the input it sees.
+
+---
+
+# Fixed: the gate was 2x pessimistic, and a structural signal beats it
+
+Instrumented the decision and got the actual numbers:
+
+```
+precomp_helps: payload 3,262,505 -> 390,766 | original 573,983 -> 378,911 => DECLINE
+```
+
+The estimator scored the inflated XML at **390,766**. The real engine scores the same
+bytes at **181,633**. A **2.1x pessimism**, and it is the whole reason the transform
+was declined. Adding a BWT term to the estimator was not enough — the estimate stayed
+wrong.
+
+So the fix is not a better predictor. It is **a structural signal instead of a
+prediction**:
+
+> If inflating expanded the data by 2x or more, the original was DEFLATE over
+> something highly compressible. Take the payload.
+
+That is a fact about the input, not a guess about the output, and it needs no
+estimator. The estimator is still used for the ordinary case (modest expansion),
+where it has been adequate.
+
+## Result
+
+| file | before | after | gain |
+|---|---|---|---|
+| `book.xlsx` (573,983 B) | 369,080 | **181,791** | **−50.7%** |
+
+`flags = 0x05` — precomp engaged. Round-trip exact. 21/21 suites pass.
+
+The nested numeric transform did **not** fire (`layers = 0x00`), and correctly: the
+payload is XML — `<row r="1"><c r="A1"><v>1003</v></c>` — not delimited text, so the
+CSV transform has nothing to bite on. Reaching −89.4% on this shape needs an
+XML-aware numeric transform that recognises cell values, which is a separate item.
+
+## What this cost and what it taught
+
+Three separate predictors have now been wrong in this project, all in the direction
+that costs ratio:
+
+1. the sample-based backend selector — +2.68% size
+2. the 256 KiB mid-sample that made 38 MiB of text look 60% less compressible
+3. this one — 2.1x pessimism, blocking a −50.7% transform
+
+The pattern is consistent enough to be a rule: **where a structural fact about the
+input is available, use it; reserve prediction for cases where no such fact exists.**
