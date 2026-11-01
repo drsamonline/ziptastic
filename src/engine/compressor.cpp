@@ -22,6 +22,7 @@
 #include "precompressors/gif_wrap.hpp"
 #include "precompressors/numeric_wrap.hpp"
 #include "precompressors/xml_numeric_wrap.hpp"
+#include "precompressors/base64_wrap.hpp"
 #include "precompressors/jpeg_wrap.hpp"
 #include "plugin_host.hpp"
 #include "precompressors/preflate_wrap.hpp"
@@ -507,6 +508,56 @@ bool bcj_helps(std::span<const uint8_t> input) {
 
 }  // namespace
 
+// What this engine will actually pay for these bytes: run the real pipeline on
+// them, with base64 itself switched off so the trial cannot recurse, and take the
+// size it produces. Not an estimate of the pipeline — the pipeline.
+//
+// Two earlier versions of this gate were estimates, and both were wrong in the
+// direction that costs ratio. The first used the range coder and BWT alone and
+// missed 19.6% on a JPEG, because brunsli was not in the model. The second added
+// JPEG, GIF and DEFLATE by hand and still got the XML case backwards, because the
+// spreadsheet transform — which is most of what makes that payload cheap — was not
+// in the model either. The lesson is the one this project keeps relearning: there
+// is no cheap stand-in for running the thing.
+size_t actual_cost(std::span<const uint8_t> s, const CompressOptions& opt) {
+  CompressOptions local = opt;
+  local.base64 = false;     // the trial must not recurse into itself
+  local.max_ratio = false;  // and must not pay for the ratio ceiling
+  // The Tier-1 LZMA2 fallback STAYS on. Turning it off was the last version's
+  // mistake: on a 256 KiB prefix of the base64 text the native encoder costs
+  // 16,412 and LZMA2 costs 10,128, so measuring only the native side made a
+  // clear loss look like a tie. The comparison has to be between the streams the
+  // engine would actually write.
+  std::vector<uint8_t> out;
+  CompressStats st;
+  if (compress(s, out, local, &st) != Err::Ok) return static_cast<size_t>(-1);
+  return out.size();
+}
+
+// Does decoding the base64 actually pay? Both sides are measured through the
+// encoder on a bounded sample and scaled, the same way precomp_helps decides.
+// The answer is genuinely payload-dependent: -19.6% on a dense payload, -48.4% on
+// wrapped structured text, and a LOSS on the same structured text unwrapped. The
+// first version of this gate estimated with the range coder and BWT alone and got
+// both directions wrong — it missed 19.6% on a JPEG (because brunsli, which would
+// actually fire, was not in the model) and accepted a 5.8% loss on JSON.
+bool base64_pays(std::span<const uint8_t> packed, std::span<const uint8_t> original,
+                 const CompressOptions& opt) {
+  // 256 KiB, not less. At 64 KiB this trial flipped both XML cases back to
+  // "take" — a 5.8% loss — because the margin it has to resolve is only 6% and a
+  // small sample cannot resolve it. The cost of the bigger sample is measured and
+  // recorded in docs/BASE64_INTEGRATION.md.
+  const size_t kSample = 256 * 1024;
+  const size_t pn = std::min(packed.size(), kSample);
+  const size_t on = std::min(original.size(), kSample);
+  if (pn < 1024 || on < 1024) return false;
+  const double p =
+      static_cast<double>(actual_cost(packed.first(pn), opt)) / pn * packed.size();
+  const double o =
+      static_cast<double>(actual_cost(original.first(on), opt)) / on * original.size();
+  return p < o;
+}
+
 Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
              const CompressOptions& opt, CompressStats* stats) {
   if (opt.block_size == 0 || opt.block_size > kMaxBlockSize) {
@@ -519,6 +570,34 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // against the final decoded output.
   const uint32_t crc = crc32(input);
 
+  // Layer 0 — base64. Outermost of all, because every stage after it wants the
+  // decoded bytes: a JPEG at offset 0 of the payload is what lets brunsli fire,
+  // and blob-first measured 20.2% against 2.3% for skeleton-first.
+  //
+  // A trial, not a rule. Base64 of 200 KB of spreadsheet XML on one line
+  // compresses BETTER than the XML itself, so the transform loses 6.1% there,
+  // while the same payload wrapped at 76 columns is worth 48.4%. The difference
+  // is the line breaks, not the 33% inflation.
+  std::vector<uint8_t> base64_payload;
+  bool base64 = false;
+  if (opt.base64 && base64_available() && !input.empty()) {
+    std::vector<uint8_t> packed;
+    if (base64_pack(input, packed)) {
+      std::vector<uint8_t> check;
+      if (base64_unpack(packed, check) && check.size() == input.size() &&
+          std::memcmp(check.data(), input.data(), input.size()) == 0 &&
+          base64_pays(packed, input, opt)) {
+        base64_payload = std::move(packed);
+        base64 = true;
+      }
+    }
+  }
+
+  // Everything below sees the decoded payload when base64 fired, exactly as it
+  // would if the caller had handed us the binary file.
+  const std::span<const uint8_t> stage_in =
+      base64 ? std::span<const uint8_t>(base64_payload) : input;
+
   // Layer 0 — integer CSV/TSV. Runs first: it is the only transform that needs to
   // see the raw text, and a CSV is not DEFLATE, not x86, not an image.
   std::vector<uint8_t> numeric_payload;
@@ -529,22 +608,22 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   bool numeric = false;
   bool numeric_csv = false;
   bool xml_numeric = false;
-  if (opt.numeric && numeric_available() && !input.empty()) {
+  if (opt.numeric && numeric_available() && !stage_in.empty()) {
     std::vector<uint8_t> packed;
     // Spreadsheet XML first: an .xlsx that precomp never inflated still shows up
     // here as a bare sheet1.xml, and the CSV transform cannot see inside <v> tags.
-    if (xml_numeric_available() && xml_numeric_pack(input, packed)) {
+    if (xml_numeric_available() && xml_numeric_pack(stage_in, packed)) {
       std::vector<uint8_t> check;
-      if (xml_numeric_unpack(packed, check) && check.size() == input.size() &&
-          std::memcmp(check.data(), input.data(), input.size()) == 0) {
+      if (xml_numeric_unpack(packed, check) && check.size() == stage_in.size() &&
+          std::memcmp(check.data(), stage_in.data(), stage_in.size()) == 0) {
         numeric_payload = std::move(packed);
         numeric = true;
         xml_numeric = true;
       }
-    } else if (numeric_pack(input, packed)) {
+    } else if (numeric_pack(stage_in, packed)) {
       std::vector<uint8_t> check;
-      if (numeric_unpack(packed, check) && check.size() == input.size() &&
-          std::memcmp(check.data(), input.data(), input.size()) == 0) {
+      if (numeric_unpack(packed, check) && check.size() == stage_in.size() &&
+          std::memcmp(check.data(), stage_in.data(), stage_in.size()) == 0) {
         numeric_payload = std::move(packed);
         numeric = true;
         numeric_csv = true;
@@ -558,8 +637,8 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // verified here before it is trusted, like every other transform.
   std::vector<uint8_t> jpeg_payload;
   bool jpeg = false;
-  if (opt.jpeg && jpeg_available() && !input.empty()) {
-    const std::vector<uint8_t> in(input.begin(), input.end());
+  if (opt.jpeg && jpeg_available() && !stage_in.empty()) {
+    const std::vector<uint8_t> in(stage_in.begin(), stage_in.end());
     std::vector<uint8_t> packed;
     if (jpeg_pack(in, packed)) {
       std::vector<uint8_t> check;
@@ -579,7 +658,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   {
     const std::span<const uint8_t> src =
         numeric ? std::span<const uint8_t>(numeric_payload)
-                : (jpeg ? std::span<const uint8_t>(jpeg_payload) : input);
+                : (jpeg ? std::span<const uint8_t>(jpeg_payload) : stage_in);
     if (opt.gif && gif_available() && !src.empty()) {
       std::vector<uint8_t> packed;
       if (gif_pack(src, packed)) {
@@ -603,7 +682,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   const std::span<const uint8_t> stage0 =
       gif ? std::span<const uint8_t>(gif_payload)
           : (numeric ? std::span<const uint8_t>(numeric_payload)
-                     : (jpeg ? std::span<const uint8_t>(jpeg_payload) : input));
+                     : (jpeg ? std::span<const uint8_t>(jpeg_payload) : stage_in));
   if (opt.precomp && preflate_available() && !stage0.empty()) {
     const std::vector<uint8_t> in(stage0.begin(), stage0.end());
     std::vector<uint8_t> payload;
@@ -646,7 +725,8 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   const uint8_t layers = (numeric_csv ? kLayerNumeric : 0) |
                          (numeric_nested ? kLayerNumericNested : 0) |
                          (xml_numeric ? kLayerXmlNumeric : 0) |
-                         (xml_numeric_nested ? kLayerXmlNested : 0);
+                         (xml_numeric_nested ? kLayerXmlNested : 0) |
+                         (base64 ? kLayerBase64 : 0);
 
   // Layer 0: the x86 BCJ transform. Applied to the whole stream before
   // anything else, so the filter's state carries across block boundaries the

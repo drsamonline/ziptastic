@@ -23,6 +23,7 @@
 #include "precompressors/gif_wrap.hpp"
 #include "precompressors/numeric_wrap.hpp"
 #include "precompressors/xml_numeric_wrap.hpp"
+#include "precompressors/base64_wrap.hpp"
 #include "precompressors/jpeg_wrap.hpp"
 #include "plugin_host.hpp"
 #include "precompressors/preflate_wrap.hpp"
@@ -357,6 +358,13 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   if ((fh.flags & kFlagJpeg) != 0) {
     std::vector<uint8_t> original;
     if (!jpeg_unpack(dst, original)) return Err::Corrupt;
+    dst = std::move(original);
+  }
+  // base64 was applied FIRST on encode, so it is undone LAST: everything above
+  // this line was working on the decoded bytes.
+  if ((fh.layers & kLayerBase64) != 0) {
+    std::vector<uint8_t> original;
+    if (!base64_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
   }
 

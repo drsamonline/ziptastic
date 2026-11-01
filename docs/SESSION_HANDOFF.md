@@ -24,7 +24,7 @@ higher licence ceiling). That difference is why both exist.
 
 | repo | remote HEAD | status |
 |---|---|---|
-| ziptastic | `e2478cc` + validate-before-allocate | builds clean, **23/23 suites pass**, format **v4** |
+| ziptastic | `21409b1` + base64 | builds clean, **24/24 suites pass**, format **v4** |
 | heavenzip | `88ac3d6` | docs only, no implementation |
 | lexora | `ad57991` | Phase-1 prototype, 502 tests local |
 
@@ -41,6 +41,8 @@ ziptastic `docs/` holds 20 files. Start with `BENCHMARKS.md`,
 | XML numeric on the bare sheet XML | −51.2% (148,615 → 72,464) |
 | PDF embedded DEFLATE | −79.1% |
 | Integer CSV/TSV columns | −77.4% |
+| base64 → bytes, MIME-wrapped | −20.0% (JPEG) / −48.1% (wrapped XML) |
+| base64 → bytes, single-line structured text | **declined**, it loses 6.3% |
 | LZ4 payload extraction | −28.8% to −58.2% (measured, **not integrated**) |
 | GIF LZW → indices | −29.5% |
 | ZIP/DEFLATE (preflate) | −28.8% vs `xz -9` |
@@ -87,7 +89,13 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    allocated for it, plus a `kMaxBlocks` ceiling in `read_file_header`. An
    83-byte stream declaring 10M blocks was asking for ~914 MB; it is now refused
    in 13 ms. `docs/VALIDATION.md`.
-6. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
+6. **base64 transform — shipped.** Wrapped base64 is worth −20.0% on a dense
+   payload and −48.1% on structured text; single-line structured text is a 6.3%
+   loss and the trial declines it. The gate took three attempts, all of them
+   measuring something other than what the engine does — read
+   `docs/BASE64_INTEGRATION.md` before touching it. Costs ~2.7× compress time on
+   the files where it runs.
+7. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
    as delta + zigzag + varint inside the `<v>` tags, per column, at the top level and
    inside the recursion. `.xlsx` went 147,525 → **73,367 (−50.3%)**, `layers = 0x08`,
    round trip exact; a bare `sheet1.xml` 148,615 → 72,464. Three defects came out of
@@ -111,8 +119,11 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    its declared output at 1 TiB, so a crafted payload can still ask for a huge
    reserve. It sits behind the per-block digests now, but give it the same
    structural treatment when the Layer 0 chain is next touched.
-4. **Base64 transform** — proof of concept verified on all 4 layout variants; needs
-   integrating as a Layer 0 stage with accept/reject.
+4. ~~**Base64 transform**~~ **DONE** — `docs/BASE64_INTEGRATION.md`. Bit 5 is free
+   for the **nested** variant (base64 inside a ZIP), which is the obvious next step
+   and is where a JSON API response in a container would land. The gate is also the
+   expensive part: ~2.7× compress time on the files where it runs, and a cheaper
+   gate that is still correct would be worth real money.
 5. **LZ4 precompression** — measured 28.8–58.2%. Note LZ4 does *not* need its encoder
    reproduced; the parse can be stored and re-emitted.
 6. **gzip / multi-member gzip** — `.tar.gz` is everywhere; mostly container work on

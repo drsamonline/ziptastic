@@ -323,8 +323,12 @@ trailer:
 ```
 
 - `layers` (added in v3) is the Layer 0 bitfield: `kLayerNumeric` 0x01,
-  `kLayerNumericNested` 0x02, `kLayerXmlNumeric` 0x04, `kLayerXmlNested` 0x08.
-  Bits outside `kLayerMask` are `bad-flags`.
+  `kLayerNumericNested` 0x02, `kLayerXmlNumeric` 0x04, `kLayerXmlNested` 0x08,
+  `kLayerBase64` 0x10. Bit 5 is free. Bits outside `kLayerMask` are `bad-flags`.
+- `original_size` is the payload size AFTER the Layer 0 transforms, not the
+  caller's byte count: it is what the block loop is validated against, and the
+  CRC-32 of the true original is what guards the round trip. The two differ
+  whenever a transform changes the payload's length.
 - `sha256` is the digest of the block's **decoded plaintext** — the bytes that
   block contributes before any Layer 0 inverse runs. It is checked as the block
   comes out of the decoder, so a damaged block is named by index instead of

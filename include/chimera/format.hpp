@@ -87,10 +87,19 @@ enum LayerFlags : uint8_t {
   // which one it is from kFlagPrecomp.
   kLayerXmlNumeric = 1u << 2,
   kLayerXmlNested = 1u << 3,
+  // base64 runs decoded to their bytes. Applied FIRST of all, because every stage
+  // after it wants the decoded payload: a JPEG at offset 0 of the payload is what
+  // lets brunsli fire, and that was worth 20.2% instead of 2.3% measured.
+  kLayerBase64 = 1u << 4,
+  // Bit 5 is free. The nested base64 case — a JSON document inside a ZIP — is the
+  // obvious next one, and it needs that bit when it is built. It is not declared
+  // here until something sets it: a constant nothing writes is a lie about what
+  // the format carries.
 };
 
-inline constexpr uint8_t kLayerMask =
-    kLayerNumeric | kLayerNumericNested | kLayerXmlNumeric | kLayerXmlNested;
+inline constexpr uint8_t kLayerMask = kLayerNumeric | kLayerNumericNested |
+                                      kLayerXmlNumeric | kLayerXmlNested |
+                                      kLayerBase64;
 
 inline constexpr uint8_t kFlagMask =
     kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup | kFlagJpeg | kFlagGif;

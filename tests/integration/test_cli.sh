@@ -92,6 +92,20 @@ expect_ok $rc "bench runs"
 grep -q "TOTAL" "$TMP/bench.txt" && ok "bench prints a total row" \
   || bad "bench output: $(cat "$TMP/bench.txt")"
 
+# ------------------------------------------------------------ base64 transform
+# Base64 of random bytes, wrapped at 76 columns — the shape a MIME attachment or a
+# JSON blob takes. The transform must engage (the layers byte says so) and the
+# round trip must be bit-exact.
+head -c 3000 /dev/urandom | base64 > "$TMP/blob.txt"
+"$BIN" -9 -f -o "$TMP/blob.chce" "$TMP/blob.txt"; rc=$?
+expect_ok $rc "base64 blob compresses"
+blayers=$(od -An -tu1 -j6 -N1 "$TMP/blob.chce" | tr -d ' ')
+[ "$blayers" = "16" ] && ok "base64 layer bit is set (layers=0x10)" \
+  || bad "base64 layer bit not set (layers=$blayers)"
+"$BIN" -d -f -o "$TMP/blob.out" "$TMP/blob.chce"
+cmp -s "$TMP/blob.txt" "$TMP/blob.out" && ok "base64 round-trip is bit-exact" \
+  || bad "base64 round-trip differs"
+
 # ------------------------------------------------------- XML numeric transform
 # A bare spreadsheet sheet, the shape an .xlsx inflates to. The transform must
 # engage (the layers byte says so) and the round trip must be bit-exact.

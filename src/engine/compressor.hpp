@@ -51,6 +51,8 @@ struct CompressOptions {
   bool gif = true;
   // Integer CSV/TSV columns as delta+varint: -76% measured on a whole file.
   bool numeric = true;
+  // base64 runs decoded to their bytes (Layer 0, outermost).
+  bool base64 = true;
   bool dedup = true;
   bool parallel = false;
   unsigned threads = 0;  // 0 = hardware concurrency

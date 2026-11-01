@@ -1605,3 +1605,24 @@ exactly +69, which is the framing arithmetic and nothing else.
 The time column is the one to argue about: 22% of decode for integrity is a real
 trade, and the alternatives (SHA-NI, per-block CRC-32, an optional algorithm
 field) are listed in `INTEGRITY.md` with their costs.
+
+## base64 runs decoded to bytes — shipped
+
+Full write-up: `BASE64_INTEGRATION.md`.
+
+| file | without | with | gain | `layers` |
+|---|---|---|---|---|
+| base64 of a 21,797 B JPEG, single line | 21,481 | 17,291 | −19.5% | 0x10 |
+| the same, MIME-wrapped at 76 columns | 21,927 | 17,533 | −20.0% | 0x10 |
+| the same inside JSON | 21,551 | 17,349 | −19.5% | 0x10 |
+| base64 of 200 KB spreadsheet XML, wrapped | 21,177 | 10,990 | −48.1% | 0x10 |
+| the same, single line | 10,282 | 10,282 | declined | 0x00 |
+| the same inside JSON, single line | 10,363 | 10,363 | declined | 0x00 |
+
+All round trips byte-exact. The win is the **line wrapping**, not the 33%
+inflation: the identical payload unwrapped is a 6.3% loss.
+
+Time cost, measured on the same machine: `jpeg.mime.txt` 657 ms -> 1,780 ms
+(+171%), `xml.mime.txt` 2,121 ms -> 5,657 ms (+167%). The accept/reject trial runs
+the real pipeline on a 256 KiB sample of each side; three cheaper estimates were
+tried first and all three got the decision wrong.

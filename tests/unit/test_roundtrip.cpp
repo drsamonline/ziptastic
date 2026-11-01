@@ -52,14 +52,26 @@ void check_roundtrip(const std::vector<uint8_t>& data, size_t block_size,
   CompressStats stats;
   CHECK_ERR(compress(data, compressed, opt, &stats), Err::Ok);
 
-  // Header sanity: sizes and block count must describe the input exactly.
+  // Header sanity: sizes and block count must describe the payload exactly.
+  //
+  // They describe the stream AFTER Layer 0, not the caller's bytes. That has
+  // always been true — `original_size` is what the block loop is checked against,
+  // and the CRC-32 of the true original is what guards the round trip — but it
+  // only became visible when base64 started firing on random data, whose bytes
+  // happen to contain long alphabet runs.
   ByteReader r(compressed);
   FileHeader fh;
   CHECK_ERR(read_file_header(r, fh), Err::Ok);
   CHECK_EQ(fh.version, uint8_t{kFormatVersion});
-  CHECK_EQ(fh.original_size, static_cast<uint64_t>(data.size()));
+  const uint64_t described = fh.layers == 0 ? data.size() : fh.original_size;
+  if (fh.layers == 0) {
+    CHECK_EQ(fh.original_size, static_cast<uint64_t>(data.size()));
+  } else {
+    CHECK_MSG(fh.original_size <= data.size(),
+              "a Layer 0 transform made the stream claim more bytes than the input");
+  }
   const uint64_t expect_blocks =
-      data.empty() ? 0 : (data.size() + block_size - 1) / block_size;
+      described == 0 ? 0 : (described + block_size - 1) / block_size;
   // Two legal shapes: the per-block native encoding, or the whole-stream
   // LZMA2 fallback, which is a single block by definition.
   const bool fallback = stats.lzma2_stream;
