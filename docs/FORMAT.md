@@ -339,6 +339,12 @@ trailer:
 New errors: `block-checksum-mismatch` (a block failed its digest, reported with
 its index) and `manifest-mismatch` (the trailer disagrees with the block set).
 
+Two constants exist so a decoder can refuse a header before allocating for it:
+`kMinBlockHeaderBytes` (35 — mode, two one-byte varints, 32-byte digest) and
+`kMaxBlocks` (16.7M). `block_count` is rejected with `bad-block-size` if it
+exceeds either the ceiling or the bytes actually present divided by
+`kMinBlockHeaderBytes`. See `VALIDATION.md`.
+
 **Cost:** 69 bytes for a single-block stream, 32 per additional block. Time is
 the real cost — the digest runs at 140.8 MB/s here, about 22% of decode wall time
 on the measured sample. See `INTEGRITY.md` for the three ways to reduce it.

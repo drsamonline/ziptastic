@@ -180,6 +180,17 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   FileHeader fh;
   if (Err e = read_file_header(r, fh); e != Err::Ok) return e;
 
+  // Validate before allocating. A block costs at least kMinBlockHeaderBytes on
+  // disk, so the bytes actually in hand are a hard upper bound on how many
+  // blocks the stream can contain. Without this, a header declaring a million
+  // blocks against a hundred bytes made the decoder allocate for a million
+  // before discovering there was nothing there — the desync failures in this
+  // project surfaced exactly that way, as a bad_alloc from an unvalidated size
+  // field rather than as a rejected stream.
+  if (fh.block_count > r.remaining() / kMinBlockHeaderBytes) {
+    return Err::BadBlockSize;
+  }
+
   std::vector<uint8_t> dst;
   // Reserve the declared size up front (capped at 256 MiB so a corrupt header
   // cannot force a huge allocation); the block loop still validates every byte

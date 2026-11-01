@@ -24,7 +24,7 @@ higher licence ceiling). That difference is why both exist.
 
 | repo | remote HEAD | status |
 |---|---|---|
-| ziptastic | `781ea9f` + per-block integrity | builds clean, **23/23 suites pass**, format **v4** |
+| ziptastic | `e2478cc` + validate-before-allocate | builds clean, **23/23 suites pass**, format **v4** |
 | heavenzip | `88ac3d6` | docs only, no implementation |
 | lexora | `ad57991` | Phase-1 prototype, 502 tests local |
 
@@ -82,7 +82,12 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    Cost: 69 bytes single-block, 32 per extra block, and **~22% of decode wall
    time** — measured, not estimated. `docs/INTEGRITY.md` has the three cheaper
    options in the order I would try them.
-5. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
+5. **Validate-before-allocate — shipped.** `block_count` is now bounded by the
+   bytes actually in hand (`remaining / kMinBlockHeaderBytes`) before anything is
+   allocated for it, plus a `kMaxBlocks` ceiling in `read_file_header`. An
+   83-byte stream declaring 10M blocks was asking for ~914 MB; it is now refused
+   in 13 ms. `docs/VALIDATION.md`.
+6. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
    as delta + zigzag + varint inside the `<v>` tags, per column, at the top level and
    inside the recursion. `.xlsx` went 147,525 → **73,367 (−50.3%)**, `layers = 0x08`,
    round trip exact; a bare `sheet1.xml` 148,615 → 72,464. Three defects came out of
@@ -101,9 +106,11 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    would take it to ~2%; per-block CRC-32 would be nearly free), and the offset
    index from the lexora note was **not** built — nothing reads it, and unverified
    surface area is a liability. Revisit both before the format is called stable.
-3. **Validate-before-allocate in `read_file_header`** (from lexora). Refuse malformed
-   containers up front instead of defending at each use; our desync bugs surfaced as
-   `bad_alloc` from an unvalidated size field.
+3. ~~**Validate-before-allocate in `read_file_header`**~~ **DONE** — `docs/VALIDATION.md`.
+   One instance is left and it is documented rather than fixed: `dedup_unpack` caps
+   its declared output at 1 TiB, so a crafted payload can still ask for a huge
+   reserve. It sits behind the per-block digests now, but give it the same
+   structural treatment when the Layer 0 chain is next touched.
 4. **Base64 transform** — proof of concept verified on all 4 layout variants; needs
    integrating as a Layer 0 stage with accept/reject.
 5. **LZ4 precompression** — measured 28.8–58.2%. Note LZ4 does *not* need its encoder

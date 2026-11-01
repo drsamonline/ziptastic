@@ -41,6 +41,20 @@ inline constexpr uint64_t kMaxBlockSize = 1ull << 30;  // 1 GiB
 // Ceiling on a whole stream's declared original size, for the same reason.
 inline constexpr uint64_t kMaxStreamSize = 1ull << 40;  // 1 TiB
 
+// Ceiling on a stream's declared block count. Every block costs at least
+// kMinBlockHeaderBytes on disk, so a decoder can always bound this against the
+// bytes it actually holds; this constant is the belt to that braces, and it
+// keeps a header-only read (a test, a header probe) from accepting a count no
+// real stream would carry. 16.7M blocks is 64 GB at 4 KiB blocks and 64 TiB at
+// the 4 MiB default.
+inline constexpr uint64_t kMaxBlocks = 1ull << 24;
+
+// The smallest a block can possibly be on disk: a mode byte, two varints of at
+// least one byte each, and the 32-byte digest. Used to reject a declared block
+// count that the stream is physically too short to hold, *before* anything is
+// allocated for it.
+inline constexpr uint64_t kMinBlockHeaderBytes = 1 + 1 + 1 + 32;
+
 // Header flag bits (see docs/FORMAT.md §Header).
 enum Flags : uint8_t {
   kFlagCoarse = 1u << 0,    // coarse (SREP-style) index was consulted

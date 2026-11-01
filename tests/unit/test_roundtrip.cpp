@@ -347,4 +347,50 @@ TEST(corruption_is_detected) {
                                std::to_string(3 - detected) + " of 3 cases");
 }
 
+// Validate before allocating: a declared block count must be bounded by the bytes
+// the stream actually holds. Before this check the decoder sized its per-block
+// structures from the header alone, so a short stream declaring a million blocks
+// asked for a million entries before discovering there was nothing there.
+TEST(impossible_block_count_is_rejected_before_allocating) {
+  ByteWriter w;
+  FileHeader fh;
+  fh.version = kFormatVersion;
+  fh.flags = 0;
+  fh.layers = 0;
+  fh.original_size = 1000000;
+  fh.block_count = 1000000;  // more blocks than 40 bytes can possibly hold
+  fh.checksum = 0;
+  write_file_header(w, fh);
+  for (int i = 0; i < 40; ++i) w.u8(0);
+
+  std::vector<uint8_t> out;
+  CHECK_ERR(decompress(w.take(), out), Err::BadBlockSize);
+}
+
+TEST(block_count_above_the_ceiling_is_rejected) {
+  ByteWriter w;
+  FileHeader fh;
+  fh.version = kFormatVersion;
+  fh.original_size = kMaxBlocks + 1;
+  fh.block_count = kMaxBlocks + 1;
+  write_file_header(w, fh);
+
+  ByteReader r(w.span());
+  FileHeader got;
+  CHECK_ERR(read_file_header(r, got), Err::BadBlockSize);
+}
+
+TEST(a_legitimate_multi_block_stream_still_decodes) {
+  chce_test::Rng rng(91);
+  const auto data = make_data(rng, 200 * 1024, 1);
+  CompressOptions opt;
+  opt.block_size = 16 * 1024;  // 13 blocks
+  opt.parse = false;
+  opt.lzma2_fallback = false;
+  std::vector<uint8_t> packed, back;
+  CHECK_ERR(compress(data, packed, opt, nullptr), Err::Ok);
+  CHECK_ERR(decompress(packed, back), Err::Ok);
+  CHECK_MSG(back == data, "multi-block round-trip mismatch");
+}
+
 TEST_MAIN()

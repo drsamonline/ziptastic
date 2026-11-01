@@ -66,6 +66,12 @@ Err read_file_header(ByteReader& r, FileHeader& h) {
   // A block carries at least one byte, so block_count can never exceed the
   // declared original size — and an empty stream has zero blocks.
   if (block_count > original_size) return Err::BadBlockSize;
+  // And it can never exceed the absolute ceiling. This is the cheap half of the
+  // guard: it needs only the header, so a header probe cannot be made to accept
+  // an absurd count. The half that matters — comparing against the bytes the
+  // caller actually holds — belongs in the decoder, which is the only place that
+  // knows how long the stream is.
+  if (block_count > kMaxBlocks) return Err::BadBlockSize;
 
   h.version = version;
   h.flags = flags;
