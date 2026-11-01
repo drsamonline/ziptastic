@@ -150,3 +150,12 @@
 [submodule "vendor/hcs/old/SPERR"]
 	path = vendor/hcs/old/SPERR
 	url = https://github.com/NCAR/SPERR
+[submodule "vendor/hcs/old/kanzi"]
+	path = vendor/hcs/old/kanzi
+	url = https://github.com/flanglet/kanzi
+[submodule "vendor/hcs/old/lzfse"]
+	path = vendor/hcs/old/lzfse
+	url = https://github.com/lzfse/lzfse
+[submodule "vendor/hcs/old/jbig2enc"]
+	path = vendor/hcs/old/jbig2enc
+	url = https://github.com/agl/jbig2enc
