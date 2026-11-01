@@ -158,3 +158,38 @@ pushing rather than merely copying:
   `xz -9`; the algorithms above are worth single-digit percentages on top. The
   remaining large wins are in *formats we do not yet handle* (MP3, and the rest of
   precomp's list), not in better modelling.
+
+---
+
+## Attempt log
+
+### #5 literal match-byte context — attempted, reverted, with diagnosis
+
+Implemented LZMA's idea: 32 literal contexts instead of 16, the extra 16 indexed
+by the **match byte** and used only for the first literal after a match. Encoder
+(`build_symbols`), the range encoder and all three decoders were updated
+consistently. It did not land, and the reasons are worth recording because they
+are the traps in this file:
+
+1. **Table ids were hard-coded.** `kLen0 = 20`, `kDist0 = 24`, `kBypass = 28` were
+   literals, so widening `kLitCtx` to 32 made literal ids 4..35 run straight
+   through the length and distance tables. **Fixed and landed** — the ids are now
+   derived from the context counts, which makes that class of bug impossible.
+   The values are unchanged today.
+2. **The match context must persist across chunks.** The chunked rANS path calls
+   `decode_chunk` per chunk; declaring `last_dist` inside it resets the state at
+   every chunk boundary while the encoder walks the whole block with one running
+   value. Hoisting it out of the lambda is required.
+3. **`recorded` must use the same context as the coder.** The decoder records each
+   symbol so the adaptive model can advance; recording `prev >> 4` while coding
+   with the match-byte context desynchronises the two models.
+
+With 1–3 fixed, `unit.roundtrip` still aborted with `std::bad_alloc` in
+`parse_path_roundtrips`, so at least one more inconsistency remains — most likely
+in the adaptive (chunked) encoder path, which builds its symbol stream separately
+from the static one. Rather than leave the tree red for a 1–2% feature, the change
+was reverted; only the table-id fix remains.
+
+**For whoever picks this up:** the failure is a desync, not a logic error, so the
+fastest route is to assert that the encoder's and decoder's context choices match
+symbol-by-symbol for a small input, rather than reading the code.

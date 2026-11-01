@@ -39,12 +39,17 @@ constexpr uint32_t kLenAlphabet = 32;
 constexpr uint32_t kDistAlphabet = 64;
 
 // Table ids inside a symbol list.
-constexpr uint16_t kFlag0 = 0;    // + ctx
-constexpr uint16_t kLit0 = 4;     // + ctx
-constexpr uint16_t kLen0 = 20;    // + ctx
-constexpr uint16_t kDist0 = 24;   // + ctx
-constexpr uint16_t kBypass = 28;  // uniform, never adaptive
-constexpr uint32_t kTableCount = 28;
+// Table ids inside a symbol list, DERIVED from the context counts rather than
+// written out. They used to be literals (0/4/20/24/28), and widening kLitCtx
+// silently overlapped the literal tables with the length and distance ones — a
+// class of bug that is invisible until a round-trip fails. Deriving them makes
+// that impossible. The values are unchanged today.
+constexpr uint16_t kFlag0 = 0;                       // + kFlagCtx
+constexpr uint16_t kLit0 = kFlag0 + kFlagCtx;        // + kLitCtx
+constexpr uint16_t kLen0 = kLit0 + kLitCtx;          // + kLenCtx
+constexpr uint16_t kDist0 = kLen0 + kLenCtx;         // + kDistCtx
+constexpr uint16_t kBypass = kDist0 + kDistCtx;      // uniform, never adaptive
+constexpr uint32_t kTableCount = kBypass;
 
 // Symbols per adaptive chunk. Large enough that the per-chunk rANS flush (4
 // bytes) is noise, small enough that the model tracks a changing block.
