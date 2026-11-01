@@ -171,3 +171,12 @@
 [submodule "vendor/hcs/old/djvulibre"]
 	path = vendor/hcs/old/djvulibre
 	url = https://github.com/DjVuLibre/djvulibre
+[submodule "vendor/hcs/old/ECM3"]
+	path = vendor/hcs/old/ECM3
+	url = https://github.com/edsloter/ECM3
+[submodule "vendor/hcs/old/Turbo-Transpose"]
+	path = vendor/hcs/old/Turbo-Transpose
+	url = https://github.com/powturbo/Turbo-Transpose
+[submodule "vendor/hcs/old/cmdpack"]
+	path = vendor/hcs/old/cmdpack
+	url = https://github.com/tvtoon/cmdpack
