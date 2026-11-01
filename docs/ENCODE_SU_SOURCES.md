@@ -71,3 +71,26 @@ corpus. Adopting this set would let the headline number reflect the work.
    complement and should be added as a second corpus.
 3. Nothing here changes the plan otherwise: no new codec, and the same conclusion
    as the previous five batches — **containers pay, codecs do not.**
+
+## A note on encoding, and a bug it exposed
+
+`SUPERMAN.CPP` and `COMOTERP.CPP` — the two files that matter — are **CP1251**, not
+UTF-8: Bulat Ziganshin writes his comments in Russian. The commit path this project
+uses is text-only and decodes as UTF-8, so both files were **silently skipped** on
+the first attempt while their ASCII headers landed.
+
+They have been transcoded to UTF-8 in the tree. The *code* is untouched; only the
+comment bytes differ from upstream, which is recorded here so nobody is surprised
+when a diff against the original shows non-ASCII changes.
+
+Two lessons worth keeping:
+
+1. **A text-only commit path silently drops non-UTF-8 files.** A file count that
+   looks right is not proof that the right files arrived — the check that caught
+   this was grepping the *remote tree* for the two filenames that mattered, not
+   counting what was sent.
+2. **The same push also fragmented a filename with spaces.** `git diff-tree
+   --name-only` escapes paths containing spaces, and splitting that output on
+   whitespace produced paths like `LESSER` and `GENERAL` from
+   `GNU LESSER GENERAL PUBLIC LICENSE V3.txt`. No junk reached the repository, but
+   the licence text did not arrive either. Use `-z` and split on NUL.
