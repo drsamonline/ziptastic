@@ -109,3 +109,71 @@ says reverse it.** The numeric residual has a measured −74% on a whole file; t
 backend has an expected +5–10% on text. The residual is also far cheaper to build —
 it is a Layer 0 transform of exactly the kind already shipped three times, with no
 new entropy coder.
+
+---
+
+# Follow-up: residual encoding, size gate, block boundaries
+
+Three questions raised after the first experiment, answered with measurement.
+
+## 1. Residual encoding — zigzag+varint wins, Rice loses
+
+Deltas of an integer column are small and signed. How they are *encoded* before the
+backend sees them changes the result:
+
+| encoding | counter (delta 1–1003) | monotonic (delta 0–309122) |
+|---|---|---|
+| raw 8-byte delta | 10,100 | 31,372 |
+| **zigzag + varint** | **9,260 (−8.3%)** | **29,792 (−5.0%)** |
+| Rice, k=2 | 11,344 (+12.3%) | 36,288 (+15.7%) |
+| Rice, k=3 | 9,356 (−7.4%) | 37,844 (+20.6%) |
+| Rice, k=4 | 11,268 (+11.6%) | 37,104 (+18.3%) |
+| Rice, k=6 | 11,576 (+14.6%) | 34,728 (+10.7%) |
+
+**Zigzag + varint wins on both columns. Rice loses on both.** The format decision is
+therefore: zigzag the delta, varint it, and hand the bytes to the normal pipeline.
+
+## 2. The pattern behind Gorilla and Rice
+
+Both negatives are the same finding:
+
+- **Gorilla** (leading-zero-trimmed float XOR): lost to plain 8-byte XOR.
+- **Rice** (bit-packed quotients and remainders): lost to byte-aligned varint.
+
+Both are **bit-level encodings that break byte alignment**, and both were designed
+for backends that cannot exploit the regularity they remove — a streaming decoder
+with tiny state, or a fixed-rate channel. Against a BWT/LZMA-class backend the
+removed redundancy was already nearly free, while the alignment cost is real.
+
+This is now the **third** independent instance of the rule that has governed every
+negative result in this project:
+
+> **A transform pays only if it removes redundancy the backend cannot already
+> capture. Otherwise it adds cost and removes nothing.**
+
+delta, byte-shuffle, LZP, the word tokenizer, Gorilla and Rice are all instances.
+The rule predicted them and can be used to reject future ideas before building them.
+
+## 3. Size gate — the gain holds at every size tested
+
+| rows | text | bin+delta | varint | best gain |
+|---|---|---|---|---|
+| 50 | 160 | 116 | **96** | **−40.0%** |
+| 200 | 316 | 192 | **152** | −51.9% |
+| 1,000 | 852 | 480 | **384** | −54.9% |
+| 5,000 | 3,276 | 1,680 | **1,376** | −58.0% |
+| 20,000 | 10,972 | 5,376 | **4,796** | −56.3% |
+| 80,000 | 45,328 | 19,436 | **18,144** | −60.0% |
+
+**No row-count gate is needed** — the column pays from 50 rows upward. What the
+header cost actually scales with is the **number of columns**, not the number of
+rows, so the gate should be on *file size versus column count* (a 2 KB file with 40
+columns should decline), not on rows.
+
+## 4. Block boundaries — a design constraint, not yet measured
+
+If a column spans parallel blocks, the per-column decision and its metadata must
+live in a **global header**, because a per-block decision could transform the same
+column two different ways and the decoder could not tell. This is cheap to design in
+now and expensive to retrofit — recorded here as a constraint on the implementation,
+not as a measurement.
