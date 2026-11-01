@@ -66,3 +66,34 @@ Of the five batches so far, the returns were: repack tools → **LZ4/ZSTD/LZO
 precompression targets** (large); scientific/ML → **FSE reference + typed
 decomposition** (moderate); compressors/PDF → **PNG re-filtering, JBIG2** (moderate);
 audio/video → **OpenEXR ZIP mode** (small); packers → **nothing**.
+
+---
+
+## Addendum: demoscene 64K-intro tools
+
+A second list covered the 64K/1K intro scene: **Crinkler**, **kkrunchy**,
+**Squishy**, **rekkrunchy**, **1kpack**, **KKP Analyzer**, **Shader Minifier**,
+**Pulsejet**, the **farbrausch** archive and the 64k-scene resource page.
+
+**Nothing here is implementable**, and the reason is structural rather than about
+quality — Crinkler in particular is a remarkable piece of engineering.
+
+These tools compress **content the same program just generated**. They are not
+given arbitrary input; they know the relocation table, the import list and the
+section layout because they produced them, and they exploit that knowledge
+directly. A general archiver has no such knowledge and cannot acquire it from the
+bytes alone.
+
+The one transferable idea is already in the engine: Crinkler models relocations and
+imports specially rather than treating them as opaque bytes, which is the same
+principle as our x86 BCJ filter — transform the parts whose structure you know,
+leave the rest alone. We do the cheap version of it and it is already counted in
+the corpus numbers.
+
+`Shader Minifier` and `Pulsejet` are the same category error as the previous batch:
+one removes source content, the other is a lossy audio codec tuned for tiny
+payloads.
+
+**Cumulative return after six batches: zero implementable items from the last two.**
+The useful conclusion is not that the lists are bad — they are well curated — but
+that they answer a different question from the one this project needs answered.
