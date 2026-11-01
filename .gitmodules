@@ -180,3 +180,6 @@
 [submodule "vendor/hcs/old/cmdpack"]
 	path = vendor/hcs/old/cmdpack
 	url = https://github.com/tvtoon/cmdpack
+[submodule "vendor/hcs/old/ECT"]
+	path = vendor/hcs/old/ECT
+	url = https://github.com/fhanau/Efficient-Compression-Tool
