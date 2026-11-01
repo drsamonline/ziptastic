@@ -159,3 +159,15 @@
 [submodule "vendor/hcs/old/jbig2enc"]
 	path = vendor/hcs/old/jbig2enc
 	url = https://github.com/agl/jbig2enc
+[submodule "vendor/hcs/old/openexr"]
+	path = vendor/hcs/old/openexr
+	url = https://github.com/AcademySoftwareFoundation/openexr
+[submodule "vendor/hcs/old/WavPack"]
+	path = vendor/hcs/old/WavPack
+	url = https://github.com/dbry/WavPack
+[submodule "vendor/hcs/old/charls"]
+	path = vendor/hcs/old/charls
+	url = https://github.com/team-charls/charls
+[submodule "vendor/hcs/old/djvulibre"]
+	path = vendor/hcs/old/djvulibre
+	url = https://github.com/DjVuLibre/djvulibre
