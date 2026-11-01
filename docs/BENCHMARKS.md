@@ -1584,3 +1584,24 @@ regular data.
 The random-integer row is worth remembering: delta coding buys nothing there, and
 the transform still gains 16.4%, because 30-bit values are 4-5 varint bytes against
 9-10 decimal characters. That part is base conversion, not prediction.
+
+## Per-block integrity (format v4)
+
+32-byte SHA-256 per block plus a 37-byte trailer. Full write-up: `INTEGRITY.md`.
+
+| | |
+|---|---|
+| stream overhead, single block | +69 bytes |
+| stream overhead, per extra block | +32 bytes |
+| 100 MB at the default 4 MiB block | 837 bytes (0.0008%) |
+| `-b 1` (1 KiB blocks) | 3.1% |
+| SHA-256 throughput, this machine | 140.8 MB/s (28.4 ms per 4 MiB block) |
+| share of decode wall time | ~22% on a 3.25 MB sample (102.7 ms decode, 23.1 ms digest) |
+
+Measured v3 -> v4 on the existing fixtures: `book.xlsx` 73,367 -> 73,436,
+`sheet1.xml` 72,464 -> 72,533, `book.tar.gz` 208,652 -> 208,721. Every one is
+exactly +69, which is the framing arithmetic and nothing else.
+
+The time column is the one to argue about: 22% of decode for integrity is a real
+trade, and the alternatives (SHA-NI, per-block CRC-32, an optional algorithm
+field) are listed in `INTEGRITY.md` with their costs.

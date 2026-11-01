@@ -21,7 +21,11 @@ namespace chce {
 inline constexpr uint8_t kMagic[4] = {'C', 'H', 'C', 'E'};
 // Version 2 added the trailing CRC-32 of the original bytes.
 // v3 added FileHeader::layers (Layer 0 transform bits), because `flags` is full.
-inline constexpr uint8_t kFormatVersion = 3;
+// v4 added a SHA-256 per block and a trailer binding the block set, because one
+// CRC-32 over the whole original tells you an archive is bad but not which block,
+// and only after all the work is done. v3 streams are no longer readable — the
+// same clean break as v1->v2 and v2->v3.
+inline constexpr uint8_t kFormatVersion = 4;
 
 // Default block size. The prompt starts at 256 KB; Phase 12 tunes it.
 // 4 MiB. Measured: on dickens, 256 KiB gives 2,743,444 bytes, 1 MiB 2,496,909,
@@ -144,6 +148,8 @@ enum class Err : int {
   SizeMismatch,   // declared sizes disagree with the bytes actually produced
   TrailingData,   // bytes left over after the last block
   Corrupt,        // an entropy backend rejected its own payload
+  BlockChecksumMismatch,  // a block's SHA-256 does not match its bytes
+  ManifestMismatch,       // the trailer disagrees with the block set
   Io,             // read or write failure on the CLI side
 };
 
@@ -161,6 +167,8 @@ constexpr const char* err_name(Err e) {
     case Err::SizeMismatch: return "size-mismatch";
     case Err::TrailingData: return "trailing-data";
     case Err::Corrupt: return "corrupt";
+    case Err::BlockChecksumMismatch: return "block-checksum-mismatch";
+    case Err::ManifestMismatch: return "manifest-mismatch";
     case Err::Io: return "io-error";
   }
   return "unknown";
@@ -181,6 +189,8 @@ constexpr const char* err_message(Err e) {
     case Err::SizeMismatch: return "declared size does not match payload";
     case Err::TrailingData: return "trailing data after final block";
     case Err::Corrupt: return "compressed payload is corrupt";
+    case Err::BlockChecksumMismatch: return "a block failed its SHA-256 check";
+    case Err::ManifestMismatch: return "the block manifest does not match the stream";
     case Err::Io: return "i/o error";
   }
   return "unknown error";

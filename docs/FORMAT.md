@@ -302,3 +302,46 @@ that refuses.
 
 **Test:** `corruption_is_detected` flips a byte at three positions and requires
 the decoder to refuse rather than return wrong bytes as success.
+
+## Version 4: per-block SHA-256 and a trailer
+
+`kFormatVersion` is 4. The block header gained a 32-byte digest and the stream
+gained a trailer. Full write-up and measurements: `INTEGRITY.md`.
+
+Current layout, superseding the v1 shapes above:
+
+```
+"CHCE" | version u8 = 4 | flags u8 | layers u8 | original_size varint
+       | block_count varint | crc32 u32
+
+per block:
+  mode u8 | uncompressed_size varint | compressed_size varint | sha256[32]
+         | metadata | payload
+
+trailer:
+  "ZTIX" | block_count varint | sha256(manifest)[32]
+```
+
+- `layers` (added in v3) is the Layer 0 bitfield: `kLayerNumeric` 0x01,
+  `kLayerNumericNested` 0x02, `kLayerXmlNumeric` 0x04, `kLayerXmlNested` 0x08.
+  Bits outside `kLayerMask` are `bad-flags`.
+- `sha256` is the digest of the block's **decoded plaintext** — the bytes that
+  block contributes before any Layer 0 inverse runs. It is checked as the block
+  comes out of the decoder, so a damaged block is named by index instead of
+  surfacing as a whole-archive CRC failure after everything has been decoded.
+- The **manifest** is, per block and in order, `mode | uncompressed_size |
+  compressed_size | sha256`, hashed together into the trailer's 32-byte digest.
+  It binds the ordered set of headers, so a dropped, duplicated or reordered
+  block or an edited header field fails before any payload is decoded.
+- The trailer is mandatory and must be the last thing in the stream; anything
+  after it is `trailing-data`.
+
+New errors: `block-checksum-mismatch` (a block failed its digest, reported with
+its index) and `manifest-mismatch` (the trailer disagrees with the block set).
+
+**Cost:** 69 bytes for a single-block stream, 32 per additional block. Time is
+the real cost — the digest runs at 140.8 MB/s here, about 22% of decode wall time
+on the measured sample. See `INTEGRITY.md` for the three ways to reduce it.
+
+**Compatibility:** version 4 only. v3 streams are rejected with `bad-version`,
+the same clean break as v1→v2 and v2→v3.

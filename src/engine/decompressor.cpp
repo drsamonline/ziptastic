@@ -10,6 +10,7 @@
 #include <thread>
 
 #include "chimera/block.hpp"
+#include "chimera/sha256.hpp"
 #include "codecs/lzma2_fallback.hpp"
 #include "token_stream.hpp"
 #include "chimera/huffman.hpp"
@@ -186,6 +187,19 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   dst.reserve(static_cast<size_t>(std::min<uint64_t>(fh.original_size, 256ull << 20)));
 
   uint64_t blocks = 0;
+  // Per-block digests are checked as blocks come out; this binds the ordered set
+  // of headers so a dropped or reordered block is caught too.
+  BlockManifest manifest;
+
+  // Declared block count, so a failure message can say "block 3 of 25" even
+  // though the decode never finished. Overwritten with the real count at the end.
+  if (report) report->blocks = fh.block_count;
+
+  // Records which block failed before unwinding, so the CLI can say so.
+  auto fail_block = [report](uint64_t idx) -> Err {
+    if (report) report->bad_block = idx;
+    return Err::BlockChecksumMismatch;
+  };
 
   // Parallel streams: every block is self-contained, so each can be decoded into
   // its own buffer and the results concatenated. This is only safe because
@@ -206,6 +220,7 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     uint64_t total = 0;
     for (size_t i = 0; i < blks.size(); ++i) {
       if (Err e = read_block_header(r, blks[i].bh); e != Err::Ok) return e;
+      manifest.add(blks[i].bh);
       if (blks[i].bh.uncompressed_size > fh.original_size - total) {
         return Err::SizeMismatch;
       }
@@ -214,7 +229,6 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
         return Err::Truncated;
       }
     }
-    if (!r.at_end()) return Err::TrailingData;
     if (total != fh.original_size) return Err::SizeMismatch;
 
     std::vector<std::vector<uint8_t>> parts(blks.size());
@@ -240,9 +254,18 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     dst.reserve(static_cast<size_t>(total));
     for (size_t i = 0; i < blks.size(); ++i) {
       if (parts[i].size() != blks[i].bh.uncompressed_size) return Err::Corrupt;
+      // Integrity before the bytes are concatenated: a bad block is named by its
+      // index while the good ones are still separable.
+      if (!sha256_equal(sha256(parts[i]), blks[i].bh.sha256)) {
+        return fail_block(i);
+      }
       dst.insert(dst.end(), parts[i].begin(), parts[i].end());
     }
     blocks = blks.size();
+    if (Err e = read_trailer(r, fh.block_count, manifest.digest()); e != Err::Ok) {
+      return e;
+    }
+    if (!r.at_end()) return Err::TrailingData;
   } else {
   while (blocks < fh.block_count) {
     BlockHeader bh;
@@ -261,12 +284,20 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     const size_t before = dst.size();
     if (Err e = decode_body(bh, body, dst); e != Err::Ok) return e;
     if (dst.size() - before != bh.uncompressed_size) return Err::SizeMismatch;
+    manifest.add(bh);
+    if (!sha256_equal(sha256(std::span<const uint8_t>(dst).subspan(before)),
+                      bh.sha256)) {
+      return fail_block(blocks);
+    }
 
     ++blocks;
   }
 
-  if (!r.at_end()) return Err::TrailingData;
   if (dst.size() != fh.original_size) return Err::SizeMismatch;
+  if (Err e = read_trailer(r, fh.block_count, manifest.digest()); e != Err::Ok) {
+    return e;
+  }
+  if (!r.at_end()) return Err::TrailingData;
   }  // end of the sequential (archive-mode) block loop
 
   // Undo the Layer 0 transforms in the reverse order they were applied:

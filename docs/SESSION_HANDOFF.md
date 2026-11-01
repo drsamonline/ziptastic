@@ -24,7 +24,7 @@ higher licence ceiling). That difference is why both exist.
 
 | repo | remote HEAD | status |
 |---|---|---|
-| ziptastic | `272244d` + XML numeric | builds clean, **22/22 suites pass** |
+| ziptastic | `781ea9f` + per-block integrity | builds clean, **23/23 suites pass**, format **v4** |
 | heavenzip | `88ac3d6` | docs only, no implementation |
 | lexora | `ad57991` | Phase-1 prototype, 502 tests local |
 
@@ -58,8 +58,10 @@ Layer 2: per-block best-of-backends (rANS-context, Huffman, libbsc BWT,
 Layer 3: whole-stream CM for --max-ratio
 ```
 
-Format **v3**: magic, version, `flags` (8 bits, **full**), `layers` (Layer 0 bits),
-original_size, block_count, CRC-32.
+Format **v4**: magic, version, `flags` (8 bits, **full**), `layers` (Layer 0 bits),
+original_size, block_count, CRC-32; per block a 32-byte SHA-256; then a `ZTIX`
+trailer carrying the block count and a digest of the block manifest. v3 streams
+are no longer readable — a deliberate break, see `INTEGRITY.md`.
 
 Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
 `kLayerXmlNumeric` 0x04, `kLayerXmlNested` 0x08.
@@ -73,7 +75,14 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    declining a −50.7% transform. Fixed with a **structural signal**: if inflation
    expanded data ≥2×, take the payload. No prediction needed.
 3. **Lexora assessed both ways** — see §7.
-4. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
+4. **Per-block integrity — shipped.** SHA-256 per block, verified as each block
+   comes out of the decoder (both paths), plus a 37-byte trailer binding the
+   ordered block set. A damaged block is now named:
+   `decompression failed: a block failed its SHA-256 check (block 2 of 13)`.
+   Cost: 69 bytes single-block, 32 per extra block, and **~22% of decode wall
+   time** — measured, not estimated. `docs/INTEGRITY.md` has the three cheaper
+   options in the order I would try them.
+5. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
    as delta + zigzag + varint inside the `<v>` tags, per column, at the top level and
    inside the recursion. `.xlsx` went 147,525 → **73,367 (−50.3%)**, `layers = 0x08`,
    round trip exact; a bare `sheet1.xml` 148,615 → 72,464. Three defects came out of
@@ -87,8 +96,11 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    **gzip** container (item 6): precomp cannot reach inside a `.tar.gz`, so the
    nested chain never starts. That, not the transform, is now the blocker on the
    nested −89.4% shape.
-2. **Per-block SHA-256 + index + trailer** (from lexora). We have one CRC-32 over the
-   whole original — one bad byte loses a 100 MB archive. 32 bytes/block, <0.001%.
+2. ~~**Per-block SHA-256 + index + trailer**~~ **DONE** — `docs/INTEGRITY.md`.
+   Two open decisions it left behind: the digest costs ~22% of decode time (SHA-NI
+   would take it to ~2%; per-block CRC-32 would be nearly free), and the offset
+   index from the lexora note was **not** built — nothing reads it, and unverified
+   surface area is a liability. Revisit both before the format is called stable.
 3. **Validate-before-allocate in `read_file_header`** (from lexora). Refuse malformed
    containers up front instead of defending at each use; our desync bugs surfaced as
    `bad_alloc` from an unvalidated size field.

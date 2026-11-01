@@ -182,7 +182,10 @@ TEST(fallback_declines_on_incompressible_data) {
   CHECK(!stats.lzma2_stream);
   CHECK_EQ(stats.raw_blocks, stats.blocks);
   // Stored bytes plus framing only: no entropy backend may add bytes here.
-  CHECK_MSG(out.size() > data.size() && out.size() - data.size() < 64,
+  // Framing is the file header, one block header carrying a 32-byte SHA-256, and
+  // the 37-byte trailer (magic + count + manifest digest) — under 128 bytes for a
+  // single block, and 32 more for each further block.
+  CHECK_MSG(out.size() > data.size() && out.size() - data.size() < 128,
             "unexpected framing overhead " +
                 std::to_string(out.size() - data.size()));
 }

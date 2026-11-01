@@ -235,6 +235,7 @@ endif()
 
 add_library(chce_core STATIC
   src/engine/block_writer.cpp
+  src/engine/sha256.cpp
   src/engine/plugin_host.cpp
   src/engine/compressor.cpp
   src/engine/decompressor.cpp

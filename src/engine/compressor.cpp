@@ -9,6 +9,7 @@
 
 #include "codecs/lzma2_fallback.hpp"
 #include "chimera/coarse_index.hpp"
+#include "chimera/sha256.hpp"
 #include "parser.hpp"
 #include "token_stream.hpp"
 #include "chimera/huffman.hpp"
@@ -259,6 +260,15 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
 
   const size_t nblocks = fh.block_count;
 
+  // Every block is sealed the same way: digest its plaintext, then record the
+  // header in the manifest. One helper so the four write sites cannot disagree
+  // about what a block's hash covers.
+  BlockManifest manifest;
+  auto seal = [&manifest](BlockHeader& h, std::span<const uint8_t> plaintext) {
+    h.sha256 = sha256(plaintext);
+    manifest.add(h);
+  };
+
   if (parallel) {
     // Parallel mode. Every block is encoded against itself: its own match
     // finder over its own slice, no coarse index, no carried dictionary. Blocks
@@ -293,10 +303,13 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
     for (unsigned i = 0; i < nt; ++i) pool.emplace_back(worker);
     for (auto& t : pool) t.join();
 
-    for (const auto& e : encoded) {
-      write_block_header(w, e.hdr);
-      w.bytes(e.body);
-      account(e);
+    for (size_t b = 0; b < nblocks; ++b) {
+      const size_t pos = b * opt.block_size;
+      const size_t n = std::min(opt.block_size, input.size() - pos);
+      seal(encoded[b].hdr, input.subspan(pos, n));
+      write_block_header(w, encoded[b].hdr);
+      w.bytes(encoded[b].body);
+      account(encoded[b]);
     }
   } else {
     // Archive mode: the dictionary carries across blocks and the coarse index
@@ -314,6 +327,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
       EncodedBlock best = encode_one_block(input, pos, n, finder, model,
                                            opt.coarse ? &coarse : nullptr, opt,
                                            &stats);
+      seal(best.hdr, input.subspan(pos, n));
       write_block_header(w, best.hdr);
       w.bytes(best.body);
       account(best);
@@ -321,6 +335,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
     }
   }
 
+  write_trailer(w, fh.block_count, manifest.digest());
   out = w.take();
   return Err::Ok;
 }
@@ -354,11 +369,16 @@ Err encode_lzma2_stream(std::span<const uint8_t> input,
   bh.uncompressed_size = input.size();
   bh.compressed_size = body.size();
 
+  BlockManifest manifest;
+  bh.sha256 = sha256(input);
+  manifest.add(bh);
+
   ByteWriter w;
-  w.reserve(body.size() + 32);
+  w.reserve(body.size() + 128);
   write_file_header(w, fh);
   write_block_header(w, bh);
   w.bytes(body.span());
+  write_trailer(w, 1, manifest.digest());
 
   out = w.take();
   return Err::Ok;
@@ -717,8 +737,12 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
       bh.mode = Mode::CmZpaq;
       bh.uncompressed_size = data.size();
       bh.compressed_size = packed.size();
+      bh.sha256 = sha256(data);
+      BlockManifest manifest;
+      manifest.add(bh);
       write_block_header(cw, bh);
       cw.bytes(packed);
+      write_trailer(cw, 1, manifest.digest());
 
       if (cw.size() < native.size()) {
         CompressStats cs;

@@ -277,7 +277,18 @@ int run_decompress(const Options& o) {
   std::vector<uint8_t> out;
   chce::DecompressReport rep;
   const chce::Err e = chce::decompress(input, out, &rep);
-  if (e != chce::Err::Ok) return fail("decompression failed", e);
+  if (e != chce::Err::Ok) {
+    // A block-level failure names the block: that is what the digest is for.
+    if (e == chce::Err::BlockChecksumMismatch && rep.bad_block != chce::kNoBlock) {
+      std::fprintf(stderr,
+                   "ziptastic: decompression failed: %s (block %llu of %llu)\n",
+                   chce::err_message(e),
+                   static_cast<unsigned long long>(rep.bad_block),
+                   static_cast<unsigned long long>(rep.blocks ? rep.blocks : 0));
+      return 1;
+    }
+    return fail("decompression failed", e);
+  }
 
   bool ok = true;
   FILE* fo = open_output(o, ok);

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "chimera/format.hpp"
+#include "chimera/sha256.hpp"
 
 namespace chce {
 
@@ -38,9 +39,33 @@ struct BlockHeader {
   Mode mode = Mode::Raw;
   uint64_t uncompressed_size = 0;
   uint64_t compressed_size = 0;  // length of the payload that follows
+  // SHA-256 of the block's decoded plaintext — the bytes this block contributes
+  // before any Layer 0 inverse runs. Checked before those inverses, so a damaged
+  // block is named by index instead of surfacing as a whole-archive CRC failure
+  // after everything has been decoded.
+  Sha256Digest sha256{};
 
   bool operator==(const BlockHeader&) const = default;
 };
+
+// The stream trailer: "ZTIX" | varint block_count | sha256 of the manifest.
+// The manifest binds, per block and in order, the mode byte, both sizes and the
+// block's own digest — so a dropped, duplicated or reordered block, or an edited
+// header field, fails before any payload is decoded.
+inline constexpr uint8_t kTrailerMagic[4] = {'Z', 'T', 'I', 'X'};
+
+class BlockManifest {
+ public:
+  void add(const BlockHeader& h);
+  Sha256Digest digest() const;
+  size_t entries() const { return serialised_.size(); }
+
+ private:
+  std::vector<uint8_t> serialised_;
+};
+
+void write_trailer(ByteWriter& w, uint64_t block_count, const Sha256Digest& manifest);
+Err read_trailer(ByteReader& r, uint64_t expect_blocks, const Sha256Digest& manifest);
 
 // ---------------------------------------------------------------------------
 // Serialisation
