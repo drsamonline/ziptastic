@@ -21,6 +21,7 @@
 #include "precompressors/dedup.hpp"
 #include "precompressors/gif_wrap.hpp"
 #include "precompressors/numeric_wrap.hpp"
+#include "precompressors/xml_numeric_wrap.hpp"
 #include "precompressors/jpeg_wrap.hpp"
 #include "plugin_host.hpp"
 #include "precompressors/preflate_wrap.hpp"
@@ -285,6 +286,11 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     if (!numeric_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
   }
+  if ((fh.layers & kLayerXmlNested) != 0) {
+    std::vector<uint8_t> original;
+    if (!xml_numeric_unpack(dst, original)) return Err::Corrupt;
+    dst = std::move(original);
+  }
   if ((fh.flags & kFlagPrecomp) != 0) {
     std::vector<uint8_t> original;
     if (!preflate_repack(dst, original)) return Err::Corrupt;
@@ -294,6 +300,11 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   if ((fh.layers & kLayerNumeric) != 0) {
     std::vector<uint8_t> original;
     if (!numeric_unpack(dst, original)) return Err::Corrupt;
+    dst = std::move(original);
+  }
+  if ((fh.layers & kLayerXmlNumeric) != 0) {
+    std::vector<uint8_t> original;
+    if (!xml_numeric_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
   }
   if ((fh.flags & kFlagGif) != 0) {

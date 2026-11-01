@@ -11,55 +11,12 @@
 #include <cstring>
 #include <string>
 
+#include "numeric_common.hpp"
+
 namespace chce {
 namespace {
 
-void put_varint(std::vector<uint8_t>& v, uint64_t x) {
-  while (x >= 0x80) {
-    v.push_back(static_cast<uint8_t>(x) | 0x80);
-    x >>= 7;
-  }
-  v.push_back(static_cast<uint8_t>(x));
-}
-
-bool get_varint(std::span<const uint8_t> s, size_t& pos, uint64_t& out) {
-  out = 0;
-  uint32_t shift = 0;
-  while (pos < s.size()) {
-    const uint8_t b = s[pos++];
-    if (shift > 63) return false;
-    out |= static_cast<uint64_t>(b & 0x7F) << shift;
-    if ((b & 0x80) == 0) return true;
-    shift += 7;
-  }
-  return false;
-}
-
-uint64_t zigzag(int64_t x) { return (static_cast<uint64_t>(x) << 1) ^ static_cast<uint64_t>(x >> 63); }
-int64_t unzigzag(uint64_t u) { return static_cast<int64_t>(u >> 1) ^ -static_cast<int64_t>(u & 1); }
-
-// Strict canonical integer: optional '-', then digits, no leading zero unless the
-// value is exactly "0". Returns false for anything that would not re-serialise
-// identically, which is what keeps the round trip exact.
-bool parse_canonical_int(const std::string& s, int64_t& out) {
-  if (s.empty() || s.size() > 19) return false;
-  size_t i = 0;
-  bool neg = false;
-  if (s[0] == '-') {
-    neg = true;
-    i = 1;
-    if (s.size() == 1) return false;
-  }
-  if (s[i] == '0' && s.size() - i > 1) return false;  // leading zero
-  int64_t v = 0;
-  for (; i < s.size(); ++i) {
-    if (s[i] < '0' || s[i] > '9') return false;
-    if (v > (INT64_MAX - 9) / 10) return false;
-    v = v * 10 + (s[i] - '0');
-  }
-  out = neg ? -v : v;
-  return true;
-}
+using namespace numdetail;
 
 std::vector<std::string> split(const std::string& line, char d) {
   std::vector<std::string> out;

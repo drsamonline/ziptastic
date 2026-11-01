@@ -92,5 +92,29 @@ expect_ok $rc "bench runs"
 grep -q "TOTAL" "$TMP/bench.txt" && ok "bench prints a total row" \
   || bad "bench output: $(cat "$TMP/bench.txt")"
 
+# ------------------------------------------------------- XML numeric transform
+# A bare spreadsheet sheet, the shape an .xlsx inflates to. The transform must
+# engage (the layers byte says so) and the round trip must be bit-exact.
+{
+  printf '<?xml version="1.0"?><worksheet><sheetData>'
+  i=1; a=1000
+  while [ $i -le 400 ]; do
+    a=$((a + 3))
+    printf '<row r="%d"><c r="A%d"><v>%d</v></c><c r="B%d"><v>%d</v></c></row>' \
+      "$i" "$i" "$a" "$i" "$((a * 7))"
+    i=$((i + 1))
+  done
+  printf '</sheetData></worksheet>'
+} > "$TMP/sheet.xml"
+
+"$BIN" -9 -f -o "$TMP/sheet.chce" "$TMP/sheet.xml"; rc=$?
+expect_ok $rc "spreadsheet XML compresses"
+layers=$(od -An -tu1 -j6 -N1 "$TMP/sheet.chce" | tr -d ' ')
+[ "$layers" = "4" ] && ok "XML numeric layer bit is set (layers=0x04)" \
+  || bad "XML numeric layer bit not set (layers=$layers)"
+"$BIN" -d -f -o "$TMP/sheet.out" "$TMP/sheet.chce"
+cmp -s "$TMP/sheet.xml" "$TMP/sheet.out" && ok "spreadsheet XML round-trip is bit-exact" \
+  || bad "spreadsheet XML round-trip differs"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

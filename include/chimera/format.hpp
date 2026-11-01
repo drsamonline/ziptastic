@@ -63,9 +63,16 @@ enum LayerFlags : uint8_t {
   // inflated, i.e. one container level deeper than the input. Undone BEFORE
   // precomp on decode, because it was applied after precomp on encode.
   kLayerNumericNested = 1u << 1,
+  // The XML-aware numeric transform: spreadsheet cell values, which is what an
+  // .xlsx inflates to. Separate from kLayerNumeric because the payload shape and
+  // the inverse are different, and a shared bit would leave the decoder inferring
+  // which one it is from kFlagPrecomp.
+  kLayerXmlNumeric = 1u << 2,
+  kLayerXmlNested = 1u << 3,
 };
 
-inline constexpr uint8_t kLayerMask = kLayerNumeric | kLayerNumericNested;
+inline constexpr uint8_t kLayerMask =
+    kLayerNumeric | kLayerNumericNested | kLayerXmlNumeric | kLayerXmlNested;
 
 inline constexpr uint8_t kFlagMask =
     kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup | kFlagJpeg | kFlagGif;

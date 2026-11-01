@@ -20,6 +20,7 @@
 #include "precompressors/dedup.hpp"
 #include "precompressors/gif_wrap.hpp"
 #include "precompressors/numeric_wrap.hpp"
+#include "precompressors/xml_numeric_wrap.hpp"
 #include "precompressors/jpeg_wrap.hpp"
 #include "plugin_host.hpp"
 #include "precompressors/preflate_wrap.hpp"
@@ -501,15 +502,32 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // Layer 0 — integer CSV/TSV. Runs first: it is the only transform that needs to
   // see the raw text, and a CSV is not DEFLATE, not x86, not an image.
   std::vector<uint8_t> numeric_payload;
+  // `numeric` means numeric_payload holds the stage-0 payload, whichever transform
+  // produced it: the downstream stages pick the payload on this flag, so it has to
+  // cover both variants or they code the wrong bytes while the layer bit claims a
+  // transform ran. `numeric_csv` is only for the layer bit itself.
   bool numeric = false;
+  bool numeric_csv = false;
+  bool xml_numeric = false;
   if (opt.numeric && numeric_available() && !input.empty()) {
     std::vector<uint8_t> packed;
-    if (numeric_pack(input, packed)) {
+    // Spreadsheet XML first: an .xlsx that precomp never inflated still shows up
+    // here as a bare sheet1.xml, and the CSV transform cannot see inside <v> tags.
+    if (xml_numeric_available() && xml_numeric_pack(input, packed)) {
+      std::vector<uint8_t> check;
+      if (xml_numeric_unpack(packed, check) && check.size() == input.size() &&
+          std::memcmp(check.data(), input.data(), input.size()) == 0) {
+        numeric_payload = std::move(packed);
+        numeric = true;
+        xml_numeric = true;
+      }
+    } else if (numeric_pack(input, packed)) {
       std::vector<uint8_t> check;
       if (numeric_unpack(packed, check) && check.size() == input.size() &&
           std::memcmp(check.data(), input.data(), input.size()) == 0) {
         numeric_payload = std::move(packed);
         numeric = true;
+        numeric_csv = true;
       }
     }
   }
@@ -583,9 +601,18 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // precomp inflated. Measured on a tar.gz > xlsx: reaching the sheet XML inside
   // was -50.8% on its own, and -89.4% once the numeric transform could reach it.
   bool numeric_nested = false;
+  bool xml_numeric_nested = false;
   if (precomp && opt.numeric && numeric_available() && !precomp_payload.empty()) {
     std::vector<uint8_t> nested;
-    if (numeric_pack(precomp_payload, nested)) {
+    // This is the case the whole item exists for: precomp inflated the xlsx and
+    // what came out is XML, where the cell values live inside <v> tags.
+    if (xml_numeric_available() && xml_numeric_pack(precomp_payload, nested)) {
+      std::vector<uint8_t> check;
+      if (xml_numeric_unpack(nested, check) && check == precomp_payload) {
+        precomp_payload = std::move(nested);
+        xml_numeric_nested = true;
+      }
+    } else if (numeric_pack(precomp_payload, nested)) {
       std::vector<uint8_t> check;
       if (numeric_unpack(nested, check) && check == precomp_payload) {
         precomp_payload = std::move(nested);
@@ -593,6 +620,13 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
       }
     }
   }
+
+  // Every Layer 0 bit the stream carries, built once so the three encode paths
+  // cannot disagree about which transforms were applied.
+  const uint8_t layers = (numeric_csv ? kLayerNumeric : 0) |
+                         (numeric_nested ? kLayerNumericNested : 0) |
+                         (xml_numeric ? kLayerXmlNumeric : 0) |
+                         (xml_numeric_nested ? kLayerXmlNested : 0);
 
   // Layer 0: the x86 BCJ transform. Applied to the whole stream before
   // anything else, so the filter's state carries across block boundaries the
@@ -632,8 +666,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   CompressStats local;
   std::vector<uint8_t> native;
   if (Err e = encode_native(data, opt, bcj, precomp, dedup, jpeg, gif,
-                    (numeric ? kLayerNumeric : 0) | (numeric_nested ? kLayerNumericNested : 0),
-                    crc, native, local); e != Err::Ok) {
+                    layers, crc, native, local); e != Err::Ok) {
     return e;
   }
 
@@ -643,8 +676,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   if (opt.lzma2_fallback && lzma2_available() && !input.empty()) {
     std::vector<uint8_t> fallback;
     const Err e = encode_lzma2_stream(data, opt, bcj, precomp, dedup, jpeg, gif,
-                          (numeric ? kLayerNumeric : 0) | (numeric_nested ? kLayerNumericNested : 0),
-                          crc, fallback);
+                          layers, crc, fallback);
     if (e == Err::Ok && fallback.size() < native.size()) {
       CompressStats fb;
       fb.blocks = 1;
@@ -675,8 +707,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
       FileHeader cfh;
       cfh.version = kFormatVersion;
       cfh.flags = header_flags(opt, bcj, precomp, /*parallel=*/false, dedup, jpeg, gif);
-      cfh.layers = (numeric ? kLayerNumeric : 0) |
-                   (numeric_nested ? kLayerNumericNested : 0);
+      cfh.layers = layers;
       cfh.original_size = input.size();
       cfh.block_count = 1;
       cfh.checksum = crc;

@@ -1557,3 +1557,30 @@ untouched, and both still round-trip exactly.
 `kFlagGif`. Rather than overload it, `FileHeader` gained a `layers` byte and the
 version went to 3 — the change this project had already flagged as due when the
 last flag bit was consumed. Two tests that build headers by hand were updated.
+
+## Spreadsheet XML cell values — shipped
+
+`<v>` values inside spreadsheet XML are coded as delta + zigzag + varint, per
+column, with a per-cell decline. Full write-up and the design measurements:
+`XML_NUMERIC_MEASUREMENT.md`.
+
+| file | before | after | gain | `flags` | `layers` |
+|---|---|---|---|---|---|
+| `book.xlsx` (2 cols x 40,000 ints) | 147,525 | **73,367** | **−50.3%** | 0x05 | 0x08 |
+| `sheet1.xml` (inflated payload alone) | 148,615 | **72,464** | −51.2% | 0x01 | 0x04 |
+| random 9-digit integer sheet | 495,648 | 414,446 | −16.4% | 0x01 | 0x04 |
+| floats + strings sheet | 196,987 | 196,987 | declines | 0x01 | 0x00 |
+| `book.tar.gz` wrapping the xlsx | 208,652 | 208,652 | unchanged | 0x01 | 0x00 |
+
+All round trips byte-exact. The `.tar.gz` row is the honest gap: precomp does not
+enter a **gzip** container, so recursion never starts — see the gzip item.
+
+Two things measured before the C++ existed, both of which changed the design:
+column-grouped streams came to 71,964 against 71,963 interleaved (0.04%, not worth
+the machinery), and a flat single-prev variant reached 71,994 but with a 3x larger
+intermediate stream (239,999 vs 80,003 bytes), which is a ratio risk on less
+regular data.
+
+The random-integer row is worth remembering: delta coding buys nothing there, and
+the transform still gains 16.4%, because 30-bit values are 4-5 varint bytes against
+9-10 decimal characters. That part is base conversion, not prediction.

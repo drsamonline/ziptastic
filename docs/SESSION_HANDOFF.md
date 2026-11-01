@@ -24,7 +24,7 @@ higher licence ceiling). That difference is why both exist.
 
 | repo | remote HEAD | status |
 |---|---|---|
-| ziptastic | `2bf5989` + lexora docs | builds clean, **21/21 suites pass** |
+| ziptastic | `272244d` + XML numeric | builds clean, **22/22 suites pass** |
 | heavenzip | `88ac3d6` | docs only, no implementation |
 | lexora | `ad57991` | Phase-1 prototype, 502 tests local |
 
@@ -37,6 +37,8 @@ ziptastic `docs/` holds 20 files. Start with `BENCHMARKS.md`,
 |---|---|
 | Recursion: nested `.tar.gz` → `.xlsx` | **−50.7%** (369,080 → 181,791) |
 | Recursion + numeric (ideal synthetic chain) | −89.4% |
+| **XML numeric on an `.xlsx`** | **−50.3%** (147,525 → 73,367) |
+| XML numeric on the bare sheet XML | −51.2% (148,615 → 72,464) |
 | PDF embedded DEFLATE | −79.1% |
 | Integer CSV/TSV columns | −77.4% |
 | LZ4 payload extraction | −28.8% to −58.2% (measured, **not integrated**) |
@@ -59,7 +61,8 @@ Layer 3: whole-stream CM for --max-ratio
 Format **v3**: magic, version, `flags` (8 bits, **full**), `layers` (Layer 0 bits),
 original_size, block_count, CRC-32.
 
-Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02.
+Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
+`kLayerXmlNumeric` 0x04, `kLayerXmlNested` 0x08.
 
 ## 5. Latest work this session
 
@@ -70,13 +73,20 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02.
    declining a −50.7% transform. Fixed with a **structural signal**: if inflation
    expanded data ≥2×, take the payload. No prediction needed.
 3. **Lexora assessed both ways** — see §7.
+4. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
+   as delta + zigzag + varint inside the `<v>` tags, per column, at the top level and
+   inside the recursion. `.xlsx` went 147,525 → **73,367 (−50.3%)**, `layers = 0x08`,
+   round trip exact; a bare `sheet1.xml` 148,615 → 72,464. Three defects came out of
+   it, one of them invisible to the unit tests — read
+   `docs/XML_NUMERIC_MEASUREMENT.md` before touching the Layer 0 chain.
 
 ## 6. Next steps, in order
 
-1. **XML-aware numeric transform.** The nested numeric correctly does not fire on
-   XLSX because the payload is XML (`<row r="1"><c r="A1"><v>1003</v></c>`), not
-   delimited text. This is the difference between −50.7% and −89.4% on that file
-   class. **Highest value, best defined.**
+1. ~~**XML-aware numeric transform.**~~ **DONE** — −50.3% on an `.xlsx`,
+   `docs/XML_NUMERIC_MEASUREMENT.md`. The remaining gap on that file class is the
+   **gzip** container (item 6): precomp cannot reach inside a `.tar.gz`, so the
+   nested chain never starts. That, not the transform, is now the blocker on the
+   nested −89.4% shape.
 2. **Per-block SHA-256 + index + trailer** (from lexora). We have one CRC-32 over the
    whole original — one bad byte loses a 100 MB archive. 32 bytes/block, <0.001%.
 3. **Validate-before-allocate in `read_file_header`** (from lexora). Refuse malformed
