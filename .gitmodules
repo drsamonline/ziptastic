@@ -99,3 +99,39 @@
 [submodule "vendor/hcs/old/zxc"]
 	path = vendor/hcs/old/zxc
 	url = https://github.com/hellobertrand/zxc
+[submodule "vendor/hcs/old/The-Repack-script-Repo"]
+	path = vendor/hcs/old/The-Repack-script-Repo
+	url = https://github.com/anonik9900/The-Repack-script-Repo
+[submodule "vendor/hcs/old/Crysis-Remastered"]
+	path = vendor/hcs/old/Crysis-Remastered
+	url = https://github.com/apexrepack/Crysis-Remastered
+[submodule "vendor/hcs/old/REE.PAK.Tool"]
+	path = vendor/hcs/old/REE.PAK.Tool
+	url = https://github.com/Ekey/REE.PAK.Tool
+[submodule "vendor/hcs/old/PR-Pak-Tool"]
+	path = vendor/hcs/old/PR-Pak-Tool
+	url = https://github.com/0xPrince/PR-Pak-Tool
+[submodule "vendor/hcs/old/Hakkuraifu-Repacker"]
+	path = vendor/hcs/old/Hakkuraifu-Repacker
+	url = https://github.com/Hakkuraifu/Hakkuraifu-Repacker
+[submodule "vendor/hcs/old/Repack-Tools"]
+	path = vendor/hcs/old/Repack-Tools
+	url = https://github.com/apexrepack/Repack-Tools
+[submodule "vendor/hcs/old/agsutils"]
+	path = vendor/hcs/old/agsutils
+	url = https://github.com/rofl0r/agsutils
+[submodule "vendor/hcs/old/OGXRepacker"]
+	path = vendor/hcs/old/OGXRepacker
+	url = https://github.com/astarivi/OGXRepacker
+[submodule "vendor/hcs/old/xtool"]
+	path = vendor/hcs/old/xtool
+	url = https://github.com/Razor12911/xtool
+[submodule "vendor/hcs/old/freearc-old"]
+	path = vendor/hcs/old/freearc-old
+	url = https://github.com/j2969719/freearc-old
+[submodule "vendor/hcs/old/Mini-Compressor"]
+	path = vendor/hcs/old/Mini-Compressor
+	url = https://github.com/CarldricGaming/Mini-Compressor
+[submodule "vendor/hcs/old/rep4cks"]
+	path = vendor/hcs/old/rep4cks
+	url = https://github.com/softfxc/rep4cks
