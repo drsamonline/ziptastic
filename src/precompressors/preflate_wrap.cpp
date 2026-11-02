@@ -74,15 +74,30 @@ bool parse_stream(const uint8_t* data, uint32_t comp_len, Stream& out) {
 
 // Walks the ZIP local file headers from the start. Bails out at the first
 // structure it does not recognise, keeping whatever parsed cleanly.
+// Finds ZIP local file headers ANYWHERE in the buffer, not only at offset 0.
+//
+// Requiring offset 0 made two whole file classes invisible: an SFX archive is an
+// .exe stub followed by a ZIP, and a `.tar.gz` holding a `.xlsx` inflates to a tar
+// whose member data starts 512 bytes in. Both are containers we can parse, and
+// both were being handed to the backend as opaque bytes.
+//
+// A false positive costs nothing: parse_stream verifies each candidate, and the
+// payload is rebuilt and byte-compared before it is returned.
 std::vector<Stream> scan_zip(const std::vector<uint8_t>& in) {
   std::vector<Stream> streams;
   size_t pos = 0;
   const size_t n = in.size();
   while (pos + 30 <= n) {
+    const void* hit = std::memchr(in.data() + pos, 'P', n - pos);
+    if (hit == nullptr) break;
+    pos = static_cast<size_t>(static_cast<const uint8_t*>(hit) - in.data());
+    if (pos + 4 > n) break;
     if (in[pos] != 'P' || in[pos + 1] != 'K' || in[pos + 2] != 0x03 ||
         in[pos + 3] != 0x04) {
-      break;
+      ++pos;
+      continue;
     }
+    if (streams.size() > 100000u) break;
     const uint16_t method = rd16(&in[pos + 8]);
     const uint32_t comp_len = rd32(&in[pos + 18]);
     const uint16_t name_len = rd16(&in[pos + 26]);

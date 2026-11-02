@@ -335,6 +335,13 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     if (!xml_numeric_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
   }
+  // The second container level was applied before the nested numeric transforms,
+  // so it is undone after them and before the container that held it.
+  if ((fh.layers & kLayerPrecompNested) != 0) {
+    std::vector<uint8_t> original;
+    if (!preflate_repack(dst, original)) return Err::Corrupt;
+    dst = std::move(original);
+  }
   // gzip and precomp are alternatives, both undone after the nested transforms
   // that ran on what they inflated.
   if ((fh.layers & kLayerGzip) != 0) {

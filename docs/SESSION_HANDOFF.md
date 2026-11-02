@@ -24,7 +24,7 @@ higher licence ceiling). That difference is why both exist.
 
 | repo | remote HEAD | status |
 |---|---|---|
-| ziptastic | `aa5d003` + gzip | builds clean, **25/25 suites pass**, format **v4** |
+| ziptastic | `7a3a01c` + nested containers | builds clean, **26/26 suites pass**, format **v4** |
 | heavenzip | `88ac3d6` | docs only, no implementation |
 | lexora | `ad57991` | Phase-1 prototype, 502 tests local |
 
@@ -46,7 +46,8 @@ ziptastic `docs/` holds 20 files. Start with `BENCHMARKS.md`,
 | LZ4 payload extraction | −28.8% to −58.2% ideal; **+49.7% worse** once the parse is stored — see `LZ4_MEASURED.md` |
 | GIF LZW → indices | −29.5% |
 | ZIP/DEFLATE (preflate) | −28.8% vs `xz -9` |
-| gzip members inflated | −21.2% (XML) / −25.4% (tar.gz of text) / −30.0% (tar.gz holding an xlsx) |
+| gzip members inflated | −21.2% (XML) / −25.4% (tar.gz of text) |
+| **tar.gz → tar → xlsx → XML** | **−44.8%** (107,221 → 59,183), within 233 B of the inner file alone |
 | JPEG (brunsli) | −19.4% |
 | base64 → binary | −4.5% dense / −71.8% structured (**not integrated**) |
 | Silesia corpus, 10 files | −11.83% vs `xz -9` |
@@ -143,10 +144,13 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    the nested chain but does not finish it: gzip hands back a **tar**, and the tar holds
    the xlsx. `book.tar.gz` gains 30%, not 89%, because reaching the sheet XML needs a
    tar parser and a second precomp pass. That is item 6a.
-6a. **tar parsing inside the inflated payload.** The recursion is already depth-generic;
-   what is missing is the format. A tar is 512-byte headers with octal sizes — trivial
-   to parse and it unlocks `.tar.gz` → `.tar` → `.zip` → XML, which is where the −89.4%
-   lives. Do this before anything else in this list.
+6a. ~~**tar parsing inside the inflated payload.**~~ **DONE** — `docs/NESTED_CONTAINERS.md`.
+   No tar parser was needed: `scan_zip` now finds local file headers **anywhere** in the
+   buffer instead of requiring offset 0, and the recursion re-enters `preflate_unpack` on
+   what gzip inflated. `book.tar.gz` 107,221 → **59,183** (−44.8%), within 233 bytes of
+   compressing the inner `.xlsx` directly. The same change makes **SFX** archives (6b)
+   visible for free. **`layers` is now full**: the next Layer 0 capability needs a second
+   `layers` byte, which is a format change — plan for it.
 6a-bis. ~~**Stored-ZIP unpacking — the "zip store" step.**~~ **MEASURED, REJECTED** —
    `docs/ZIP_STORE_MEASURED.md`. A `zip -0` container of a game-like tree compresses to
    374,087 as-is, 379,460 with the container stripped off and 404,076 with the members
@@ -160,11 +164,11 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    precomp/srep/7z, and nothing is hidden here. **precomp on a deflated zip was
    confirmed working in the same run** (−6.2%, `flags` 0x25), contrary to the field
    impression that it often does nothing.
-6b. **SFX (self-extracting archives).** An `.exe` stub followed by a ZIP. `scan_zip` only
-   walks local headers from offset 0, so an SFX archive is invisible to precomp today —
-   and Windows installers are overwhelmingly SFX. The fix is to locate the ZIP by its
-   end-of-central-directory record instead of assuming offset 0, and treat the stub as
-   an opaque prefix that is stored verbatim. Small change, large file class.
+6b. ~~**SFX (self-extracting archives).**~~ **DONE, as a side effect of 6a.** The
+   anywhere-scan finds the ZIP behind an `.exe` stub, and the stub rides along as part of
+   the stored skeleton. Covered by `a_zip_after_a_stub_is_found`. What is *not* done is
+   finding the ZIP from its end-of-central-directory record when the local headers are
+   damaged or the stub contains a decoy `PK\x03\x04`; that refinement is not urgent.
 6c. **Split archives.** `.z01/.z02/…/.zip` multi-volume ZIPs, and `.001/.002` byte-splits.
    Two different jobs: a byte-split is trivially reassembled and re-split from stored
    part sizes; a multi-volume ZIP has its central directory in the last part and local

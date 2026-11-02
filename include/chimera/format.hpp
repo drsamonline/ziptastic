@@ -94,15 +94,17 @@ enum LayerFlags : uint8_t {
   // gzip members inflated. A .tar.gz is the most common container there is and
   // precomp reaches ZIP and PDF but not gzip.
   kLayerGzip = 1u << 5,
-  // Bit 6 is free. The nested base64 case — a JSON document inside a ZIP — is the
-  // obvious next one, and it needs that bit when it is built. It is not declared
-  // here until something sets it: a constant nothing writes is a lie about what
-  // the format carries.
+  // A second container level: DEFLATE recompression applied to what gzip or
+  // precomp inflated. A `.tar.gz` holds a tar, and the tar holds a `.xlsx`; the
+  // recursion used to stop after re-entering the numeric transforms, so the ZIP
+  // inside the tar was never reached.
+  kLayerPrecompNested = 1u << 6,
 };
 
 inline constexpr uint8_t kLayerMask = kLayerNumeric | kLayerNumericNested |
                                       kLayerXmlNumeric | kLayerXmlNested |
-                                      kLayerBase64 | kLayerGzip;
+                                      kLayerBase64 | kLayerGzip |
+                                      kLayerPrecompNested;
 
 inline constexpr uint8_t kFlagMask =
     kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup | kFlagJpeg | kFlagGif;

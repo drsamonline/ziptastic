@@ -1653,3 +1653,19 @@ stream and a trailer, so preflate does the stream and this adds the container.
 against a 107,221-byte file — larger than the input, because precomp could not enter
 a gzip container at all. It gains 30% now, not the ideal 89%, because gzip returns a
 **tar** and the xlsx is inside that; a tar parser is the next item.
+
+## Nested containers: tar inside gzip, and a ZIP not at offset 0
+
+Full write-up: `NESTED_CONTAINERS.md`. Two changes: `scan_zip` finds local file
+headers anywhere in the buffer (it used to require offset 0), and the recursion
+re-enters `preflate_unpack` on what gzip inflated.
+
+| file | before | after | `layers` |
+|---|---|---|---|
+| `book.tar.gz` (xlsx inside tar inside gzip) | 75,144 | **59,183** | 0x68 |
+| the `.xlsx` on its own (the ideal) | 58,950 | 58,950 | — |
+| `mixed.tar.gz` (3 text files + the xlsx) | — | 67,553 | 0x68 |
+
+`book.tar.gz` went from 107,221 bytes (the file itself) to 59,183 — −44.8%, and
+within 233 bytes of compressing the inner `.xlsx` directly. `layers` 0x68 is
+gzip + precomp-nested + xml-nested. The same change makes SFX archives visible.

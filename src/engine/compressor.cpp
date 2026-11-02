@@ -714,6 +714,22 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // would have helped never sees the data. Here we re-enter detection on what
   // precomp inflated. Measured on a tar.gz > xlsx: reaching the sheet XML inside
   // was -50.8% on its own, and -89.4% once the numeric transform could reach it.
+  // Second container level. gzip hands back a tar and the tar holds a ZIP, so
+  // re-entering only the numeric transforms leaves the .xlsx inside a .tar.gz
+  // invisible — which is the difference between the 30% gzip buys and the 89% the
+  // chain can reach. Runs BEFORE the nested numeric stage, so decode undoes it
+  // after.
+  bool precomp_nested = false;
+  if ((precomp || gzip) && opt.precomp && preflate_available() &&
+      !precomp_payload.empty()) {
+    std::vector<uint8_t> payload;
+    if (preflate_unpack(precomp_payload, payload) &&
+        precomp_helps(std::span<const uint8_t>(payload), precomp_payload)) {
+      precomp_payload = std::move(payload);
+      precomp_nested = true;
+    }
+  }
+
   bool numeric_nested = false;
   bool xml_numeric_nested = false;
   if ((precomp || gzip) && opt.numeric && numeric_available() && !precomp_payload.empty()) {
@@ -742,7 +758,8 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
                          (xml_numeric ? kLayerXmlNumeric : 0) |
                          (xml_numeric_nested ? kLayerXmlNested : 0) |
                          (base64 ? kLayerBase64 : 0) |
-                         (gzip ? kLayerGzip : 0);
+                         (gzip ? kLayerGzip : 0) |
+                         (precomp_nested ? kLayerPrecompNested : 0);
 
   // Layer 0: the x86 BCJ transform. Applied to the whole stream before
   // anything else, so the filter's state carries across block boundaries the
