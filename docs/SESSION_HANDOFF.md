@@ -147,11 +147,19 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    what is missing is the format. A tar is 512-byte headers with octal sizes — trivial
    to parse and it unlocks `.tar.gz` → `.tar` → `.zip` → XML, which is where the −89.4%
    lives. Do this before anything else in this list.
-6a-bis. **Stored-ZIP unpacking — the "zip store" step.** `scan_zip` accepts only
-   `method == 8`, so a `zip -0` container is walked past and compressed as opaque
-   bytes. Field practice starts every repack pipeline with `zip store` precisely to
-   make the contents visible; see `REPACK_PIPELINES.md`. Small change, and it is the
-   entry point of the whole chain.
+6a-bis. ~~**Stored-ZIP unpacking — the "zip store" step.**~~ **MEASURED, REJECTED** —
+   `docs/ZIP_STORE_MEASURED.md`. A `zip -0` container of a game-like tree compresses to
+   374,087 as-is, 379,460 with the container stripped off and 404,076 with the members
+   compressed individually: **unpacking costs 1.4%**, because the zip's headers and
+   central directory are redundant and the engine already collects that, and because
+   dedup across near-duplicate members only works when the container is one stream.
+   The nested-container case — the only real argument for it — was isolated at 526
+   bytes (2.7%) on a container that is 99% one nested file. Dropped.
+   The step does not carry over because the repack tools are file-oriented and
+   ziptastic is not: `zip store` exists to stop the container hiding bytes from
+   precomp/srep/7z, and nothing is hidden here. **precomp on a deflated zip was
+   confirmed working in the same run** (−6.2%, `flags` 0x25), contrary to the field
+   impression that it often does nothing.
 6b. **SFX (self-extracting archives).** An `.exe` stub followed by a ZIP. `scan_zip` only
    walks local headers from offset 0, so an SFX archive is invisible to precomp today —
    and Windows installers are overwhelmingly SFX. The fix is to locate the ZIP by its
