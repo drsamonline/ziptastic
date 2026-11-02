@@ -29,23 +29,41 @@ handoff was presumably taken from a corpus where the Layer 0 transforms had alre
 removed most of the redundancy. That is the lesson — **a backend's value depends on what
 the front end left behind**, and measuring it on already-transformed data understates it.
 
-## Why it is not simply switched on
+## Correction: the per-block candidate already exists
 
-`--max-ratio` applies CM to the whole stream, which means one giant model: fine for a
-1 MB file, ruinous for a 128 MB image (the sandbox cannot even finish it in one call).
-What it should be is a **per-block candidate in the selector**, so a 4 MiB block picks CM
-where CM wins and the cheap backends where it does not — the same "sometimes 7z,
-sometimes arc" answer the project already gives at block granularity.
+The first draft of this document proposed building `Mode::CM` as a per-block selector
+candidate. Reading the code before writing it showed that **it is already there** —
+`encode_one_block` runs `zpaq_compress_block` per block under `--max-ratio` and pushes a
+`Mode::CmZpaq` candidate like any other backend. What `--max-ratio` adds on top is a
+**second, whole-stream pass**, and a comment in the source already records why:
 
-That is the next piece of work:
+> A CM model is stateful and long-lived; cutting it at a block boundary throws away
+> everything it learned. Measured on xml: per-block `--max-ratio` gives 394,185 bytes
+> while one CM pass over the same bytes gives 330,394 — 16% that the block boundaries
+> were costing.
 
-1. `Mode::CM` alongside the existing modes, with zpaq's block API rather than its stream
-   API.
-2. A gate so it is not run on blocks where it cannot win — the `photoish.bmp` case, where
-   the block is already a few hundred bytes, should cost nothing.
-3. Measure per block on the corpus, and check the decode path.
+So the 6–8% measured above is the whole-stream pass, not the per-block candidate, and
+"make it per-block" would be a step backwards. The real finding is about **block size**:
+the default is 256 KiB (`-b`), so a 1 MB file is already four blocks and the model is cut
+four times. The whole-stream pass exists to paper over that.
+
+A 3 MB file of the same prose compresses to 189,932 bytes against 189,899 for 1 MB —
+barely more for three times the input, because the stream pass sees the repetition across
+block boundaries that the per-block candidates cannot.
+
+## What that leaves
+
+Two candidate pieces of work, neither built:
+
+1. **A bigger default block size under `--max-ratio`** — the model's reach should not be
+   256 KiB. A single 3 MiB block on the same file did not finish inside the sandbox's
+   300 s call, so this is unmeasured rather than decided.
+2. **Making the whole-stream pass affordable on large files** — it is one giant model, so
+   a 128 MB image can never finish it here. Chunking it at a size the model can carry
+   (rather than at 256 KiB) is the shape, and the number above says the chunk size
+   matters a lot: 16% between 256 KiB and whole-stream on xml.
 
 ## Status
 
-Measured, not built. Recorded so the queue is honest: the handoff said "last, 1–3%" and
-the measurement says "six to eight percent, sooner".
+Measured, not built. The handoff said "last, 1–3%"; the measurement says "6–8%, sooner".
+The follow-up is block sizing, not a new mode.

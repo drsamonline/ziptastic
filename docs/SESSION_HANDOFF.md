@@ -298,9 +298,13 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    worth more than every Layer 0 transform added this session except PNG and ECM, and it
    needs no format parsing. The 1–3% figure was taken from a corpus where the front end
    had already removed the redundancy — **a backend's value depends on what the front end
-   left behind**. The work is to make it a **per-block selector candidate** (`Mode::CM`,
-   zpaq's block API, gated so it costs nothing on blocks that cannot win) rather than a
-   whole-stream `--max-ratio` that a 128 MB image can never finish.
+   left behind**. **Correction after reading the code: the per-block candidate already
+   exists** (`Mode::CmZpaq` in `encode_one_block`); what `--max-ratio` adds is a second
+   whole-stream pass, which is what the 6–8% comes from. The open question is therefore
+   **block size**, not a new mode: the default is 256 KiB, so a 1 MB file is four blocks
+   and the model is cut four times, and the source already records 16% lost to those cuts
+   on xml. A 3 MB single-block run did not finish inside a 300 s call, so this is
+   unmeasured rather than decided.
 
 Also outstanding: **check for replies** to the permission emails sent 2026-11-01 to
 Ziganshin (SREP) and Walbeehm (DeflOpt).
