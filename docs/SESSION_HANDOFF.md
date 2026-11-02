@@ -292,7 +292,15 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    the next Layer 0 item. Building it means RS(26,24) over GF(2^8) — P over 43 columns,
    Q over 26 diagonals, 288 bytes/sector — regenerated on decode and byte-verified, plus
    the Mode-2-form-1 layout. Cooked `.iso` has no ECC and is unaffected.
-10. CM backend — **last**. Nobody publishes a CPU CM design at 5 MB/s.
+10. **CM backend — MEASURED AT 6–8%, NOT 1–3%, AND NO LONGER LAST**
+   (`docs/CM_BACKEND_MEASUREMENT.md`). `--max-ratio` against `-9`: **−7.96%** on 1 MB of
+   prose, **−6.23%** on 24-bit WAV, 0.00% on an already-tiny BMP (the control). That is
+   worth more than every Layer 0 transform added this session except PNG and ECM, and it
+   needs no format parsing. The 1–3% figure was taken from a corpus where the front end
+   had already removed the redundancy — **a backend's value depends on what the front end
+   left behind**. The work is to make it a **per-block selector candidate** (`Mode::CM`,
+   zpaq's block API, gated so it costs nothing on blocks that cannot win) rather than a
+   whole-stream `--max-ratio` that a 128 MB image can never finish.
 
 Also outstanding: **check for replies** to the permission emails sent 2026-11-01 to
 Ziganshin (SREP) and Walbeehm (DeflOpt).
