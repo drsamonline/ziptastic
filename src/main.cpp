@@ -22,7 +22,15 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr const char* kVersionString = "ziptastic 0.1.0-dev (CHCE format v1)";
+// Built from the header rather than a literal: this string said "v1" through four
+// format changes, which is the kind of thing nobody notices until a user reports the
+// wrong version back.
+const char* version_string() {
+  static const std::string s = std::string("ziptastic 0.1.0-dev (CHCE format v") +
+                               std::to_string(static_cast<int>(chce::kFormatVersion)) +
+                               ")";
+  return s.c_str();
+}
 
 void print_usage(FILE* f) {
   std::fprintf(f,
@@ -390,7 +398,7 @@ int main(int argc, char** argv) {
       return 0;
     }
     if (o.cmd == Options::Command::Version) {
-      std::printf("%s\n", kVersionString);
+      std::printf("%s\n", version_string());
       return 0;
     }
     return early;
@@ -400,7 +408,7 @@ int main(int argc, char** argv) {
     case Options::Command::Compress: return run_compress(o);
     case Options::Command::Decompress: return run_decompress(o);
     case Options::Command::Bench: return run_bench(o);
-    case Options::Command::Version: std::printf("%s\n", kVersionString); return 0;
+    case Options::Command::Version: std::printf("%s\n", version_string()); return 0;
     case Options::Command::Help: print_usage(stdout); return 0;
   }
   return 0;
