@@ -31,6 +31,10 @@ higher licence ceiling). That difference is why both exist.
 ziptastic `docs/` holds 20 files. Start with `BENCHMARKS.md`,
 `AI_REVIEWS_SYNTHESIS.md`, `RECURSION_MEASUREMENT.md`, `LEXORA_ASSESSMENT.md`.
 
+**Everything in one place:** `docs/ENGINE_STATE.md` — every transform, its layer bit, its
+measured gain, its write-up, the measured negatives, and what is open. This handoff is the
+working document; that one is the reference.
+
 ## 3. Measured results (through the shipped CLI, all round-trip exact)
 
 | what | gain |
