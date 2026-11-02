@@ -130,11 +130,15 @@ enum LayerFlags2 : uint8_t {
   // PNG image data inflated through preflate: a PNG is a DEFLATE stream in a chunk
   // list, and precomp only ever reached ZIP and PDF.
   kLayer2Png = 1u << 4,
+  // CD sector parity regenerated rather than stored: 276 bytes a sector of Reed-Solomon
+  // that is fully determined by the 2,064 before it. Measured at 30.8% of the compressed
+  // size on a synthetic image; re-measured on a real one in ECM_IMPLEMENTATION.md.
+  kLayer2Ecc = 1u << 5,
 };
 
-inline constexpr uint8_t kLayerMask2 = kLayer2Sqlite | kLayer2Base64Nested |
-                                       kLayer2JpegNested | kLayer2GifNested |
-                                       kLayer2Png;
+inline constexpr uint8_t kLayerMask2 =
+    kLayer2Sqlite | kLayer2Base64Nested | kLayer2JpegNested | kLayer2GifNested |
+    kLayer2Png | kLayer2Ecc;
 
 inline constexpr uint8_t kFlagMask =
     kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup | kFlagJpeg | kFlagGif;

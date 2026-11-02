@@ -60,6 +60,7 @@ working document; that one is the reference.
 | WAV 24-bit and 32-bit float | −14.2% / −6.1% on the same music signal |
 | SQLite pages grouped by type | −4.8% (295 KB) / −6.3% (3.46 MB) |
 | PNG image data inflated (preflate) | **−22.9%** (sprite) / **−68.8%** (gradient) |
+| **CD sector parity regenerated (ECM)** | **−28.2%** on a real Mode 2 Form 1 image |
 | **tar.gz → tar → xlsx → XML** | **−44.8%** (107,221 → 59,183), within 233 B of the inner file alone |
 | JPEG (brunsli) | −19.4% |
 | base64 → binary | −4.5% dense / −71.8% structured (**not integrated**) |
@@ -278,7 +279,11 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    `docs/ECM_IMPLEMENTATION.md`: all 2,000 sectors of the real image reproduce their
    parity exactly, 4,704,000 → 4,154,002, round trip byte-exact. **Not yet wired in**:
    next commit takes `kLayer2Ecc` (layers2 bit 5), the stage, the inverse and the CMake
-   entry, then measures on the real image.
+   entry, then measures on the real image. **DONE — and it is −28.2%** on the real
+   2,000-sector image (1,973,243 → 1,417,448, round-trip exact, `layers2` 0x20), within
+   1.2% of compressing the user data alone. The synthetic estimate of 30.8% was 2.6 points
+   optimistic: real parity is a deterministic function of the data and carries a little
+   structure the backend can use, where the synthetic bytes were uniform random.
    The 12% was uncompressed arithmetic (608 KB of 4.7 MB); RS parity is incompressible,
    so in *compressed* terms it costs 592,620 of 1,924,173 bytes. Measured on a synthetic
    raw Mode-1 image with a realistic user-data mix: 1,924,173 with ECC vs 1,331,553 for

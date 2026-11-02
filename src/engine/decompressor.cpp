@@ -27,6 +27,7 @@
 #include "precompressors/wav_wrap.hpp"
 #include "precompressors/sqlite_wrap.hpp"
 #include "precompressors/png_wrap.hpp"
+#include "precompressors/ecc_wrap.hpp"
 #include "precompressors/gzip_wrap.hpp"
 #include "precompressors/jpeg_wrap.hpp"
 #include "plugin_host.hpp"
@@ -422,6 +423,11 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   if ((fh.flags & kFlagJpeg) != 0) {
     std::vector<uint8_t> original;
     if (!jpeg_unpack(dst, original)) return Err::Corrupt;
+    dst = std::move(original);
+  }
+  if ((fh.layers2 & kLayer2Ecc) != 0) {
+    std::vector<uint8_t> original;
+    if (!ecc_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
   }
   if ((fh.layers2 & kLayer2Png) != 0) {

@@ -68,6 +68,8 @@ struct CompressOptions {
   bool wav = true;
   // SQLite pages grouped by B-tree page type.
   bool sqlite = true;
+  // CD sector parity regenerated (raw 2352-byte-sector images).
+  bool ecc = true;
   bool dedup = true;
   bool parallel = false;
   unsigned threads = 0;  // 0 = hardware concurrency

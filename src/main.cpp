@@ -55,6 +55,7 @@ void print_usage(FILE* f) {
       "      --no-base64      disable the base64 decode transform\n"
       "      --no-wav         disable the WAV per-channel delta transform\n"
       "      --no-sqlite      disable the SQLite page-grouping transform\n"
+      "      --no-ecc         disable CD sector parity regeneration\n"
       "      --split-size N   write output as N-byte parts (suffixes K/M/G)\n"
       "      --no-bwt         disable the BWT backend candidate\n"
       "      --no-huffman     disable the Huffman backend candidates\n"
@@ -287,6 +288,8 @@ int parse_args(int argc, char** argv, Options& o) {
       o.comp.huff_static = false;
     } else if (a == "--huff-adapt") {
       o.comp.huff_adaptive = true;
+    } else if (a == "--no-ecc") {
+      o.comp.ecc = false;
     } else if (a == "--no-sqlite") {
       o.comp.sqlite = false;
     } else if (a == "--no-wav") {

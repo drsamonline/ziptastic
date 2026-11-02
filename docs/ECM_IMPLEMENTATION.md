@@ -50,11 +50,35 @@ codeword computes Q over the wrong bytes and produces 104 parity bytes that look
 plausible — the first version did exactly that, and the byte-by-byte comparison against
 mkpsxiso found it at index 172, the first byte of Q.
 
+## Wired in and measured on the real image
+
+| | |
+|---|---|
+| `test.raw` (2,000 sectors, Mode 2 Form 1) | 4,704,000 |
+| compressed, `--no-ecc` | 1,973,243 |
+| compressed, with ECM | **1,417,448** |
+| **gain** | **−28.2%** |
+| the 4,096,000 bytes of user data alone (the ideal) | 1,401,135 |
+
+Round-trip byte-exact, `layers2` 0x20. The transform lands **within 1.2% of the ideal** —
+16 KB above compressing the user data on its own, which is the parity-regeneration
+overhead plus framing.
+
+The synthetic estimate was 30.8%; the real image gives **28.2%**. The difference is the
+caveat that was recorded then: synthetic "parity" was uniform random, whereas real parity
+is a deterministic function of the data and carries a little structure the backend can
+use. The measured number is the one that matters, and it is 2.6 points lower.
+
+`kLayer2Ecc` is layers2 bit 5. `--no-ecc` turns the stage off.
+
+## Tests
+
+`tests/unit/test_ecc.cpp`, seven cases against a two-sector fixture embedded as a byte
+array: round trip, payload drops the parity, **a sector whose parity does not verify is
+declined**, non-disc data declined, a partial sector declined, damaged payload rejected,
+deterministic packing. 30/30 suites pass.
+
 ## What is left
 
-1. Wire it in: `kLayer2Ecc` (layers2 bit 5, free), a stage in `compressor.cpp`, the
-   inverse in `decompressor.cpp`, and `CMakeLists.txt`.
-2. Measure on the real image. The 30.8% from `ECM_MEASUREMENT.md` was synthetic; real
-   parity is a deterministic function of the data, so the number may move.
-3. Unit tests with the image embedded, or generated in-test the way `test_sqlite.cpp`
-   builds its fixture.
+Nothing blocking. The stage is off-by-default-able, verified per sector, and measured on a
+real image.

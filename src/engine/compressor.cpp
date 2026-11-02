@@ -26,6 +26,7 @@
 #include "precompressors/wav_wrap.hpp"
 #include "precompressors/sqlite_wrap.hpp"
 #include "precompressors/png_wrap.hpp"
+#include "precompressors/ecc_wrap.hpp"
 #include "precompressors/gzip_wrap.hpp"
 #include "precompressors/jpeg_wrap.hpp"
 #include "plugin_host.hpp"
@@ -662,27 +663,46 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   const std::span<const uint8_t> stage_wav =
       wav ? std::span<const uint8_t>(wav_payload) : stage_in;
 
+  // Layer 0 — CD sector parity. A raw CD image carries 276 bytes of Reed-Solomon parity
+  // per 2,352-byte sector that are fully determined by the 2,064 bytes before them.
+  // Recomputing them is verified per sector before use, so a wrong table cannot pass.
+  std::vector<uint8_t> ecc_payload;
+  bool ecc = false;
+  if (opt.ecc && ecc_available() && !stage_wav.empty() && ecc_likely(stage_wav)) {
+    std::vector<uint8_t> packed;
+    if (ecc_pack(stage_wav, packed)) {
+      std::vector<uint8_t> check;
+      if (ecc_unpack(packed, check) && check.size() == stage_wav.size() &&
+          std::memcmp(check.data(), stage_wav.data(), stage_wav.size()) == 0) {
+        ecc_payload = std::move(packed);
+        ecc = true;
+      }
+    }
+  }
+  const std::span<const uint8_t> stage_ecc =
+      ecc ? std::span<const uint8_t>(ecc_payload) : stage_wav;
+
   // Layer 0 — PNG. A PNG is a DEFLATE stream inside a chunk list, so this is the
   // precomp pattern applied to a format precomp never reached. Measured at -26.2% on
   // a sprite sheet and -69.0% on a gradient image.
   std::vector<uint8_t> png_payload;
   bool png = false;
-  if (opt.precomp && png_available() && !stage_wav.empty() &&
-      png_likely(std::vector<uint8_t>(stage_wav.begin(), stage_wav.end()))) {
+  if (opt.precomp && png_available() && !stage_ecc.empty() &&
+      png_likely(std::vector<uint8_t>(stage_ecc.begin(), stage_ecc.end()))) {
     std::vector<uint8_t> payload;
-    const std::vector<uint8_t> png_in(stage_wav.begin(), stage_wav.end());
+    const std::vector<uint8_t> png_in(stage_ecc.begin(), stage_ecc.end());
     if (png_unpack(png_in, payload)) {
       std::vector<uint8_t> check;
-      if (png_repack(payload, check) && check.size() == stage_wav.size() &&
-          std::memcmp(check.data(), stage_wav.data(), stage_wav.size()) == 0 &&
-          precomp_helps(payload, stage_wav)) {
+      if (png_repack(payload, check) && check.size() == stage_ecc.size() &&
+          std::memcmp(check.data(), stage_ecc.data(), stage_ecc.size()) == 0 &&
+          precomp_helps(payload, stage_ecc)) {
         png_payload = std::move(payload);
         png = true;
       }
     }
   }
   const std::span<const uint8_t> stage_png =
-      png ? std::span<const uint8_t>(png_payload) : stage_wav;
+      png ? std::span<const uint8_t>(png_payload) : stage_ecc;
 
   // Layer 0 — SQLite pages grouped by type. A reordering, so it is cheap and its
   // recipe is 12 bytes; the gain is 5-6%, which is small for this project but the
@@ -870,7 +890,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
                           (base64_nested ? kLayer2Base64Nested : 0) |
                           (jpeg_nested ? kLayer2JpegNested : 0) |
                           (gif_nested ? kLayer2GifNested : 0) |
-                          (png ? kLayer2Png : 0);
+                          (png ? kLayer2Png : 0) | (ecc ? kLayer2Ecc : 0);
   const uint8_t layers = (numeric_csv ? kLayerNumeric : 0) |
                          (numeric_nested ? kLayerNumericNested : 0) |
                          (xml_numeric ? kLayerXmlNumeric : 0) |
