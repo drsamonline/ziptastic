@@ -24,7 +24,7 @@ higher licence ceiling). That difference is why both exist.
 
 | repo | remote HEAD | status |
 |---|---|---|
-| ziptastic | `c55335d` + gzip | builds clean, **25/25 suites pass**, format **v4** |
+| ziptastic | `aa5d003` + gzip | builds clean, **25/25 suites pass**, format **v4** |
 | heavenzip | `88ac3d6` | docs only, no implementation |
 | lexora | `ad57991` | Phase-1 prototype, 502 tests local |
 
@@ -147,6 +147,11 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    what is missing is the format. A tar is 512-byte headers with octal sizes — trivial
    to parse and it unlocks `.tar.gz` → `.tar` → `.zip` → XML, which is where the −89.4%
    lives. Do this before anything else in this list.
+6a-bis. **Stored-ZIP unpacking — the "zip store" step.** `scan_zip` accepts only
+   `method == 8`, so a `zip -0` container is walked past and compressed as opaque
+   bytes. Field practice starts every repack pipeline with `zip store` precisely to
+   make the contents visible; see `REPACK_PIPELINES.md`. Small change, and it is the
+   entry point of the whole chain.
 6b. **SFX (self-extracting archives).** An `.exe` stub followed by a ZIP. `scan_zip` only
    walks local headers from offset 0, so an SFX archive is invisible to precomp today —
    and Windows installers are overwhelmingly SFX. The fix is to locate the ZIP by its
@@ -174,6 +179,13 @@ Ziganshin (SREP) and Walbeehm (DeflOpt).
   there). Also the measured-and-lost table so it does not rebuild a word dictionary
   worth −0.38%, and a warning that CAN-R01 (encoding → UTF-8) doubles byte count and
   is a *loss* for a compressor downstream — different objectives, not a bug.
+- **heavenzip's job, sharpened by field practice** (`docs/REPACK_PIPELINES.md`): the
+  hand pipeline `zip store -> precomp -> srep -> 7z|arc` wins, but which of 7z and arc
+  wins changes per job, and the imported repack scripts differ per game. That is a
+  **pipeline search** problem, not a codec problem: enumerate
+  {store, deflate} × {precomp on/off} × {dedup params} × {7z, arc, zpaq}, measure, and
+  keep per-title profiles. heavenzip can do it because it spawns; ziptastic cannot
+  because SREP and ARC are not linkable.
 - `ziptastic/docs/LEXORA_ASSESSMENT.md` — the reverse. Three hardening ideas in
   (validate-before-allocate, per-block integrity, stated determinism); three
   canonicalisation rules out (measured negligible or harmful).
