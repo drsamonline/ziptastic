@@ -267,7 +267,14 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    is now off by default: same output everywhere, **28-41% faster** on three of the four.
    `--huff-adapt` turns it back on.
 8. WAV/PCM per-channel delta, then SQLite pages.
-9. **ECM for raw CD images — MEASURED AT 30.8%, not ~12%** (`docs/ECM_MEASUREMENT.md`).
+9. **ECM for raw CD images — MEASURED AT 30.8% synthetic, to be re-measured**
+   (`docs/ECM_MEASUREMENT.md`). **The verification blocker is gone** —
+   `docs/ECM_TEST_MATERIAL.md`: a real Mode 2 Form 1 image (2,000 sectors × 2,352, genuine
+   EDC/ECC) was generated with `mkpsxiso`'s EDC/ECC class (GPL-2.0, used only to produce
+   data, nothing entering the repo). The transform can now be checked by recomputing the
+   276 ECC bytes and comparing them with the image's own — the check that was missing, and
+   the one without which a wrong implementation would still round-trip perfectly by
+   declining every real image.
    The 12% was uncompressed arithmetic (608 KB of 4.7 MB); RS parity is incompressible,
    so in *compressed* terms it costs 592,620 of 1,924,173 bytes. Measured on a synthetic
    raw Mode-1 image with a realistic user-data mix: 1,924,173 with ECC vs 1,331,553 for
