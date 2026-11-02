@@ -274,7 +274,11 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    data, nothing entering the repo). The transform can now be checked by recomputing the
    276 ECC bytes and comparing them with the image's own — the check that was missing, and
    the one without which a wrong implementation would still round-trip perfectly by
-   declining every real image.
+   declining every real image. **The transform is written and verifies** —
+   `docs/ECM_IMPLEMENTATION.md`: all 2,000 sectors of the real image reproduce their
+   parity exactly, 4,704,000 → 4,154,002, round trip byte-exact. **Not yet wired in**:
+   next commit takes `kLayer2Ecc` (layers2 bit 5), the stage, the inverse and the CMake
+   entry, then measures on the real image.
    The 12% was uncompressed arithmetic (608 KB of 4.7 MB); RS parity is incompressible,
    so in *compressed* terms it costs 592,620 of 1,924,173 bytes. Measured on a synthetic
    raw Mode-1 image with a realistic user-data mix: 1,924,173 with ECC vs 1,331,553 for
