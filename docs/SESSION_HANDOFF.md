@@ -235,6 +235,13 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    to **gate** Huffman with a sample trial and to sample the LZMA2 comparison before
    paying for a full run — neither built, both need the trial to be right.
    `--no-bwt` and `--no-huffman` now exist as CLI flags so this can be re-measured.
+7a-bis. ~~**Run the Tier-1 fallback concurrently with the native encode.**~~ **MEASURED,
+   REVERTED** — `docs/CONCURRENT_FALLBACK.md`. The two encodes are independent and
+   sequential costs 3,368 ms (1,657 native + 1,711 fallback) on 1 MB of prose, so a clean
+   overlap should give ~1,750 ms. It gave **3,681 ms — 9% worse**. Nothing was shared
+   between the threads; this box has 2 cores and 2 GiB, and the two working sets do not
+   fit together, so the memory system serialises what the scheduler overlapped. Retry
+   when the machine changes.
 7b. **Adaptive Huffman gated off — done the same day.** `docs/HUFFMAN_GATE.md`. Splitting
    the candidate in two showed the cost is entirely the adaptive half: 858 ms of 3,867 ms
    (22%) against 98 ms for static. On four shapes — prose, 90% zeros, a seven-symbol
