@@ -95,11 +95,22 @@ the per-member framing is not free. So precomp pays on a few large members and n
 small ones — which is exactly the field impression recorded in `REPACK_PIPELINES.md`
 ("precomp is often useless and slow on intense mode but worth it on games").
 
-What did fire was **base64** (`layers = 0x10`), and its contribution is bounded by the
-0.57% total. That a base64 run was found and accepted inside a ZIP is worth a second look
-before trusting the gate on binary containers — recorded here rather than investigated,
-because a run that changes the answer costs four minutes and this one was spent on
-precomp.
+What did fire was **base64** (`layers = 0x10`). It was investigated rather than left as a
+suspicion, because a base64 run being accepted inside a ZIP is the kind of thing that
+should be a bug:
+
+| run on the full archive | bytes |
+|---|---|
+| `-9 --parallel --no-base64` | 52,759,638 |
+| `-9 --parallel` (base64 allowed) | **52,759,584** |
+
+**54 bytes.** The gate's sample said the run would pay, and it did — by 54 bytes out of
+52.7 MB. So it is not a bug, it is a marginal decision correctly made; the gate cannot
+know that a 256 KiB sample's small win will not grow on the whole file.
+
+On an 8 MB slice of the same archive base64 does not fire at all (`layers 0x00`) and the
+output is byte-identical with and without it — the sample there showed no run worth taking.
+Same file class, two different decisions, both defensible.
 
 ## Still unmeasured
 
