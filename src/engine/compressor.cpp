@@ -181,7 +181,7 @@ EncodedBlock encode_one_block(std::span<const uint8_t> input, size_t pos, size_t
 
     // Byte-level Huffman: no LZ, just the block's byte distribution. Only
     // worth offering where LZ finds little but the bytes are skewed.
-    if (opt.huffman) {
+    if (opt.huffman && opt.huff_static) {
       ByteWriter hs;
       huff_static_encode(block, hs);
       EncodedBlock hb;
@@ -190,7 +190,8 @@ EncodedBlock encode_one_block(std::span<const uint8_t> input, size_t pos, size_t
       hb.hdr.compressed_size = hs.size();
       hb.body = hs.take();
       cands.push_back(std::move(hb));
-
+    }
+    if (opt.huffman && opt.huff_adaptive) {
       ByteWriter ha;
       huff_adaptive_encode(block, ha);
       EncodedBlock hab;

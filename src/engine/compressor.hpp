@@ -36,6 +36,17 @@ struct CompressOptions {
   bool bcj = true;
   // Byte-level Huffman backends (Phase 7).
   bool huffman = true;
+  // The two Huffman candidates are separable so the cost of each can be measured:
+  // they are not the same job, and one of them has been paying 18% of a text run for
+  // nothing. See docs/SELECTOR_PROFILE.md.
+  bool huff_static = true;
+  // OFF by default since 2026-11-02. Measured on four inputs — English prose, a 90%
+  // zero file, a seven-symbol alphabet, and a low-entropy structured binary — the
+  // adaptive candidate never produced a smaller stream than the static one, and it
+  // cost 22% of the run (858 ms of 3,867 ms on 1 MB of prose). The static candidate
+  // is what wins where Huffman wins at all (+0.91% on the seven-symbol file) and it
+  // costs 2.5%. The code stays and `--huff-adapt` can turn it back on.
+  bool huff_adaptive = false;
   // BWT backend (Phase 9).
   bool bwt = true;
   // Parallel mode: blocks become self-contained (no cross-block matches) so they

@@ -235,6 +235,13 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    to **gate** Huffman with a sample trial and to sample the LZMA2 comparison before
    paying for a full run — neither built, both need the trial to be right.
    `--no-bwt` and `--no-huffman` now exist as CLI flags so this can be re-measured.
+7b. **Adaptive Huffman gated off — done the same day.** `docs/HUFFMAN_GATE.md`. Splitting
+   the candidate in two showed the cost is entirely the adaptive half: 858 ms of 3,867 ms
+   (22%) against 98 ms for static. On four shapes — prose, 90% zeros, a seven-symbol
+   alphabet, low-entropy binary — it never produced a smaller stream; the one Huffman win
+   (0.91% on the seven-symbol file) came from the **static** candidate. `huff_adaptive`
+   is now off by default: same output everywhere, **28-41% faster** on three of the four.
+   `--huff-adapt` turns it back on.
 8. WAV/PCM per-channel delta, then SQLite pages.
 9. ECM for **raw** CD images only (~12%; cooked `.iso` has no ECC).
 10. CM backend — **last**. Nobody publishes a CPU CM design at 5 MB/s.
