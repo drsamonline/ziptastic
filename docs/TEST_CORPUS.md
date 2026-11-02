@@ -40,6 +40,13 @@ unmeasured.
 
 ## What did not finish, and why
 
+**A slice is not a substitute, and that is worth knowing.** Taking the first 8 MB of the
+ZIP and compressing it gives 7,933,212 bytes with precomp **on or off, identically** —
+`layers 0x00/0x00`. That is not precomp failing; a slice cuts through members, so the
+DEFLATE streams it finds are truncated and no member can be inflated. A container
+transform can only be measured on whole members, which means the whole file, which means
+more than one call can give.
+
 `… .distr.zip` (53 MB) did not complete in a 260 s run at default settings. On this box
 the engine runs at roughly 0.3–0.6 MB/s, so a 53 MB archive needs several minutes before
 precomp has even finished inflating it. The 99 MB ISO and the 128 MB raw image are out of
