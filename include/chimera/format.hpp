@@ -23,9 +23,12 @@ inline constexpr uint8_t kMagic[4] = {'C', 'H', 'C', 'E'};
 // v3 added FileHeader::layers (Layer 0 transform bits), because `flags` is full.
 // v4 added a SHA-256 per block and a trailer binding the block set, because one
 // CRC-32 over the whole original tells you an archive is bad but not which block,
-// and only after all the work is done. v3 streams are no longer readable — the
-// same clean break as v1->v2 and v2->v3.
-inline constexpr uint8_t kFormatVersion = 4;
+// and only after all the work is done.
+// v5 added a second `layers` byte. The first is full: all eight Layer 0 bits are
+// allocated and the ninth transform had nowhere to live. Adding a field is a format
+// change, hence the bump — the same clean break as v1->v2, v2->v3 and v3->v4.
+// Older streams are rejected with bad-version rather than guessed at.
+inline constexpr uint8_t kFormatVersion = 5;
 
 // Default block size. The prompt starts at 256 KB; Phase 12 tunes it.
 // 4 MiB. Measured: on dickens, 256 KiB gives 2,743,444 bytes, 1 MiB 2,496,909,
@@ -109,6 +112,12 @@ inline constexpr uint8_t kLayerMask = kLayerNumeric | kLayerNumericNested |
                                       kLayerXmlNumeric | kLayerXmlNested |
                                       kLayerBase64 | kLayerGzip |
                                       kLayerPrecompNested | kLayerWav;
+
+// The second layers byte, for the ninth Layer 0 transform onwards. No bit is
+// allocated yet: the field exists so the next transform is not blocked on a format
+// change. A stream that sets a bit here and a decoder that does not know it would
+// mis-decode, so the mask is enforced exactly like the first one.
+inline constexpr uint8_t kLayerMask2 = 0;
 
 inline constexpr uint8_t kFlagMask =
     kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup | kFlagJpeg | kFlagGif;

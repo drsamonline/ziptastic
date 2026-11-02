@@ -24,7 +24,7 @@ higher licence ceiling). That difference is why both exist.
 
 | repo | remote HEAD | status |
 |---|---|---|
-| ziptastic | `4794908` + WAV | builds clean, **27/27 suites pass**, format **v4** |
+| ziptastic | `504ab57` + v5 | builds clean, **27/27 suites pass**, format **v5** |
 | heavenzip | `88ac3d6` | docs only, no implementation |
 | lexora | `ad57991` | Phase-1 prototype, 502 tests local |
 
@@ -63,10 +63,12 @@ Layer 2: per-block best-of-backends (rANS-context, Huffman, libbsc BWT,
 Layer 3: whole-stream CM for --max-ratio
 ```
 
-Format **v4**: magic, version, `flags` (8 bits, **full**), `layers` (Layer 0 bits),
-original_size, block_count, CRC-32; per block a 32-byte SHA-256; then a `ZTIX`
-trailer carrying the block count and a digest of the block manifest. v3 streams
-are no longer readable — a deliberate break, see `INTEGRITY.md`.
+Format **v5**: magic, version, `flags` (8 bits, **full**), `layers`, `layers2`
+(Layer 0 bits — the first byte is full), original_size, block_count, CRC-32; per
+block a 32-byte SHA-256; then a `ZTIX` trailer carrying the block count and a digest
+of the block manifest. `layers2` has no bits allocated yet: it exists so the next
+Layer 0 transform is not blocked on a format change. v4 and earlier streams are no
+longer readable — the same deliberate break as v1→v2→v3→v4.
 
 Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
 `kLayerXmlNumeric` 0x04, `kLayerXmlNested` 0x08.
@@ -108,7 +110,13 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    `docs/WAV_MEASUREMENT.md`. **`kLayerWav` is bit 7 — every layer bit is now
    allocated.** The next Layer 0 capability needs a second `layers` byte and a format
    version bump: plan it as its own item.
-9. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
+9. **Format v5 — a second `layers` byte.** The first is full (eight bits, all
+   allocated by WAV), so the ninth Layer 0 transform had nowhere to live. `layers2`
+   is on disk, validated against `kLayerMask2` (currently 0), and unused. This is
+   plumbing, not ratio — it unblocks base64-nested, SQLite pages and whatever comes
+   next. Two tests hardcoded header offsets and needed updating; that is the cost of
+   a format field and it is worth knowing before the next one.
+10. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
    as delta + zigzag + varint inside the `<v>` tags, per column, at the top level and
    inside the recursion. `.xlsx` went 147,525 → **73,367 (−50.3%)**, `layers = 0x08`,
    round trip exact; a bare `sheet1.xml` 148,615 → 72,464. Three defects came out of

@@ -311,7 +311,7 @@ gained a trailer. Full write-up and measurements: `INTEGRITY.md`.
 Current layout, superseding the v1 shapes above:
 
 ```
-"CHCE" | version u8 = 4 | flags u8 | layers u8 | original_size varint
+"CHCE" | version u8 = 5 | flags u8 | layers u8 | layers2 u8 | original_size varint
        | block_count varint | crc32 u32
 
 per block:
@@ -322,6 +322,10 @@ trailer:
   "ZTIX" | block_count varint | sha256(manifest)[32]
 ```
 
+- `layers2` (added in v5) is the second Layer 0 bitfield. All eight bits of
+  `layers` are allocated, so the ninth transform needed a new field rather than a
+  wider integer. No bit of `layers2` is allocated yet; `kLayerMask2` is 0 and a
+  stream setting any bit there is `bad-flags`.
 - `layers` (added in v3) is the Layer 0 bitfield: `kLayerNumeric` 0x01,
   `kLayerNumericNested` 0x02, `kLayerXmlNumeric` 0x04, `kLayerXmlNested` 0x08,
   `kLayerBase64` 0x10, `kLayerGzip` 0x20. Bit 6 is free. Bits outside

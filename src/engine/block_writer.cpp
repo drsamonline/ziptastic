@@ -33,6 +33,7 @@ void write_file_header(ByteWriter& w, const FileHeader& h) {
   w.u8(h.version);
   w.u8(h.flags);
   w.u8(h.layers);
+  w.u8(h.layers2);
   w.varint(h.original_size);
   w.varint(h.block_count);
   w.u32(h.checksum);
@@ -57,6 +58,10 @@ Err read_file_header(ByteReader& r, FileHeader& h) {
   if (!r.u8(layers)) return Err::Truncated;
   if ((layers & static_cast<uint8_t>(~kLayerMask)) != 0) return Err::BadFlags;
 
+  uint8_t layers2 = 0;
+  if (!r.u8(layers2)) return Err::Truncated;
+  if ((layers2 & static_cast<uint8_t>(~kLayerMask2)) != 0) return Err::BadFlags;
+
   uint64_t original_size = 0;
   if (!r.varint(original_size)) return Err::BadVarint;
   if (original_size > kMaxStreamSize) return Err::BadBlockSize;
@@ -76,6 +81,7 @@ Err read_file_header(ByteReader& r, FileHeader& h) {
   h.version = version;
   h.flags = flags;
   h.layers = layers;
+  h.layers2 = layers2;
   h.original_size = original_size;
   uint32_t checksum = 0;
   if (!r.u32(checksum)) return Err::Truncated;

@@ -22,6 +22,9 @@ struct FileHeader {
   // `flags` above is fully allocated (see format.hpp) and the next capability
   // needed somewhere to live. Adding a field is a format change, hence version 3.
   uint8_t layers = 0;
+  // The second Layer 0 byte, added in v5 because the first is full. A separate field
+  // rather than a wider integer, so the on-disk shape stays explicit.
+  uint8_t layers2 = 0;
   uint64_t original_size = 0;  // exact byte count of the uncompressed input
   uint64_t block_count = 0;    // number of blocks that follow
   // CRC-32 of the original (pre-transform) bytes. Verified after every inverse
