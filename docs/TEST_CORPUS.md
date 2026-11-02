@@ -21,14 +21,22 @@ test material**: it needs a raw Mode-1 CD image, which none of these are.
 
 ## Measured, `-9`, round-trip verified
 
-| file | size | compressed | gain | `layers`/`layers2`/`flags` |
-|---|---|---|---|---|
-| `TinyIsoTest.iso` | 4,980,736 | **3,333,900** | **−33.1%** | 0x00 / 0x00 / 0x01 |
-| `kolibrios … .img` | 1,474,560 | **1,257,827** | **−14.7%** | 0x00 / 0x00 / 0x01 |
+Re-measured on 2026-11-02 after ECM, PNG and BMP landed — identical to the first run, so
+none of the new stages disturbed a file they do not apply to.
+
+| file | size | compressed | gain | time | `layers`/`layers2` |
+|---|---|---|---|---|---|
+| `TinyIsoTest.iso` | 4,980,736 | **3,333,900** | **−33.1%** | 36 s | 0x00 / 0x00 |
+| `kolibrios … .img` | 1,474,560 | **1,257,827** | **−14.7%** | 8 s | 0x00 / 0x00 |
 
 Both round-trip byte-exact. Neither fires a Layer 0 transform — a cooked ISO and a FAT12
-floppy have no DEFLATE, no base64, no PCM and no PNG in them, so the backend does all the
-work. That is the correct answer, not a missing feature.
+floppy have no DEFLATE, no base64, no PCM, no PNG, no BMP and no CD sectors in them, so
+the backend does all the work. That is the correct answer, not a missing feature.
+
+The timings are worth recording: **~0.14 MB/s on this box at `-9`**. That is the number
+that decides what can be measured in a single 300 s call — anything over about 40 MB is
+out of reach, which is why the 53 MB ZIP and the 99 MB and 128 MB images remain
+unmeasured.
 
 ## What did not finish, and why
 
