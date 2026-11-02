@@ -24,7 +24,7 @@ higher licence ceiling). That difference is why both exist.
 
 | repo | remote HEAD | status |
 |---|---|---|
-| ziptastic | `21409b1` + base64 | builds clean, **24/24 suites pass**, format **v4** |
+| ziptastic | `540fec0` + LZ4 measured | builds clean, **24/24 suites pass**, format **v4** |
 | heavenzip | `88ac3d6` | docs only, no implementation |
 | lexora | `ad57991` | Phase-1 prototype, 502 tests local |
 
@@ -43,7 +43,7 @@ ziptastic `docs/` holds 20 files. Start with `BENCHMARKS.md`,
 | Integer CSV/TSV columns | −77.4% |
 | base64 → bytes, MIME-wrapped | −20.0% (JPEG) / −48.1% (wrapped XML) |
 | base64 → bytes, single-line structured text | **declined**, it loses 6.3% |
-| LZ4 payload extraction | −28.8% to −58.2% (measured, **not integrated**) |
+| LZ4 payload extraction | −28.8% to −58.2% ideal; **+49.7% worse** once the parse is stored — see `LZ4_MEASURED.md` |
 | GIF LZW → indices | −29.5% |
 | ZIP/DEFLATE (preflate) | −28.8% vs `xz -9` |
 | JPEG (brunsli) | −19.4% |
@@ -124,8 +124,15 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    and is where a JSON API response in a container would land. The gate is also the
    expensive part: ~2.7× compress time on the files where it runs, and a cheaper
    gate that is still correct would be worth real money.
-5. **LZ4 precompression** — measured 28.8–58.2%. Note LZ4 does *not* need its encoder
-   reproduced; the parse can be stored and re-emitted.
+5. ~~**LZ4 precompression**~~ **MEASURED, NOT SHIPPED** — `docs/LZ4_MEASURED.md`.
+   The −28.8%/−58.2% figures were the ideal case with a free parse. Storing the parse
+   costs about what LZ4's own descriptors cost, so the transform goes **+49.7% worse**
+   on spreadsheet XML and **+50.9% worse** on 4 MB of logs; it wins only where LZ4
+   found few long matches (52 sequences for 1.65 MB of JSON, −27.7%). The recipe is
+   not the fix: dropping the derivable match lengths leaves 72–76% of it.
+   **The salvageable route is re-encode-and-compare** — store only the parameters and
+   accept only when a bit-exact LZ4 encoder reproduces the stream, which needs
+   liblz4's greedy matcher reproduced exactly. Try that before writing this item off.
 6. **gzip / multi-member gzip** — `.tar.gz` is everywhere; mostly container work on
    the existing DEFLATE path.
 7. **Parallelise the try-everything selector** — free speed, no ratio cost.

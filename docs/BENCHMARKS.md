@@ -1487,7 +1487,17 @@ is accepted. The next capability needs a new header field, not another bit.
 **Tests:** `unit.gif`, 3 cases — signature detection, declining non-GIF data, and a
 bit-exact round trip of a vendored sample. 20/20 suites pass.
 
-## LZ4 precompression — potential measured, not yet integrated
+## LZ4 precompression — measured, and it does not pay
+
+**Superseded 2026-11-02.** The table below is the ideal case, with the parse
+assumed free. It is not: storing LZ4's sequence list costs about what LZ4's own
+descriptors cost, and the transform measures **+49.7% worse** on spreadsheet XML
+and **+50.9% worse** on 4 MB of logs. It wins only where LZ4 found few long
+matches (52 sequences for 1.65 MB of JSON: −27.7%). Full numbers and the
+re-encode-and-compare route in `LZ4_MEASURED.md`. The table is kept because it is
+the baseline any better attempt has to beat.
+
+## LZ4 precompression — the ideal case (superseded)
 
 LZ4 was identified as the highest-value unhandled container (see
 `docs/REPACK_SOURCES.md`). Before writing any integration, the payoff was measured
