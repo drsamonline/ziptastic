@@ -197,20 +197,16 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    the stored skeleton. Covered by `a_zip_after_a_stub_is_found`. What is *not* done is
    finding the ZIP from its end-of-central-directory record when the local headers are
    damaged or the stub contains a decoy `PK\x03\x04`; that refinement is not urgent.
-6c. **Split archives.** **Note before starting:** ziptastic takes one file, and a
-   split archive is several. `.001/.002` byte-splits are just the original file cut up,
-   so a concatenation already works today — the anywhere-scan in `scan_zip` finds the
-   ZIP at offset 0. A multi-volume `.z01/.z02/.../.zip` is different: its central
-   directory is in the last part and local headers are spread across the others, so
-   concatenation does not reconstruct a plain ZIP. The honest split is: ziptastic
-   declines a lone fragment cleanly (it already does), heavenzip drives the whole set.
-   Measure first, as with LZ4 — it may be an orchestrator item rather than an engine
-   one. `.z01/.z02/…/.zip` multi-volume ZIPs, and `.001/.002` byte-splits.
-   Two different jobs: a byte-split is trivially reassembled and re-split from stored
-   part sizes; a multi-volume ZIP has its central directory in the last part and local
-   headers spread across the others, so the container parse has to span parts and the
-   recipe has to record each part's length. Worth doing after SFX, which shares the
-   "find the ZIP without assuming offset 0" work.
+6c. ~~**Split archives.**~~ **MEASURED, NOT AN ENGINE ITEM** — `docs/SPLIT_ARCHIVES.md`.
+   Compressing parts separately costs about 2x: a 1.8 MB tar is 10,263 whole and 20,857
+   as two halves; a 225 KB zip is 10,445 whole and 30,425 as two halves. Concatenating
+   the parts reproduces the original exactly and the whole-file gain comes straight
+   back. The loss is redundancy *between* parts, which no single-file compressor can
+   see — a `.001/.002` split cuts through DEFLATE streams so precomp can inflate
+   neither half, and a multi-volume ZIP keeps its central directory in the last part.
+   ziptastic already handles a lone fragment correctly (exact, just ~2x worse). The
+   work belongs in **heavenzip**: detect the set, join it, compress, then re-split from
+   stored part sizes.
 7. **Parallelise the try-everything selector** — free speed, no ratio cost.
 8. WAV/PCM per-channel delta, then SQLite pages.
 9. ECM for **raw** CD images only (~12%; cooked `.iso` has no ECC).
