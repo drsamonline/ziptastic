@@ -268,43 +268,49 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    (0.91% on the seven-symbol file) came from the **static** candidate. `huff_adaptive`
    is now off by default: same output everywhere, **28-41% faster** on three of the four.
    `--huff-adapt` turns it back on.
-8. WAV/PCM per-channel delta, then SQLite pages.
-9. **ECM for raw CD images — MEASURED AT 30.8% synthetic, to be re-measured**
-   (`docs/ECM_MEASUREMENT.md`). **The verification blocker is gone** —
-   `docs/ECM_TEST_MATERIAL.md`: a real Mode 2 Form 1 image (2,000 sectors × 2,352, genuine
-   EDC/ECC) was generated with `mkpsxiso`'s EDC/ECC class (GPL-2.0, used only to produce
-   data, nothing entering the repo). The transform can now be checked by recomputing the
-   276 ECC bytes and comparing them with the image's own — the check that was missing, and
-   the one without which a wrong implementation would still round-trip perfectly by
-   declining every real image. **The transform is written and verifies** —
-   `docs/ECM_IMPLEMENTATION.md`: all 2,000 sectors of the real image reproduce their
-   parity exactly, 4,704,000 → 4,154,002, round trip byte-exact. **Not yet wired in**:
-   next commit takes `kLayer2Ecc` (layers2 bit 5), the stage, the inverse and the CMake
-   entry, then measures on the real image. **DONE — and it is −28.2%** on the real
-   2,000-sector image (1,973,243 → 1,417,448, round-trip exact, `layers2` 0x20), within
-   1.2% of compressing the user data alone. The synthetic estimate of 30.8% was 2.6 points
-   optimistic: real parity is a deterministic function of the data and carries a little
-   structure the backend can use, where the synthetic bytes were uniform random.
-   The 12% was uncompressed arithmetic (608 KB of 4.7 MB); RS parity is incompressible,
-   so in *compressed* terms it costs 592,620 of 1,924,173 bytes. Measured on a synthetic
-   raw Mode-1 image with a realistic user-data mix: 1,924,173 with ECC vs 1,331,553 for
-   the user data alone. **This is the largest unclaimed win in the queue** and should be
-   the next Layer 0 item. Building it means RS(26,24) over GF(2^8) — P over 43 columns,
-   Q over 26 diagonals, 288 bytes/sector — regenerated on decode and byte-verified, plus
-   the Mode-2-form-1 layout. Cooked `.iso` has no ECC and is unaffected.
-10. **CM backend — MEASURED AT 6–8%, NOT 1–3%, AND NO LONGER LAST**
-   (`docs/CM_BACKEND_MEASUREMENT.md`). `--max-ratio` against `-9`: **−7.96%** on 1 MB of
-   prose, **−6.23%** on 24-bit WAV, 0.00% on an already-tiny BMP (the control). That is
-   worth more than every Layer 0 transform added this session except PNG and ECM, and it
-   needs no format parsing. The 1–3% figure was taken from a corpus where the front end
-   had already removed the redundancy — **a backend's value depends on what the front end
-   left behind**. **Correction after reading the code: the per-block candidate already
-   exists** (`Mode::CmZpaq` in `encode_one_block`); what `--max-ratio` adds is a second
-   whole-stream pass, which is what the 6–8% comes from. The open question is therefore
-   **block size**, not a new mode: the default is 256 KiB, so a 1 MB file is four blocks
-   and the model is cut four times, and the source already records 16% lost to those cuts
-   on xml. A 3 MB single-block run did not finish inside a 300 s call, so this is
-   unmeasured rather than decided.
+8. ~~**WAV/PCM per-channel delta, then SQLite pages.**~~ **DONE** — `docs/WAV_MEASUREMENT.md`
+   and `docs/SQLITE_MEASUREMENT.md`. 16-bit music −16.4%; 24-bit −14.2%; 32-bit float
+   −6.1% (delta on the bit pattern); SQLite pages −4.8%/−6.3%.
+9. ~~**ECM for raw CD images.**~~ **DONE — −28.2% on a real disc image.**
+   `docs/ECM_MEASUREMENT.md`, `ECM_TEST_MATERIAL.md`, `ECM_IMPLEMENTATION.md`.
+   Verified against a real Mode 2 Form 1 image (all 2,000 sectors reproduce their parity),
+   1,973,243 → 1,417,448, round-trip exact, within 1.2% of compressing the user data alone.
+   `kLayer2Ecc` is layers2 bit 5.
+10. ~~**CM backend.**~~ **MEASURED AT 6–8%, NOT 1–3%** — `docs/CM_BACKEND_MEASUREMENT.md`.
+   −7.96% on 1 MB prose, −6.23% on 24-bit WAV, 0.00% on an already-tiny BMP (the control).
+   The per-block candidate already existed; the whole-stream pass is what `--max-ratio`
+   adds. **Block size was then measured and changes nothing** (identical output at 256 KiB,
+   1 MiB, and with the stream pass on or off, on prose and on a heterogeneous 2 MB file),
+   so the 6–8% is CM at block granularity. What is left is a **speed** question: the
+   whole-stream pass is a full extra CM run that won nothing on three files out of three.
+   `--no-cm-stream` ships so it can be gated once a file where it *does* win is available
+   (the xml fixture that showed 16% is not in the corpus).
+11. **PNG and BMP — shipped the same session.** PNG image data inflated (preflate):
+   −22.9% sprite / −68.8% gradient. BMP colour planes + row delta: −98.9% photographic,
+   declined on a sprite sheet (the clearest case of a transform that is right for one image
+   and wrong for another — `docs/BMP_MEASUREMENT.md`). `kLayer2Png` bit 4, `kLayer2Bmp`
+   bit 6. **`layers2` has one bit left (7).**
+
+## 6bis. What is actually left
+
+Everything above is either done or measured-and-closed. The live list is short:
+
+- **`dedup_unpack` still trusts a 1 TiB declared size** (item 3). Behind the per-block
+  digests, but it is the same class of bug as the one that was fixed, and it should get
+  the same structural treatment.
+- **The base64 gate costs ~2.7x compress time** on files where it runs. A cheaper gate
+  that is still correct is worth real money, and the 256 KiB sample size is load-bearing
+  (64 KiB flips both XML cases to the wrong answer).
+- **Gate the whole-stream CM pass** — needs one file where it wins. `--no-cm-stream`
+  exists to settle it in two runs.
+- **LZ4 salvage**: re-encode-and-compare needs liblz4's greedy matcher reproduced
+  exactly. Untried, and the only route that could still pay.
+- **WAV chunk-level work** (LIST/INFO, `fact`) and audio formats beyond PCM/float.
+- **The large corpus** (53 MB ZIP, 99 MB ISO, 128 MB raw) is unmeasured because the
+  sandbox gives 300 s a call at ~0.14 MB/s. Not an engine problem; needs a longer run.
+- **`layers2` bit 7 is the last free bit.** The next Layer 0 transform is a format
+  change, and should be planned as one.
+- **Nothing in the engine is currently known-broken.** 31 suites, all passing.
 
 Also outstanding: **check for replies** to the permission emails sent 2026-11-01 to
 Ziganshin (SREP) and Walbeehm (DeflOpt).
