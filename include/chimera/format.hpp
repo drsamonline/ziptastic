@@ -134,11 +134,15 @@ enum LayerFlags2 : uint8_t {
   // that is fully determined by the 2,064 before it. Measured at 30.8% of the compressed
   // size on a synthetic image; re-measured on a real one in ECM_IMPLEMENTATION.md.
   kLayer2Ecc = 1u << 5,
+  // BMP pixels split into colour planes and delta-coded per row. Gated by a trial: a
+  // flat, tiled sprite sheet is already trivial to compress and the split makes it
+  // worse, while a photographic image gains 98.9%.
+  kLayer2Bmp = 1u << 6,
 };
 
 inline constexpr uint8_t kLayerMask2 =
     kLayer2Sqlite | kLayer2Base64Nested | kLayer2JpegNested | kLayer2GifNested |
-    kLayer2Png | kLayer2Ecc;
+    kLayer2Png | kLayer2Ecc | kLayer2Bmp;
 
 inline constexpr uint8_t kFlagMask =
     kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup | kFlagJpeg | kFlagGif;

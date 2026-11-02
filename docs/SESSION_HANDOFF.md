@@ -61,6 +61,7 @@ working document; that one is the reference.
 | SQLite pages grouped by type | −4.8% (295 KB) / −6.3% (3.46 MB) |
 | PNG image data inflated (preflate) | **−22.9%** (sprite) / **−68.8%** (gradient) |
 | **CD sector parity regenerated (ECM)** | **−28.2%** on a real Mode 2 Form 1 image |
+| **BMP colour planes + row delta** | **−98.9%** photographic / **declined** on a sprite |
 | **tar.gz → tar → xlsx → XML** | **−44.8%** (107,221 → 59,183), within 233 B of the inner file alone |
 | JPEG (brunsli) | −19.4% |
 | base64 → binary | −4.5% dense / −71.8% structured (**not integrated**) |

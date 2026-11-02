@@ -70,6 +70,8 @@ struct CompressOptions {
   bool sqlite = true;
   // CD sector parity regenerated (raw 2352-byte-sector images).
   bool ecc = true;
+  // BMP colour-plane split (gated by a trial).
+  bool bmp = true;
   bool dedup = true;
   bool parallel = false;
   unsigned threads = 0;  // 0 = hardware concurrency

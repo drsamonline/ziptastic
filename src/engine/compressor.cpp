@@ -27,6 +27,7 @@
 #include "precompressors/sqlite_wrap.hpp"
 #include "precompressors/png_wrap.hpp"
 #include "precompressors/ecc_wrap.hpp"
+#include "precompressors/bmp_wrap.hpp"
 #include "precompressors/gzip_wrap.hpp"
 #include "precompressors/jpeg_wrap.hpp"
 #include "plugin_host.hpp"
@@ -663,24 +664,45 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   const std::span<const uint8_t> stage_wav =
       wav ? std::span<const uint8_t>(wav_payload) : stage_in;
 
+  // Layer 0 — BMP pixels. Uncompressed BMP is interleaved BGR rows; splitting the
+  // channels and delta-coding each row turns a photographic image into something the
+  // backend can model. Gated by precomp_helps because a flat sprite sheet is already
+  // trivial to compress and the split destroys the row structure it was using.
+  std::vector<uint8_t> bmp_payload;
+  bool bmp = false;
+  if (opt.bmp && bmp_available() && !stage_wav.empty() && bmp_likely(stage_wav)) {
+    std::vector<uint8_t> payload;
+    if (bmp_pack(stage_wav, payload)) {
+      std::vector<uint8_t> check;
+      if (bmp_unpack(payload, check) && check.size() == stage_wav.size() &&
+          std::memcmp(check.data(), stage_wav.data(), stage_wav.size()) == 0 &&
+          precomp_helps(payload, stage_wav)) {
+        bmp_payload = std::move(payload);
+        bmp = true;
+      }
+    }
+  }
+  const std::span<const uint8_t> stage_bmp =
+      bmp ? std::span<const uint8_t>(bmp_payload) : stage_wav;
+
   // Layer 0 — CD sector parity. A raw CD image carries 276 bytes of Reed-Solomon parity
   // per 2,352-byte sector that are fully determined by the 2,064 bytes before them.
   // Recomputing them is verified per sector before use, so a wrong table cannot pass.
   std::vector<uint8_t> ecc_payload;
   bool ecc = false;
-  if (opt.ecc && ecc_available() && !stage_wav.empty() && ecc_likely(stage_wav)) {
+  if (opt.ecc && ecc_available() && !stage_bmp.empty() && ecc_likely(stage_bmp)) {
     std::vector<uint8_t> packed;
-    if (ecc_pack(stage_wav, packed)) {
+    if (ecc_pack(stage_bmp, packed)) {
       std::vector<uint8_t> check;
-      if (ecc_unpack(packed, check) && check.size() == stage_wav.size() &&
-          std::memcmp(check.data(), stage_wav.data(), stage_wav.size()) == 0) {
+      if (ecc_unpack(packed, check) && check.size() == stage_bmp.size() &&
+          std::memcmp(check.data(), stage_bmp.data(), stage_bmp.size()) == 0) {
         ecc_payload = std::move(packed);
         ecc = true;
       }
     }
   }
   const std::span<const uint8_t> stage_ecc =
-      ecc ? std::span<const uint8_t>(ecc_payload) : stage_wav;
+      ecc ? std::span<const uint8_t>(ecc_payload) : stage_bmp;
 
   // Layer 0 — PNG. A PNG is a DEFLATE stream inside a chunk list, so this is the
   // precomp pattern applied to a format precomp never reached. Measured at -26.2% on
@@ -890,7 +912,8 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
                           (base64_nested ? kLayer2Base64Nested : 0) |
                           (jpeg_nested ? kLayer2JpegNested : 0) |
                           (gif_nested ? kLayer2GifNested : 0) |
-                          (png ? kLayer2Png : 0) | (ecc ? kLayer2Ecc : 0);
+                          (png ? kLayer2Png : 0) | (ecc ? kLayer2Ecc : 0) |
+                          (bmp ? kLayer2Bmp : 0);
   const uint8_t layers = (numeric_csv ? kLayerNumeric : 0) |
                          (numeric_nested ? kLayerNumericNested : 0) |
                          (xml_numeric ? kLayerXmlNumeric : 0) |
