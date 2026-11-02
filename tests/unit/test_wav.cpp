@@ -182,4 +182,90 @@ TEST(packing_is_deterministic) {
   CHECK_MSG(a == b, "packing the same input twice gave different bytes");
 }
 
+namespace {
+
+// A synthetic WAV of the given sample shape. `bits` is 16, 24 or 32; `is_float`
+// selects the IEEE-float format tag.
+std::vector<uint8_t> make_wav(uint32_t channels, uint32_t bits, bool is_float,
+                              size_t frames) {
+  const size_t bps = bits / 8;
+  std::vector<uint8_t> data;
+  data.reserve(frames * channels * bps);
+  for (size_t i = 0; i < frames; ++i) {
+    for (uint32_t c = 0; c < channels; ++c) {
+      // A smooth ramp: adjacent samples differ by a little, which is the case the
+      // delta transform exists for.
+      const int32_t v = static_cast<int32_t>(1000 + i * 3 + c * 7);
+      uint64_t raw;
+      if (is_float) {
+        float f = static_cast<float>(v) * 0.001f;
+        std::memcpy(&raw, &f, 4);
+      } else if (bps == 2) {
+        raw = static_cast<uint16_t>(static_cast<int16_t>(v & 0x7FFF));
+      } else if (bps == 3) {
+        raw = static_cast<uint32_t>(v) & 0xFFFFFF;
+      } else {
+        raw = static_cast<uint32_t>(v);
+      }
+      for (size_t b = 0; b < bps; ++b) data.push_back(static_cast<uint8_t>(raw >> (8 * b)));
+    }
+  }
+  const uint16_t format = is_float ? 3 : 1;
+  const uint32_t rate = 44100;
+  std::vector<uint8_t> hdr;
+  auto put32 = [&hdr](uint32_t x) {
+    for (int i = 0; i < 4; ++i) hdr.push_back(static_cast<uint8_t>(x >> (8 * i)));
+  };
+  auto put16 = [&hdr](uint16_t x) {
+    hdr.push_back(static_cast<uint8_t>(x & 0xFF));
+    hdr.push_back(static_cast<uint8_t>(x >> 8));
+  };
+  hdr.insert(hdr.end(), {'R', 'I', 'F', 'F'});
+  put32(static_cast<uint32_t>(36 + data.size()));
+  hdr.insert(hdr.end(), {'W', 'A', 'V', 'E', 'f', 'm', 't', ' '});
+  put32(16);
+  put16(format);
+  put16(static_cast<uint16_t>(channels));
+  put32(rate);
+  put32(rate * channels * static_cast<uint32_t>(bps));
+  put16(static_cast<uint16_t>(channels * bps));
+  put16(static_cast<uint16_t>(bits));
+  hdr.insert(hdr.end(), {'d', 'a', 't', 'a'});
+  put32(static_cast<uint32_t>(data.size()));
+  hdr.insert(hdr.end(), data.begin(), data.end());
+  return hdr;
+}
+
+void round_trip_wav(const std::vector<uint8_t>& wav, const char* what) {
+  std::vector<uint8_t> packed, back;
+  CHECK_MSG(wav_pack(wav, packed), what);
+  CHECK_MSG(wav_unpack(packed, back), "unpack failed");
+  CHECK_MSG(back == wav, "round-trip is not byte-exact");
+}
+
+}  // namespace
+
+// 24-bit and 32-bit float are the same transform with a wider sample. Float is
+// delta-coded on its BIT PATTERN: adjacent samples from smooth audio have close
+// exponents and mantissas, so the integer difference is small.
+TEST(round_trips_24_bit) {
+  round_trip_wav(make_wav(2, 24, false, 400), "declined 24-bit PCM");
+}
+
+TEST(round_trips_32_bit_float) {
+  round_trip_wav(make_wav(2, 32, true, 400), "declined 32-bit float");
+}
+
+TEST(round_trips_32_bit_int) {
+  round_trip_wav(make_wav(1, 32, false, 400), "declined 32-bit integer PCM");
+}
+
+TEST(declines_a_format_it_does_not_handle) {
+  auto wav = make_wav(2, 16, false, 200);
+  // Format tag 6 is A-law: a different transform, not this one.
+  wav[20] = 6;
+  std::vector<uint8_t> packed;
+  CHECK_MSG(!wav_pack(wav, packed), "accepted an A-law WAV");
+}
+
 TEST_MAIN()

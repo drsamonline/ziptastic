@@ -13,6 +13,27 @@ shipped CLI.
 
 All round-trip exact. `layers` 0x80 is `kLayerWav`, the last free layer bit.
 
+## 24-bit and 32-bit float, added the same day
+
+| file | before | after | gain | `layers` |
+|---|---|---|---|---|
+| 24-bit music, 44.1 kHz stereo, 150k frames | 803,278 | **689,374** | **−14.2%** | 0x80 |
+| 32-bit float, the same signal | 985,256 | **925,310** | **−6.1%** | 0x80 |
+
+Float is delta-coded on its **bit pattern**, not its value: adjacent float samples from
+smooth audio have close exponents and mantissas, so the integer difference of the two
+32-bit patterns is small. Rebuilding is exact because the pattern is carried, not the
+number.
+
+**A caution about the first numbers.** The Python prototype that chose these two
+features reported −56.7% and −52.7%. It was wrong: it iterated over *frames* and read
+one sample per iteration, so it encoded half the samples and its payload was half the
+size. The implementation disagreed by exactly 2x, and the disagreement was the
+prototype's bug — caught because the C++ payload size did not match the prototype's,
+not because anything failed. The figures above are the shipped ones. A prototype that
+only reports a size has no way to notice it dropped half the data; the round-trip check
+that every real transform carries is what would have caught it.
+
 ## What the measurement settled
 
 **Per-channel delta beats mid/side.** The prototype measured both on the same

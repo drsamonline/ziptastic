@@ -48,6 +48,7 @@ ziptastic `docs/` holds 20 files. Start with `BENCHMARKS.md`,
 | ZIP/DEFLATE (preflate) | −28.8% vs `xz -9` |
 | gzip members inflated | −21.2% (XML) / −25.4% (tar.gz of text) |
 | WAV 16-bit PCM, per-channel delta | −16.4% (music) / −2.0% (noise SFX) |
+| WAV 24-bit and 32-bit float | −14.2% / −6.1% on the same music signal |
 | SQLite pages grouped by type | −4.8% (295 KB) / −6.3% (3.46 MB) |
 | **tar.gz → tar → xlsx → XML** | **−44.8%** (107,221 → 59,183), within 233 B of the inner file alone |
 | JPEG (brunsli) | −19.4% |
