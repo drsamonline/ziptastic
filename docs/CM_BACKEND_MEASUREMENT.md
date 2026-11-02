@@ -67,3 +67,35 @@ Two candidate pieces of work, neither built:
 
 Measured, not built. The handoff said "last, 1–3%"; the measurement says "6–8%, sooner".
 The follow-up is block sizing, not a new mode.
+
+## Correction, same day: the per-block candidate already exists
+
+The section above proposed building `Mode::CM` as a per-block selector candidate. Reading
+the code before writing it showed **it is already there**: `encode_one_block` runs
+`zpaq_compress_block` per block under `--max-ratio` and pushes a `Mode::CmZpaq` candidate
+like any other backend. What `--max-ratio` adds on top is a **second, whole-stream pass**,
+and a comment in the source already records why:
+
+> A CM model is stateful and long-lived; cutting it at a block boundary throws away
+> everything it learned. Measured on xml: per-block `--max-ratio` gives 394,185 bytes
+> while one CM pass over the same bytes gives 330,394 — 16% that the block boundaries
+> were costing.
+
+So the 6–8% measured above is the **whole-stream pass**, not the per-block candidate, and
+"make it per-block" would be a step backwards. The real finding is about **block size**:
+the default is 256 KiB (`-b`), so a 1 MB file is already four blocks and the model is cut
+four times.
+
+A 3 MB file of the same prose compresses to **189,932** bytes against **189,899** for
+1 MB — barely more for three times the input, because the stream pass sees the repetition
+across block boundaries that the per-block candidates cannot.
+
+Two candidate pieces of work, neither built:
+
+1. **A bigger default block size under `--max-ratio`.** The model's reach should not be
+   256 KiB. A single 3 MiB block on that file did not finish inside the sandbox's 300 s
+   call, so this is unmeasured rather than decided.
+2. **Making the whole-stream pass affordable on large files** by chunking it at a size the
+   model can carry rather than at 256 KiB. The 16% above says the chunk size matters.
+
+Corrected rather than left with a plan that would have undone an existing feature.
