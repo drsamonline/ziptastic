@@ -14,14 +14,29 @@ part.001` cannot produce anything. The whole set has to be present. That is the 
 trade `split(1)` makes, and it is the right one for transport (email limits, FAT32
 4 GiB caps, cloud upload chunking).
 
-**Recommendation: build it in ziptastic, not in a shell script.** A `--split N` writer
-is a loop over the output buffer plus a small footer per part (part index, total parts,
-stream length), and it lets the decoder check completeness instead of failing with a
-bad-version error on a truncated stream. It also pairs with the per-block digests that
-already exist: a part that arrived damaged is identified before the join.
+**Built, same day.** `--split-size N` (suffixes K/M/G) writes `out.001`, `out.002`, …
+Each part ends with a 16-byte footer — u32 index, u32 count, u32 total stream length,
+`"ZS01"` — and the decoder joins the siblings itself, so `ziptastic d out.001` works
+the way the name suggests. It also works when handed any other part.
 
-Not built yet. It is small, and it belongs to the archive writer rather than to a
-codec — which is exactly why it should be here and not in heavenzip.
+Measured behaviour on a 995 KB XML file (17,859-byte stream, 4 KiB parts, 5 parts):
+
+| | |
+|---|---|
+| parts written | 5 |
+| decode from the first part | exact |
+| decode from the last part | exact |
+| one part missing | refused, named: `part 2 of 5 is missing (part.zt.002)` |
+
+The footer is what makes that possible: without it a part is indistinguishable from a
+truncated stream, and the decoder could only report `stream truncated` after joining
+whatever it happened to find. The per-block SHA-256 already in the format then covers
+the payload itself, so a damaged part is caught before any block is trusted.
+
+Two limits worth stating: the suffix is three digits (`.001`–`.999`, the HJSplit
+convention), so more than 999 parts is refused with a clear message rather than
+silently wrapping; and a part set is not independently decodable — that is the trade,
+and it is the same one `split(1)` makes.
 
 ## 2. Creating SFX — reading is done, writing is a product decision
 

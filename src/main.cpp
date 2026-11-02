@@ -55,6 +55,7 @@ void print_usage(FILE* f) {
       "      --no-base64      disable the base64 decode transform\n"
       "      --no-wav         disable the WAV per-channel delta transform\n"
       "      --no-sqlite      disable the SQLite page-grouping transform\n"
+      "      --split-size N   write output as N-byte parts (suffixes K/M/G)\n"
       "  -T, --threads N      threads for --parallel (default: all cores)\n"
       "      --parallel       self-contained blocks, compressed on N threads\n"
       "      --no-lzma2       disable the LZMA2 fallback (breaks Tier-1)\n"
@@ -91,12 +92,126 @@ bool write_all(FILE* f, const std::vector<uint8_t>& data) {
   return std::fflush(f) == 0;
 }
 
+// ---------------------------------------------------------------------------
+// Split output
+// ---------------------------------------------------------------------------
+//
+// `--split-size N` writes out.001, out.002, ... Each part ends with a 16-byte
+// footer: u32 index, u32 count, u32 total stream length, "ZS01". The footer is what
+// makes a part distinguishable from a truncated stream and lets the decoder check it
+// has every piece before it starts.
+//
+// The parts are pieces of one already-compressed stream, so they must all be present
+// to decode: a part on its own is not a stream. That is the same trade split(1)
+// makes, and it costs nothing in ratio -- unlike splitting the input, which measured
+// at about 2x (docs/SPLIT_ARCHIVES.md).
+
+constexpr size_t kPartFooter = 16;
+
+void put_u32(std::vector<uint8_t>& v, uint32_t x) {
+  for (int i = 0; i < 4; ++i) v.push_back(static_cast<uint8_t>(x >> (8 * i)));
+}
+uint32_t get_u32(const uint8_t* p) {
+  return static_cast<uint32_t>(p[0]) | (static_cast<uint32_t>(p[1]) << 8) |
+         (static_cast<uint32_t>(p[2]) << 16) | (static_cast<uint32_t>(p[3]) << 24);
+}
+
+std::string part_name(const std::string& base, uint32_t index) {
+  char buf[16];
+  std::snprintf(buf, sizeof(buf), ".%03u", index + 1);
+  return base + buf;
+}
+
+bool write_parts(const std::string& base, const std::vector<uint8_t>& data, size_t part_size) {
+  const size_t count = (data.size() + part_size - 1) / part_size;
+  if (count == 0 || count > 999) {
+    std::fprintf(stderr, "ziptastic: cannot split into %zu parts (1-999)\n", count);
+    return false;
+  }
+  for (size_t i = 0; i < count; ++i) {
+    const size_t from = i * part_size;
+    const size_t len = std::min(part_size, data.size() - from);
+    std::vector<uint8_t> part(data.begin() + static_cast<long>(from),
+                               data.begin() + static_cast<long>(from + len));
+    put_u32(part, static_cast<uint32_t>(i));
+    put_u32(part, static_cast<uint32_t>(count));
+    put_u32(part, static_cast<uint32_t>(data.size()));
+    part.push_back('Z');
+    part.push_back('S');
+    part.push_back('0');
+    part.push_back('1');
+    const std::string name = part_name(base, static_cast<uint32_t>(i));
+    FILE* f = std::fopen(name.c_str(), "wb");
+    if (!f) {
+      std::fprintf(stderr, "ziptastic: cannot write %s\n", name.c_str());
+      return false;
+    }
+    const bool ok = write_all(f, part);
+    std::fclose(f);
+    if (!ok) return false;
+  }
+  std::fprintf(stderr, "ziptastic: wrote %zu parts\n", count);
+  return true;
+}
+
+// True when `data` is one part of a split set, in which case `out` is the joined
+// stream. Reads the siblings from disk: a part carries only its own slice.
+bool join_parts(const std::string& path, const std::vector<uint8_t>& first,
+                std::vector<uint8_t>& out) {
+  if (first.size() < kPartFooter) return false;
+  const uint8_t* tail = first.data() + first.size() - kPartFooter;
+  if (tail[12] != 'Z' || tail[13] != 'S' || tail[14] != '0' || tail[15] != '1') return false;
+
+  const uint32_t index = get_u32(tail);
+  const uint32_t count = get_u32(tail + 4);
+  const uint32_t total = get_u32(tail + 8);
+  if (count == 0 || count > 999 || index >= count) return false;
+  if (path.size() < 4) return false;
+  const std::string base = path.substr(0, path.size() - 4);  // strip ".001"
+
+  out.clear();
+  out.reserve(total);
+  for (uint32_t i = 0; i < count; ++i) {
+    std::vector<uint8_t> buf;
+    if (i == index) {
+      buf = first;
+    } else {
+      const std::string name = part_name(base, i);
+      FILE* f = std::fopen(name.c_str(), "rb");
+      if (!f) {
+        std::fprintf(stderr, "ziptastic: part %u of %u is missing (%s)\n", i + 1, count,
+                     name.c_str());
+        return false;
+      }
+      const bool ok = read_all(f, buf);
+      std::fclose(f);
+      if (!ok) return false;
+    }
+    if (buf.size() < kPartFooter) return false;
+    const uint8_t* t = buf.data() + buf.size() - kPartFooter;
+    if (t[12] != 'Z' || t[13] != 'S' || t[14] != '0' || t[15] != '1') return false;
+    if (get_u32(t) != i || get_u32(t + 4) != count) {
+      std::fprintf(stderr, "ziptastic: part %u is out of place or from another set\n", i + 1);
+      return false;
+    }
+    out.insert(out.end(), buf.begin(), buf.begin() + static_cast<long>(buf.size() - kPartFooter));
+  }
+  if (out.size() != total) {
+    std::fprintf(stderr, "ziptastic: joined %zu bytes, expected %u\n", out.size(), total);
+    return false;
+  }
+  std::fprintf(stderr, "ziptastic: joined %u parts\n", count);
+  return true;
+}
+
 int fail(const char* what, chce::Err e) {
   std::fprintf(stderr, "ziptastic: %s: %s\n", what, chce::err_message(e));
   return 1;
 }
 
 struct Options {
+  // --split-size: bytes per output part. 0 keeps one file.
+  size_t split_size = 0;
   enum class Command { Compress, Decompress, Bench, Version, Help } cmd =
       Command::Compress;
   chce::CompressOptions comp;
@@ -147,6 +262,19 @@ int parse_args(int argc, char** argv, Options& o) {
       o.comp.parallel = true;
     } else if (a == "-T" || a == "--threads") {
       if (i + 1 < argc) o.comp.threads = static_cast<unsigned>(std::atoi(argv[++i]));
+    } else if (a == "--split-size") {
+      if (i + 1 < argc) {
+        std::string v = argv[++i];
+        size_t mul = 1;
+        if (!v.empty() && (v.back() == 'K' || v.back() == 'k')) { mul = 1024; v.pop_back(); }
+        else if (!v.empty() && (v.back() == 'M' || v.back() == 'm')) { mul = 1024u * 1024u; v.pop_back(); }
+        else if (!v.empty() && (v.back() == 'G' || v.back() == 'g')) { mul = 1024u * 1024u * 1024u; v.pop_back(); }
+        o.split_size = static_cast<size_t>(std::strtoull(v.c_str(), nullptr, 10)) * mul;
+        if (o.split_size < 4096) {
+          std::fprintf(stderr, "ziptastic: --split-size must be at least 4K\n");
+          return 2;
+        }
+      }
     } else if (a == "--no-sqlite") {
       o.comp.sqlite = false;
     } else if (a == "--no-wav") {
@@ -243,6 +371,15 @@ int run_compress(const Options& o) {
   const chce::Err e = chce::compress(input, out, o.comp, &stats);
   if (e != chce::Err::Ok) return fail("compression failed", e);
 
+  if (o.split_size > 0) {
+    if (o.output.empty()) {
+      std::fprintf(stderr, "ziptastic: --split-size needs an output file name\n");
+      return 1;
+    }
+    if (!write_parts(o.output, out, o.split_size)) return 1;
+    return 0;
+  }
+
   bool ok = true;
   FILE* fo = open_output(o, ok);
   if (!ok) return 1;
@@ -289,6 +426,13 @@ int run_decompress(const Options& o) {
     std::fprintf(stderr, "ziptastic: read error on %s\n",
                  o.input.empty() ? "<stdin>" : o.input.c_str());
     return 1;
+  }
+
+  // A part of a split set is not a stream. Join the siblings before decoding, so
+  // `ziptastic d out.001` works the way the name suggests it should.
+  if (!o.input.empty()) {
+    std::vector<uint8_t> joined;
+    if (join_parts(o.input, input, joined)) input = std::move(joined);
   }
 
   std::vector<uint8_t> out;

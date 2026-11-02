@@ -92,6 +92,25 @@ expect_ok $rc "bench runs"
 grep -q "TOTAL" "$TMP/bench.txt" && ok "bench prints a total row" \
   || bad "bench output: $(cat "$TMP/bench.txt")"
 
+# --------------------------------------------------------------- split output
+# The parts are pieces of one stream, so they must all be present; any part can be
+# handed to the decoder and it joins the siblings itself.
+"$BIN" -9 --split-size 4K -f -o "$TMP/split.zt" "$TMP/rand.bin" 2>/dev/null; rc=$?
+expect_ok $rc "--split-size writes parts"
+n=$(ls "$TMP"/split.zt.* 2>/dev/null | wc -l)
+[ "$n" -ge 2 ] && ok "--split-size produced $n parts" || bad "--split-size produced $n parts"
+"$BIN" -d -f -o "$TMP/split.out" "$TMP/split.zt.001"
+cmp -s "$TMP/rand.bin" "$TMP/split.out" && ok "a part decodes by joining its siblings" \
+  || bad "split round-trip differs"
+last=$(ls "$TMP"/split.zt.* | tail -1)
+"$BIN" -d -f -o "$TMP/split2.out" "$last"
+cmp -s "$TMP/rand.bin" "$TMP/split2.out" && ok "the last part decodes too" \
+  || bad "decoding from the last part differs"
+mv "$TMP/split.zt.002" "$TMP/held.002"
+"$BIN" -d -f -o "$TMP/split3.out" "$TMP/split.zt.001" >/dev/null 2>&1
+expect_fail $? "a missing part is refused"
+mv "$TMP/held.002" "$TMP/split.zt.002"
+
 # ------------------------------------------------------------ base64 transform
 # Base64 of random bytes, wrapped at 76 columns — the shape a MIME attachment or a
 # JSON blob takes. The transform must engage (the layers byte says so) and the

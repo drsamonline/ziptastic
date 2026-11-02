@@ -223,8 +223,9 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    requiring offset 0, so a stub + stream decodes with no special case. SFX **writing**
    is not built and should not be built blindly — a launcher per platform, AV
    heuristics and code signing are all real, and the format does not need us to ship
-   binaries. Split **output** (`--split N` with a per-part footer) is not built; it is
-   free in ratio, costs independent decodability, and belongs to the writer.
+   binaries. Split **output is now built**: `--split-size N` writes `.001`… with a
+   16-byte footer (index, count, total, `"ZS01"`) and `ziptastic d <any part>` joins the
+   siblings; a missing part is named rather than surfacing as a truncated stream.
 7. **Parallelise the try-everything selector** — free speed, no ratio cost.
 8. WAV/PCM per-channel delta, then SQLite pages.
 9. ECM for **raw** CD images only (~12%; cooked `.iso` has no ECC).
