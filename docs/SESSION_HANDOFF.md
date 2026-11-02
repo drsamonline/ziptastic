@@ -24,7 +24,7 @@ higher licence ceiling). That difference is why both exist.
 
 | repo | remote HEAD | status |
 |---|---|---|
-| ziptastic | `7a3a01c` + nested containers | builds clean, **26/26 suites pass**, format **v4** |
+| ziptastic | `4794908` + WAV | builds clean, **27/27 suites pass**, format **v4** |
 | heavenzip | `88ac3d6` | docs only, no implementation |
 | lexora | `ad57991` | Phase-1 prototype, 502 tests local |
 
@@ -47,6 +47,7 @@ ziptastic `docs/` holds 20 files. Start with `BENCHMARKS.md`,
 | GIF LZW → indices | −29.5% |
 | ZIP/DEFLATE (preflate) | −28.8% vs `xz -9` |
 | gzip members inflated | −21.2% (XML) / −25.4% (tar.gz of text) |
+| WAV 16-bit PCM, per-channel delta | −16.4% (music) / −2.0% (noise SFX) |
 | **tar.gz → tar → xlsx → XML** | **−44.8%** (107,221 → 59,183), within 233 B of the inner file alone |
 | JPEG (brunsli) | −19.4% |
 | base64 → binary | −4.5% dense / −71.8% structured (**not integrated**) |
@@ -102,7 +103,12 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    and multi-member handling. `.tar.gz` was the biggest hole in Layer 0 — a tar.gz used
    to compress to *larger than the file*. Now: `sheet.xml.gz` −21.2%, `logs.tar.gz`
    −25.4%, `book.tar.gz` −30.0%. `docs/GZIP_INTEGRATION.md`.
-8. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
+8. **WAV per-channel delta — shipped.** −16.4% on tonal music, −2.0% on noise;
+   mid/side measured worse on all three fixtures so the simpler form ships.
+   `docs/WAV_MEASUREMENT.md`. **`kLayerWav` is bit 7 — every layer bit is now
+   allocated.** The next Layer 0 capability needs a second `layers` byte and a format
+   version bump: plan it as its own item.
+9. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
    as delta + zigzag + varint inside the `<v>` tags, per column, at the top level and
    inside the recursion. `.xlsx` went 147,525 → **73,367 (−50.3%)**, `layers = 0x08`,
    round trip exact; a bare `sheet1.xml` 148,615 → 72,464. Three defects came out of
@@ -169,7 +175,15 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    the stored skeleton. Covered by `a_zip_after_a_stub_is_found`. What is *not* done is
    finding the ZIP from its end-of-central-directory record when the local headers are
    damaged or the stub contains a decoy `PK\x03\x04`; that refinement is not urgent.
-6c. **Split archives.** `.z01/.z02/…/.zip` multi-volume ZIPs, and `.001/.002` byte-splits.
+6c. **Split archives.** **Note before starting:** ziptastic takes one file, and a
+   split archive is several. `.001/.002` byte-splits are just the original file cut up,
+   so a concatenation already works today — the anywhere-scan in `scan_zip` finds the
+   ZIP at offset 0. A multi-volume `.z01/.z02/.../.zip` is different: its central
+   directory is in the last part and local headers are spread across the others, so
+   concatenation does not reconstruct a plain ZIP. The honest split is: ziptastic
+   declines a lone fragment cleanly (it already does), heavenzip drives the whole set.
+   Measure first, as with LZ4 — it may be an orchestrator item rather than an engine
+   one. `.z01/.z02/…/.zip` multi-volume ZIPs, and `.001/.002` byte-splits.
    Two different jobs: a byte-split is trivially reassembled and re-split from stored
    part sizes; a multi-volume ZIP has its central directory in the last part and local
    headers spread across the others, so the container parse has to span parts and the

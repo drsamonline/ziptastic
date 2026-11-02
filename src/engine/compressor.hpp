@@ -53,6 +53,8 @@ struct CompressOptions {
   bool numeric = true;
   // base64 runs decoded to their bytes (Layer 0, outermost).
   bool base64 = true;
+  // 16-bit PCM WAV sample data as per-channel deltas.
+  bool wav = true;
   bool dedup = true;
   bool parallel = false;
   unsigned threads = 0;  // 0 = hardware concurrency

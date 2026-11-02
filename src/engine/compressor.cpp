@@ -23,6 +23,7 @@
 #include "precompressors/numeric_wrap.hpp"
 #include "precompressors/xml_numeric_wrap.hpp"
 #include "precompressors/base64_wrap.hpp"
+#include "precompressors/wav_wrap.hpp"
 #include "precompressors/gzip_wrap.hpp"
 #include "precompressors/jpeg_wrap.hpp"
 #include "plugin_host.hpp"
@@ -632,14 +633,34 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
     }
   }
 
+  // Layer 0 — 16-bit PCM WAV. Per-channel delta, which measured -16.5% on tonal
+  // music and only -2.0% on noise, so it goes through the same accept/reject trial
+  // as base64 rather than being applied to every WAV.
+  std::vector<uint8_t> wav_payload;
+  bool wav = false;
+  if (opt.wav && wav_available() && !stage_in.empty() && wav_likely(stage_in)) {
+    std::vector<uint8_t> packed;
+    if (wav_pack(stage_in, packed)) {
+      std::vector<uint8_t> check;
+      if (wav_unpack(packed, check) && check.size() == stage_in.size() &&
+          std::memcmp(check.data(), stage_in.data(), stage_in.size()) == 0 &&
+          base64_pays(packed, stage_in, opt)) {
+        wav_payload = std::move(packed);
+        wav = true;
+      }
+    }
+  }
+  const std::span<const uint8_t> stage_wav =
+      wav ? std::span<const uint8_t>(wav_payload) : stage_in;
+
   // Layer 0 — JPEG. First, because a JPEG is not DEFLATE, not x86 code and not
   // text, so every other layer would waste its time on it. brunsli re-encodes
   // the DCT coefficients and keeps a recipe that reproduces the file exactly;
   // verified here before it is trusted, like every other transform.
   std::vector<uint8_t> jpeg_payload;
   bool jpeg = false;
-  if (opt.jpeg && jpeg_available() && !stage_in.empty()) {
-    const std::vector<uint8_t> in(stage_in.begin(), stage_in.end());
+  if (opt.jpeg && jpeg_available() && !stage_wav.empty()) {
+    const std::vector<uint8_t> in(stage_wav.begin(), stage_wav.end());
     std::vector<uint8_t> packed;
     if (jpeg_pack(in, packed)) {
       std::vector<uint8_t> check;
@@ -659,7 +680,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   {
     const std::span<const uint8_t> src =
         numeric ? std::span<const uint8_t>(numeric_payload)
-                : (jpeg ? std::span<const uint8_t>(jpeg_payload) : stage_in);
+                : (jpeg ? std::span<const uint8_t>(jpeg_payload) : stage_wav);
     if (opt.gif && gif_available() && !src.empty()) {
       std::vector<uint8_t> packed;
       if (gif_pack(src, packed)) {
@@ -683,7 +704,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   const std::span<const uint8_t> stage0 =
       gif ? std::span<const uint8_t>(gif_payload)
           : (numeric ? std::span<const uint8_t>(numeric_payload)
-                     : (jpeg ? std::span<const uint8_t>(jpeg_payload) : stage_in));
+                     : (jpeg ? std::span<const uint8_t>(jpeg_payload) : stage_wav));
   if (opt.precomp && preflate_available() && !stage0.empty()) {
     const std::vector<uint8_t> in(stage0.begin(), stage0.end());
     std::vector<uint8_t> payload;
@@ -759,7 +780,8 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
                          (xml_numeric_nested ? kLayerXmlNested : 0) |
                          (base64 ? kLayerBase64 : 0) |
                          (gzip ? kLayerGzip : 0) |
-                         (precomp_nested ? kLayerPrecompNested : 0);
+                         (precomp_nested ? kLayerPrecompNested : 0) |
+                         (wav ? kLayerWav : 0);
 
   // Layer 0: the x86 BCJ transform. Applied to the whole stream before
   // anything else, so the filter's state carries across block boundaries the

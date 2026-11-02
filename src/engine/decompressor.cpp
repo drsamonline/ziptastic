@@ -24,6 +24,7 @@
 #include "precompressors/numeric_wrap.hpp"
 #include "precompressors/xml_numeric_wrap.hpp"
 #include "precompressors/base64_wrap.hpp"
+#include "precompressors/wav_wrap.hpp"
 #include "precompressors/gzip_wrap.hpp"
 #include "precompressors/jpeg_wrap.hpp"
 #include "plugin_host.hpp"
@@ -373,6 +374,11 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   if ((fh.flags & kFlagJpeg) != 0) {
     std::vector<uint8_t> original;
     if (!jpeg_unpack(dst, original)) return Err::Corrupt;
+    dst = std::move(original);
+  }
+  if ((fh.layers & kLayerWav) != 0) {
+    std::vector<uint8_t> original;
+    if (!wav_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
   }
   // base64 was applied FIRST on encode, so it is undone LAST: everything above

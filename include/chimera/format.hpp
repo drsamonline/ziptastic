@@ -99,12 +99,16 @@ enum LayerFlags : uint8_t {
   // recursion used to stop after re-entering the numeric transforms, so the ZIP
   // inside the tar was never reached.
   kLayerPrecompNested = 1u << 6,
+  // 16-bit PCM WAV sample data as per-channel deltas. Bit 7 is the last free one:
+  // the next Layer 0 capability needs a second `layers` byte, which is a format
+  // change and should be planned as one rather than discovered mid-item.
+  kLayerWav = 1u << 7,
 };
 
 inline constexpr uint8_t kLayerMask = kLayerNumeric | kLayerNumericNested |
                                       kLayerXmlNumeric | kLayerXmlNested |
                                       kLayerBase64 | kLayerGzip |
-                                      kLayerPrecompNested;
+                                      kLayerPrecompNested | kLayerWav;
 
 inline constexpr uint8_t kFlagMask =
     kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup | kFlagJpeg | kFlagGif;

@@ -1669,3 +1669,19 @@ re-enters `preflate_unpack` on what gzip inflated.
 `book.tar.gz` went from 107,221 bytes (the file itself) to 59,183 — −44.8%, and
 within 233 bytes of compressing the inner `.xlsx` directly. `layers` 0x68 is
 gzip + precomp-nested + xml-nested. The same change makes SFX archives visible.
+
+## WAV 16-bit PCM — shipped
+
+Per-channel delta + zigzag varint, gated by the same accept/reject trial as base64.
+Full write-up: `WAV_MEASUREMENT.md`.
+
+| file | before | after | gain | `layers` |
+|---|---|---|---|---|
+| tonal music, 44.1 kHz stereo | 554,665 | 463,477 | −16.4% | 0x80 |
+| noise-heavy SFX | 399,987 | 391,996 | −2.0% | 0x80 |
+| quiet ambience | 408,099 | 398,977 | −2.2% | 0x80 |
+
+Mid/side measured worse than per-channel delta on all three (469,375 / 397,201 /
+404,343), so it was not built. The gain tracks predictability, which is why the
+transform is gated rather than unconditional. `kLayerWav` is bit 7 — the layer byte
+is now full.
