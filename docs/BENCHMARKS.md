@@ -1605,8 +1605,10 @@ the transform still gains 16.4%, because 30-bit values are 4-5 varint bytes agai
 | stream overhead, per extra block | +32 bytes |
 | 100 MB at the default 4 MiB block | 837 bytes (0.0008%) |
 | `-b 1` (1 KiB blocks) | 3.1% |
-| SHA-256 throughput, this machine | 140.8 MB/s (28.4 ms per 4 MiB block) |
-| share of decode wall time | ~22% on a 3.25 MB sample (102.7 ms decode, 23.1 ms digest) |
+| SHA-256 throughput, scalar | 140.8 MB/s (28.4 ms per 4 MiB block) |
+| SHA-256 throughput, SHA-NI | **708.5 MB/s** (5.65 ms per 4 MiB block), 5.0x |
+| share of decode wall time | ~5% after SHA-NI (was ~22% on the scalar path) |
+| end-to-end decode, 3.25 MB fixture | 102.7 ms -> **97.8 ms** (−4.8%) |
 
 Measured v3 -> v4 on the existing fixtures: `book.xlsx` 73,367 -> 73,436,
 `sheet1.xml` 72,464 -> 72,533, `book.tar.gz` 208,652 -> 208,721. Every one is

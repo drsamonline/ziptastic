@@ -62,12 +62,19 @@ At the default 4 MiB block a 100 MB archive pays 25 × 32 + 37 = **837 bytes,
 configuration where this is not free, and it is not a configuration anyone uses
 for real data.
 
-**Time — and this is the part worth arguing about.** SHA-256 here runs at
-**140.8 MB/s, 28.4 ms per 4 MiB block**, measured directly against the compiled
-implementation. Decoding the 3.25 MB sheet stream takes **102.7 ms** wall
-(31.6 MB/s, process start included), of which the digest is **23.1 ms — about
-22%**. The engine's measured decode speeds are 20–70 MB/s, so the digest is
-roughly a quarter of decode time.
+**Time — and this is the part worth arguing about.** SHA-256 here ran at
+**140.8 MB/s, 28.4 ms per 4 MiB block** on the scalar path, measured directly
+against the compiled implementation, and the digest was **23.1 ms of a 102.7 ms
+decode** on the 3.25 MB sheet stream — about 22%.
+
+**Fixed 2026-11-02:** a SHA-NI kernel now runs at **708.5 MB/s (5.0x)**, 5.65 ms per
+4 MiB block, selected at runtime by CPUID. End to end the same decode is **102.7 →
+97.8 ms (−4.8%)**, and the digest is now **~5% of wall time**. The 22% figure above
+was extrapolated from the throughput measurement rather than measured as a delta in
+the pipeline, which is why the end-to-end saving is smaller than the 18 ms the
+microbenchmark implies: the digest overlaps with I/O, and process start is a large
+part of a 100 ms run. Both numbers are now measured, and both are recorded here
+rather than one replacing the other.
 
 That is not a rounding error, and it should be a deliberate choice rather than
 something that arrived with the feature. Three ways to spend less, in the order I

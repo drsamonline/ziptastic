@@ -116,7 +116,15 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    plumbing, not ratio — it unblocks base64-nested, SQLite pages and whatever comes
    next. Two tests hardcoded header offsets and needed updating; that is the cost of
    a format field and it is worth knowing before the next one.
-10. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
+10. **SHA-NI for the per-block digest.** The digest cost 28.4 ms per 4 MiB block on the
+   scalar path (140.8 MB/s) and was quoted at ~22% of decode. A SHA-NI kernel selected
+   by CPUID now runs at **708.5 MB/s (5.0x)**, 5.65 ms per block; the same 3.25 MB
+   decode is **102.7 → 97.8 ms (−4.8%)** and the digest is **~5% of wall time**. The
+   22% was an extrapolation from throughput, not a measured delta — the end-to-end
+   saving is smaller because the digest overlaps with I/O. Both numbers are in
+   `INTEGRITY.md`. The scalar path stays as the fallback and is pinned by a test
+   (`sha256_scalar`), because a fallback nothing runs is a fallback that rots.
+11. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
    as delta + zigzag + varint inside the `<v>` tags, per column, at the top level and
    inside the recursion. `.xlsx` went 147,525 → **73,367 (−50.3%)**, `layers = 0x08`,
    round trip exact; a bare `sheet1.xml` 148,615 → 72,464. Three defects came out of

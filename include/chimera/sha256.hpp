@@ -19,6 +19,12 @@ using Sha256Digest = std::array<uint8_t, 32>;
 
 Sha256Digest sha256(std::span<const uint8_t> data);
 
+// The same digest computed by the portable scalar loop, regardless of what the CPU
+// supports. Exists so the test suite can pin BOTH implementations: on a machine with
+// SHA extensions the dispatcher only ever exercises the fast path, and a scalar
+// fallback that nothing runs is a scalar fallback that rots.
+Sha256Digest sha256_scalar(std::span<const uint8_t> data);
+
 inline bool sha256_equal(const Sha256Digest& a, const Sha256Digest& b) {
   // Constant-time comparison: not strictly needed for integrity checking, but it
   // costs nothing and stops anyone reading this from thinking timing mattered.

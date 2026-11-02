@@ -87,6 +87,23 @@ TEST(sha256_matches_the_standard_vectors) {
             "1000 x 'a' vector: " + hex(sha256(kb)));
 }
 
+// On a machine with SHA extensions the dispatcher only ever runs the fast path, so
+// the portable loop is pinned here directly. Both must be the standard's digest.
+TEST(the_scalar_path_agrees_with_the_vector_path) {
+  CHECK_MSG(hex(sha256_scalar(bytes("abc"))) ==
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            "scalar abc vector: " + hex(sha256_scalar(bytes("abc"))));
+
+  const std::vector<uint8_t> kb(1000, 'a');
+  CHECK_MSG(sha256_equal(sha256(kb), sha256_scalar(kb)),
+            "the dispatched path and the scalar path disagree on 1000 bytes");
+
+  std::vector<uint8_t> odd(317);
+  for (size_t i = 0; i < odd.size(); ++i) odd[i] = static_cast<uint8_t>(i * 7 + 1);
+  CHECK_MSG(sha256_equal(sha256(odd), sha256_scalar(odd)),
+            "the dispatched path and the scalar path disagree on a 317-byte input");
+}
+
 TEST(sha256_is_sensitive_to_a_single_bit) {
   auto a = bytes("the quick brown fox");
   auto b = a;
