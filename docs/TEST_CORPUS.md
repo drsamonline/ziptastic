@@ -73,3 +73,35 @@ corpus above has not been measured end to end. A machine with more time per call
 
 Corpus recorded. Two files measured, three unmeasured for time. ECM remains blocked on
 test material rather than on code.
+
+## The 53 MB ZIP, finally measured — and precomp declines on it
+
+Ran with `--parallel` (two threads, 256 KiB blocks) so it fits in a call: **4 min 8 s**,
+53,063,864 → **52,759,584** (−0.57%), round trip byte-exact.
+
+Header of the result: `flags = 0x01` (coarse index only), `layers = 0x10` (base64),
+`layers2 = 0x00`.
+
+**Precomp did not fire.** That is the notable part. The archive has 1,172 members — 796
+deflated, 376 stored — so there is real DEFLATE in it, and `-9` sets `precomp = true`. It
+was tried and declined. Re-run at `-b 8192` (8 MiB blocks, so members cannot be cut by a
+block boundary) gave the identical 52,759,584 bytes, so block size is not the reason.
+
+The likely reason is the gate, and it is the right behaviour rather than a bug:
+`precomp_helps` keeps the inflated payload only if it compresses smaller than the original
+DEFLATE stream, and this archive is thousands of **small** members (≈45 KB average). A
+deflate stream that small is already near what the backend can do with the same bytes, and
+the per-member framing is not free. So precomp pays on a few large members and not on many
+small ones — which is exactly the field impression recorded in `REPACK_PIPELINES.md`
+("precomp is often useless and slow on intense mode but worth it on games").
+
+What did fire was **base64** (`layers = 0x10`), and its contribution is bounded by the
+0.57% total. That a base64 run was found and accepted inside a ZIP is worth a second look
+before trusting the gate on binary containers — recorded here rather than investigated,
+because a run that changes the answer costs four minutes and this one was spent on
+precomp.
+
+## Still unmeasured
+
+The 99 MB ISO and the 128 MB raw image. At ~0.14 MB/s single-threaded and ~0.21 MB/s with
+`--parallel`, they need 8 and 10 minutes. Everything else in the corpus is now measured.
