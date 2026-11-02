@@ -295,9 +295,10 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
 
 Everything above is either done or measured-and-closed. The live list is short:
 
-- **`dedup_unpack` still trusts a 1 TiB declared size** (item 3). Behind the per-block
-  digests, but it is the same class of bug as the one that was fixed, and it should get
-  the same structural treatment.
+- ~~**`dedup_unpack` still trusts a 1 TiB declared size.**~~ **FIXED** — the reserve is
+  bounded by what the bytes in hand justify and the vector grows as output is produced;
+  `a_huge_declared_size_does_not_allocate` pins it, including that the refusal is fast.
+  No decoder path now allocates from a number the stream declares about itself.
 - **The base64 gate costs ~2.7x compress time** on files where it runs. A cheaper gate
   that is still correct is worth real money, and the 256 KiB sample size is load-bearing
   (64 KiB flips both XML cases to the wrong answer).

@@ -10,6 +10,7 @@
 // stream, so the downstream compressor sees them together.
 #include "dedup.hpp"
 
+#include <algorithm>
 #include <cstring>
 
 #include "chimera/coarse_index.hpp"
@@ -114,7 +115,14 @@ bool dedup_unpack(std::span<const uint8_t> packed, std::vector<uint8_t>& out) {
   if (total > (uint64_t{1} << 40)) return false;
 
   out.clear();
-  out.reserve(static_cast<size_t>(total));
+  // Validate before allocate. `total` is a number the stream declares about ITSELF, so
+  // reserving it is trusting the attacker: a five-byte payload can claim 2^40 and the
+  // reserve alone is a 1 TiB allocation attempt. This is the same bug class as the
+  // unbounded block_count in read_file_header, fixed the same way — bound the reserve by
+  // something the bytes in hand justify, and let the vector grow as output is actually
+  // produced. Growth is amortised, so a legitimate large expansion costs nothing extra.
+  const size_t justified = packed.size() * 32 + 4096;
+  out.reserve(static_cast<size_t>(std::min<uint64_t>(total, justified)));
 
   while (pos < packed.size() && out.size() < total) {
     const uint8_t tag = packed[pos++];

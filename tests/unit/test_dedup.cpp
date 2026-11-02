@@ -3,6 +3,7 @@
 // Two things matter: it must rebuild exactly, and it must decline data whose
 // repeats are short. Declining is not politeness — at a 64-byte minimum this
 // stage made xml 20.8% WORSE, because short repeats are what BWT exploits.
+#include <chrono>
 #include <cstring>
 #include <vector>
 
@@ -93,6 +94,33 @@ TEST(corruption_never_produces_a_wrong_length) {
     const bool ok = dedup_unpack(bad, out);
     if (ok) CHECK_MSG(out.size() == d.size(), "unpack produced the wrong length");
   }
+}
+
+// A stream that declares a huge output and delivers nothing must be refused without
+// allocating the number it declared. This is the validate-before-allocate rule applied to
+// the last place that still trusted a self-declared size: a five-byte payload claiming
+// 2^40 used to reserve 1 TiB before the first command was even read.
+TEST(a_huge_declared_size_does_not_allocate) {
+  std::vector<uint8_t> packed;
+  // varint for 2^40: 0x80 repeated, then the final group.
+  uint64_t total = uint64_t{1} << 40;
+  while (total >= 0x80) {
+    packed.push_back(static_cast<uint8_t>(total) | 0x80u);
+    total >>= 7;
+  }
+  packed.push_back(static_cast<uint8_t>(total));
+
+  std::vector<uint8_t> out;
+  const auto started = std::chrono::steady_clock::now();
+  const bool ok = dedup_unpack(packed, out);
+  const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::steady_clock::now() - started)
+                           .count();
+  CHECK_MSG(!ok, "accepted a stream that declares output it does not contain");
+  CHECK_MSG(out.empty(), "produced bytes from an empty stream");
+  // The point of the test: refusing must be immediate. A 1 TiB reserve either throws or
+  // takes long enough to notice; either way it is not a fast refusal.
+  CHECK_MSG(elapsed < 1000, "refusal took long enough to have allocated the declared size");
 }
 
 TEST_MAIN()

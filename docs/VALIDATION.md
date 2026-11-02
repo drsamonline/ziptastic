@@ -88,3 +88,23 @@ weakness — a crafted payload could ask for a 1 TiB reserve. It needs a stream 
 already decoded cleanly to reach, so it is behind the per-block digests now, but
 it should get the same treatment as this item when the Layer 0 chain is next
 touched.
+
+
+## The last instance, fixed
+
+`dedup_unpack` was documented here as the one remaining place that trusted a
+self-declared size: it capped the declared output at 2^40 and then reserved exactly that,
+so a five-byte payload could ask for a **1 TiB allocation before the first command was
+read**.
+
+Fixed the same way as `block_count`: the reserve is now bounded by what the bytes in hand
+justify — `packed.size() * 32 + 4096` — and the vector grows as output is actually
+produced. Growth is amortised, so a legitimate large expansion costs nothing extra, and an
+illegitimate one never gets memory it has not earned.
+
+`a_huge_declared_size_does_not_allocate` in `tests/unit/test_dedup.cpp` pins it: a stream
+declaring 2^40 with no commands must be refused, produce nothing, and be refused
+**quickly** — a 1 TiB reserve either throws or takes long enough to notice, so the test
+fails on time as well as on the return value.
+
+With that, no decoder path allocates from a number the stream declares about itself.
