@@ -50,6 +50,7 @@ ziptastic `docs/` holds 20 files. Start with `BENCHMARKS.md`,
 | WAV 16-bit PCM, per-channel delta | −16.4% (music) / −2.0% (noise SFX) |
 | WAV 24-bit and 32-bit float | −14.2% / −6.1% on the same music signal |
 | SQLite pages grouped by type | −4.8% (295 KB) / −6.3% (3.46 MB) |
+| PNG image data inflated (preflate) | **−22.9%** (sprite) / **−68.8%** (gradient) |
 | **tar.gz → tar → xlsx → XML** | **−44.8%** (107,221 → 59,183), within 233 B of the inner file alone |
 | JPEG (brunsli) | −19.4% |
 | base64 → binary | −4.5% dense / −71.8% structured (**not integrated**) |
@@ -142,6 +143,13 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    bytes. With `kLayer2JpegNested` / `kLayer2GifNested` the same `.json.gz` goes
    **21,688 → 17,414 (−19.7%)**, marginally better than the document uncompressed.
    `layers2` 0x06 = base64-nested + jpeg-nested.
+12c. **PNG — shipped.** `kLayer2Png` (layers2 bit 4). A PNG is a zlib stream in a chunk
+   list, so this is the gzip pattern applied to a format precomp never reached:
+   **−22.9%** on a 2 KB sprite and **−68.8%** on a 377 KB gradient. `docs/PNG_MEASUREMENT.md`.
+   Two traps, both caught by the transform declining 100% of inputs at first: the IDAT
+   stream is zlib-**wrapped** (preflate parses bare deflate, so the 6-byte wrapper is
+   peeled and stored), and an IDAT chunk's CRC is not in the skeleton, so it travels with
+   the chunk length.
 13. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
    as delta + zigzag + varint inside the `<v>` tags, per column, at the top level and
    inside the recursion. `.xlsx` went 147,525 → **73,367 (−50.3%)**, `layers = 0x08`,

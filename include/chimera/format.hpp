@@ -127,10 +127,14 @@ enum LayerFlags2 : uint8_t {
   // backend as ordinary bytes — measured at 0.7% where the bare document gets 19.5%.
   kLayer2JpegNested = 1u << 2,
   kLayer2GifNested = 1u << 3,
+  // PNG image data inflated through preflate: a PNG is a DEFLATE stream in a chunk
+  // list, and precomp only ever reached ZIP and PDF.
+  kLayer2Png = 1u << 4,
 };
 
-inline constexpr uint8_t kLayerMask2 =
-    kLayer2Sqlite | kLayer2Base64Nested | kLayer2JpegNested | kLayer2GifNested;
+inline constexpr uint8_t kLayerMask2 = kLayer2Sqlite | kLayer2Base64Nested |
+                                       kLayer2JpegNested | kLayer2GifNested |
+                                       kLayer2Png;
 
 inline constexpr uint8_t kFlagMask =
     kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup | kFlagJpeg | kFlagGif;
