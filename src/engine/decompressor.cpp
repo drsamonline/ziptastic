@@ -24,6 +24,7 @@
 #include "precompressors/numeric_wrap.hpp"
 #include "precompressors/xml_numeric_wrap.hpp"
 #include "precompressors/base64_wrap.hpp"
+#include "precompressors/gzip_wrap.hpp"
 #include "precompressors/jpeg_wrap.hpp"
 #include "plugin_host.hpp"
 #include "precompressors/preflate_wrap.hpp"
@@ -332,6 +333,13 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   if ((fh.layers & kLayerXmlNested) != 0) {
     std::vector<uint8_t> original;
     if (!xml_numeric_unpack(dst, original)) return Err::Corrupt;
+    dst = std::move(original);
+  }
+  // gzip and precomp are alternatives, both undone after the nested transforms
+  // that ran on what they inflated.
+  if ((fh.layers & kLayerGzip) != 0) {
+    std::vector<uint8_t> original;
+    if (!gzip_repack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
   }
   if ((fh.flags & kFlagPrecomp) != 0) {

@@ -24,7 +24,7 @@ higher licence ceiling). That difference is why both exist.
 
 | repo | remote HEAD | status |
 |---|---|---|
-| ziptastic | `540fec0` + LZ4 measured | builds clean, **24/24 suites pass**, format **v4** |
+| ziptastic | `c55335d` + gzip | builds clean, **25/25 suites pass**, format **v4** |
 | heavenzip | `88ac3d6` | docs only, no implementation |
 | lexora | `ad57991` | Phase-1 prototype, 502 tests local |
 
@@ -46,6 +46,7 @@ ziptastic `docs/` holds 20 files. Start with `BENCHMARKS.md`,
 | LZ4 payload extraction | −28.8% to −58.2% ideal; **+49.7% worse** once the parse is stored — see `LZ4_MEASURED.md` |
 | GIF LZW → indices | −29.5% |
 | ZIP/DEFLATE (preflate) | −28.8% vs `xz -9` |
+| gzip members inflated | −21.2% (XML) / −25.4% (tar.gz of text) / −30.0% (tar.gz holding an xlsx) |
 | JPEG (brunsli) | −19.4% |
 | base64 → binary | −4.5% dense / −71.8% structured (**not integrated**) |
 | Silesia corpus, 10 files | −11.83% vs `xz -9` |
@@ -95,7 +96,12 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    measuring something other than what the engine does — read
    `docs/BASE64_INTEGRATION.md` before touching it. Costs ~2.7× compress time on
    the files where it runs.
-7. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
+7. **gzip — shipped.** A gzip member is a 10-byte header, one bare DEFLATE stream and
+   an 8-byte trailer, so this reuses preflate entirely; the new work is the container
+   and multi-member handling. `.tar.gz` was the biggest hole in Layer 0 — a tar.gz used
+   to compress to *larger than the file*. Now: `sheet.xml.gz` −21.2%, `logs.tar.gz`
+   −25.4%, `book.tar.gz` −30.0%. `docs/GZIP_INTEGRATION.md`.
+8. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
    as delta + zigzag + varint inside the `<v>` tags, per column, at the top level and
    inside the recursion. `.xlsx` went 147,525 → **73,367 (−50.3%)**, `layers = 0x08`,
    round trip exact; a bare `sheet1.xml` 148,615 → 72,464. Three defects came out of
@@ -133,8 +139,25 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    **The salvageable route is re-encode-and-compare** — store only the parameters and
    accept only when a bit-exact LZ4 encoder reproduces the stream, which needs
    liblz4's greedy matcher reproduced exactly. Try that before writing this item off.
-6. **gzip / multi-member gzip** — `.tar.gz` is everywhere; mostly container work on
-   the existing DEFLATE path.
+6. ~~**gzip / multi-member gzip**~~ **DONE** — `docs/GZIP_INTEGRATION.md`. It unblocks
+   the nested chain but does not finish it: gzip hands back a **tar**, and the tar holds
+   the xlsx. `book.tar.gz` gains 30%, not 89%, because reaching the sheet XML needs a
+   tar parser and a second precomp pass. That is item 6a.
+6a. **tar parsing inside the inflated payload.** The recursion is already depth-generic;
+   what is missing is the format. A tar is 512-byte headers with octal sizes — trivial
+   to parse and it unlocks `.tar.gz` → `.tar` → `.zip` → XML, which is where the −89.4%
+   lives. Do this before anything else in this list.
+6b. **SFX (self-extracting archives).** An `.exe` stub followed by a ZIP. `scan_zip` only
+   walks local headers from offset 0, so an SFX archive is invisible to precomp today —
+   and Windows installers are overwhelmingly SFX. The fix is to locate the ZIP by its
+   end-of-central-directory record instead of assuming offset 0, and treat the stub as
+   an opaque prefix that is stored verbatim. Small change, large file class.
+6c. **Split archives.** `.z01/.z02/…/.zip` multi-volume ZIPs, and `.001/.002` byte-splits.
+   Two different jobs: a byte-split is trivially reassembled and re-split from stored
+   part sizes; a multi-volume ZIP has its central directory in the last part and local
+   headers spread across the others, so the container parse has to span parts and the
+   recipe has to record each part's length. Worth doing after SFX, which shares the
+   "find the ZIP without assuming offset 0" work.
 7. **Parallelise the try-everything selector** — free speed, no ratio cost.
 8. WAV/PCM per-channel delta, then SQLite pages.
 9. ECM for **raw** CD images only (~12%; cooked `.iso` has no ECC).

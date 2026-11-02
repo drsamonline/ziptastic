@@ -1636,3 +1636,20 @@ Time cost, measured on the same machine: `jpeg.mime.txt` 657 ms -> 1,780 ms
 (+171%), `xml.mime.txt` 2,121 ms -> 5,657 ms (+167%). The accept/reject trial runs
 the real pipeline on a 256 KiB sample of each side; three cheaper estimates were
 tried first and all three got the decision wrong.
+
+## gzip members — shipped
+
+Full write-up: `GZIP_INTEGRATION.md`. A gzip member is a header, one bare DEFLATE
+stream and a trailer, so preflate does the stream and this adds the container.
+
+| file | without | with | gain | `layers` |
+|---|---|---|---|---|
+| `sheet.xml.gz` (3.25 MB of spreadsheet XML) | 74,776 | 58,888 | −21.2% | 0x28 |
+| `logs.tar.gz` (6 text files) | 7,172 | 5,353 | −25.4% | 0x20 |
+| `book.tar.gz` (an xlsx inside a tar inside gzip) | 107,312 | 75,144 | −30.0% | 0x20 |
+| `multi.gz` (two concatenated members) | 183 | 171 | −6.6% | 0x20 |
+
+`book.tar.gz` is the one to remember: before this it compressed to 107,312 bytes
+against a 107,221-byte file — larger than the input, because precomp could not enter
+a gzip container at all. It gains 30% now, not the ideal 89%, because gzip returns a
+**tar** and the xlsx is inside that; a tar parser is the next item.

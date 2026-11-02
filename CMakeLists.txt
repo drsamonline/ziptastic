@@ -99,6 +99,7 @@ set_target_properties(preflate_vendor PROPERTIES CXX_STANDARD 17 CXX_STANDARD_RE
 add_library(preflate_shim STATIC
   src/precompressors/preflate_wrap.cpp
   src/precompressors/jpeg_wrap.cpp
+  src/precompressors/gzip_wrap.cpp
   src/entropy/cm_zpaq.cpp)
 set_target_properties(preflate_shim PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 target_link_libraries(preflate_shim PUBLIC preflate_vendor zpaq_vendor brunsli_vendor)

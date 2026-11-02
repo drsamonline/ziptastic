@@ -91,7 +91,10 @@ enum LayerFlags : uint8_t {
   // after it wants the decoded payload: a JPEG at offset 0 of the payload is what
   // lets brunsli fire, and that was worth 20.2% instead of 2.3% measured.
   kLayerBase64 = 1u << 4,
-  // Bit 5 is free. The nested base64 case — a JSON document inside a ZIP — is the
+  // gzip members inflated. A .tar.gz is the most common container there is and
+  // precomp reaches ZIP and PDF but not gzip.
+  kLayerGzip = 1u << 5,
+  // Bit 6 is free. The nested base64 case — a JSON document inside a ZIP — is the
   // obvious next one, and it needs that bit when it is built. It is not declared
   // here until something sets it: a constant nothing writes is a lie about what
   // the format carries.
@@ -99,7 +102,7 @@ enum LayerFlags : uint8_t {
 
 inline constexpr uint8_t kLayerMask = kLayerNumeric | kLayerNumericNested |
                                       kLayerXmlNumeric | kLayerXmlNested |
-                                      kLayerBase64;
+                                      kLayerBase64 | kLayerGzip;
 
 inline constexpr uint8_t kFlagMask =
     kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup | kFlagJpeg | kFlagGif;

@@ -23,6 +23,7 @@
 #include "precompressors/numeric_wrap.hpp"
 #include "precompressors/xml_numeric_wrap.hpp"
 #include "precompressors/base64_wrap.hpp"
+#include "precompressors/gzip_wrap.hpp"
 #include "precompressors/jpeg_wrap.hpp"
 #include "plugin_host.hpp"
 #include "precompressors/preflate_wrap.hpp"
@@ -693,6 +694,20 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
     }
   }
 
+  // Layer 0b — gzip. precomp reaches ZIP and PDF; a gzip member is the same
+  // DEFLATE problem wearing a 10-byte header, and .tar.gz is the most common
+  // container there is. Tried only when precomp did not fire, because the two are
+  // alternatives: a file is either one or the other.
+  bool gzip = false;
+  if (!precomp && opt.precomp && gzip_available() && !stage0.empty()) {
+    std::vector<uint8_t> payload;
+    const std::vector<uint8_t> in(stage0.begin(), stage0.end());
+    if (gzip_unpack(in, payload) && precomp_helps(std::span<const uint8_t>(payload), stage0)) {
+      precomp_payload = std::move(payload);
+      gzip = true;
+    }
+  }
+
   // Layer 0 — recursion. A container inside a container is the common case: a
   // .tar.gz holding an .xlsx, a ZIP holding a CSV, a PDF holding a ZIP. The chain
   // above runs once, so it stops at the first boundary and the transform that
@@ -701,7 +716,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // was -50.8% on its own, and -89.4% once the numeric transform could reach it.
   bool numeric_nested = false;
   bool xml_numeric_nested = false;
-  if (precomp && opt.numeric && numeric_available() && !precomp_payload.empty()) {
+  if ((precomp || gzip) && opt.numeric && numeric_available() && !precomp_payload.empty()) {
     std::vector<uint8_t> nested;
     // This is the case the whole item exists for: precomp inflated the xlsx and
     // what came out is XML, where the cell values live inside <v> tags.
@@ -726,7 +741,8 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
                          (numeric_nested ? kLayerNumericNested : 0) |
                          (xml_numeric ? kLayerXmlNumeric : 0) |
                          (xml_numeric_nested ? kLayerXmlNested : 0) |
-                         (base64 ? kLayerBase64 : 0);
+                         (base64 ? kLayerBase64 : 0) |
+                         (gzip ? kLayerGzip : 0);
 
   // Layer 0: the x86 BCJ transform. Applied to the whole stream before
   // anything else, so the filter's state carries across block boundaries the
@@ -737,7 +753,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // applied, otherwise the original. The flag and the data must agree or the
   // decoder will run the inverse transform on bytes that never had it.
   std::span<const uint8_t> data =
-      precomp ? std::span<const uint8_t>(precomp_payload) : stage0;
+      (precomp || gzip) ? std::span<const uint8_t>(precomp_payload) : stage0;
   const bool bcj = opt.bcj && bcj_x86_likely(data) && bcj_helps(data);
   if (bcj) {
     transformed.assign(data.begin(), data.end());
