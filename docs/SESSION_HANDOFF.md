@@ -243,7 +243,14 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    is now off by default: same output everywhere, **28-41% faster** on three of the four.
    `--huff-adapt` turns it back on.
 8. WAV/PCM per-channel delta, then SQLite pages.
-9. ECM for **raw** CD images only (~12%; cooked `.iso` has no ECC).
+9. **ECM for raw CD images — MEASURED AT 30.8%, not ~12%** (`docs/ECM_MEASUREMENT.md`).
+   The 12% was uncompressed arithmetic (608 KB of 4.7 MB); RS parity is incompressible,
+   so in *compressed* terms it costs 592,620 of 1,924,173 bytes. Measured on a synthetic
+   raw Mode-1 image with a realistic user-data mix: 1,924,173 with ECC vs 1,331,553 for
+   the user data alone. **This is the largest unclaimed win in the queue** and should be
+   the next Layer 0 item. Building it means RS(26,24) over GF(2^8) — P over 43 columns,
+   Q over 26 diagonals, 288 bytes/sector — regenerated on decode and byte-verified, plus
+   the Mode-2-form-1 layout. Cooked `.iso` has no ECC and is unaffected.
 10. CM backend — **last**. Nobody publishes a CPU CM design at 5 MB/s.
 
 Also outstanding: **check for replies** to the permission emails sent 2026-11-01 to
