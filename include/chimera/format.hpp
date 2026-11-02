@@ -113,11 +113,15 @@ inline constexpr uint8_t kLayerMask = kLayerNumeric | kLayerNumericNested |
                                       kLayerBase64 | kLayerGzip |
                                       kLayerPrecompNested | kLayerWav;
 
-// The second layers byte, for the ninth Layer 0 transform onwards. No bit is
-// allocated yet: the field exists so the next transform is not blocked on a format
-// change. A stream that sets a bit here and a decoder that does not know it would
-// mis-decode, so the mask is enforced exactly like the first one.
-inline constexpr uint8_t kLayerMask2 = 0;
+// The second layers byte, added in v5 for the ninth Layer 0 transform onwards.
+enum LayerFlags2 : uint8_t {
+  // SQLite database pages grouped by B-tree page type. A reordering, not a
+  // re-encoding: the decoder recomputes the order from the page type bytes, so the
+  // recipe is 12 bytes.
+  kLayer2Sqlite = 1u << 0,
+};
+
+inline constexpr uint8_t kLayerMask2 = kLayer2Sqlite;
 
 inline constexpr uint8_t kFlagMask =
     kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup | kFlagJpeg | kFlagGif;

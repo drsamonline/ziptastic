@@ -255,6 +255,7 @@ add_library(chce_core STATIC
   src/precompressors/xml_numeric_wrap.cpp
   src/precompressors/base64_wrap.cpp
   src/precompressors/wav_wrap.cpp
+  src/precompressors/sqlite_wrap.cpp
   src/precompressors/dedup.cpp
   src/dedup/coarse_index.cpp
   src/entropy/token_coder.cpp

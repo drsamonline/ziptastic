@@ -55,6 +55,8 @@ struct CompressOptions {
   bool base64 = true;
   // 16-bit PCM WAV sample data as per-channel deltas.
   bool wav = true;
+  // SQLite pages grouped by B-tree page type.
+  bool sqlite = true;
   bool dedup = true;
   bool parallel = false;
   unsigned threads = 0;  // 0 = hardware concurrency

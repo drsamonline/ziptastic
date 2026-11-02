@@ -24,7 +24,7 @@ higher licence ceiling). That difference is why both exist.
 
 | repo | remote HEAD | status |
 |---|---|---|
-| ziptastic | `504ab57` + v5 | builds clean, **27/27 suites pass**, format **v5** |
+| ziptastic | `cd9f2a5` + SQLite | builds clean, **28/28 suites pass**, format **v5** |
 | heavenzip | `88ac3d6` | docs only, no implementation |
 | lexora | `ad57991` | Phase-1 prototype, 502 tests local |
 
@@ -48,6 +48,7 @@ ziptastic `docs/` holds 20 files. Start with `BENCHMARKS.md`,
 | ZIP/DEFLATE (preflate) | −28.8% vs `xz -9` |
 | gzip members inflated | −21.2% (XML) / −25.4% (tar.gz of text) |
 | WAV 16-bit PCM, per-channel delta | −16.4% (music) / −2.0% (noise SFX) |
+| SQLite pages grouped by type | −4.8% (295 KB) / −6.3% (3.46 MB) |
 | **tar.gz → tar → xlsx → XML** | **−44.8%** (107,221 → 59,183), within 233 B of the inner file alone |
 | JPEG (brunsli) | −19.4% |
 | base64 → binary | −4.5% dense / −71.8% structured (**not integrated**) |
@@ -124,7 +125,12 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    saving is smaller because the digest overlaps with I/O. Both numbers are in
    `INTEGRITY.md`. The scalar path stays as the fallback and is pinned by a test
    (`sha256_scalar`), because a fallback nothing runs is a fallback that rots.
-11. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
+11. **SQLite page grouping — shipped.** Pages emitted grouped by B-tree type with a
+   2-byte-per-page permutation: −4.8% and −6.3% on two databases. First user of the
+   v5 `layers2` byte. `docs/SQLITE_MEASUREMENT.md`. Two traps recorded there: the
+   usual "packed must be smaller" rule silently disabled it (a reordering is larger on
+   disk by construction), and the test fixture overwrote its own SQLite magic.
+12. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
    as delta + zigzag + varint inside the `<v>` tags, per column, at the top level and
    inside the recursion. `.xlsx` went 147,525 → **73,367 (−50.3%)**, `layers = 0x08`,
    round trip exact; a bare `sheet1.xml` 148,615 → 72,464. Three defects came out of

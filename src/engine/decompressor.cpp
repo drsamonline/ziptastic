@@ -25,6 +25,7 @@
 #include "precompressors/xml_numeric_wrap.hpp"
 #include "precompressors/base64_wrap.hpp"
 #include "precompressors/wav_wrap.hpp"
+#include "precompressors/sqlite_wrap.hpp"
 #include "precompressors/gzip_wrap.hpp"
 #include "precompressors/jpeg_wrap.hpp"
 #include "plugin_host.hpp"
@@ -374,6 +375,11 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   if ((fh.flags & kFlagJpeg) != 0) {
     std::vector<uint8_t> original;
     if (!jpeg_unpack(dst, original)) return Err::Corrupt;
+    dst = std::move(original);
+  }
+  if ((fh.layers2 & kLayer2Sqlite) != 0) {
+    std::vector<uint8_t> original;
+    if (!sqlite_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
   }
   if ((fh.layers & kLayerWav) != 0) {

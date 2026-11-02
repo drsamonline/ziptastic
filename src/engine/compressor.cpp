@@ -24,6 +24,7 @@
 #include "precompressors/xml_numeric_wrap.hpp"
 #include "precompressors/base64_wrap.hpp"
 #include "precompressors/wav_wrap.hpp"
+#include "precompressors/sqlite_wrap.hpp"
 #include "precompressors/gzip_wrap.hpp"
 #include "precompressors/jpeg_wrap.hpp"
 #include "plugin_host.hpp"
@@ -231,7 +232,7 @@ EncodedBlock encode_one_block(std::span<const uint8_t> input, size_t pos, size_t
 
 Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
                   bool bcj, bool precomp, bool dedup, bool jpeg, bool gif,
-                  uint8_t layers, uint32_t checksum,
+                  uint8_t layers, uint8_t layers2, uint32_t checksum,
                   std::vector<uint8_t>& out, CompressStats& stats) {
   const size_t block_count =
       input.empty() ? 0 : (input.size() + opt.block_size - 1) / opt.block_size;
@@ -241,6 +242,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
   fh.version = kFormatVersion;
   fh.flags = header_flags(opt, bcj, precomp, parallel, dedup, jpeg, gif);
   fh.layers = layers;
+  fh.layers2 = layers2;
   fh.original_size = input.size();
   fh.block_count = block_count;
   fh.checksum = checksum;
@@ -349,7 +351,8 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
 Err encode_lzma2_stream(std::span<const uint8_t> input,
                         const CompressOptions& opt, bool bcj, bool precomp,
                         bool dedup, bool jpeg, bool gif, uint8_t layers,
-                        uint32_t checksum, std::vector<uint8_t>& out) {
+                        uint8_t layers2, uint32_t checksum,
+                        std::vector<uint8_t>& out) {
   std::vector<uint8_t> payload;
   std::vector<uint8_t> props;
   if (Err e = lzma2_encode(input, payload, props); e != Err::Ok) return e;
@@ -363,6 +366,7 @@ Err encode_lzma2_stream(std::span<const uint8_t> input,
   fh.version = kFormatVersion;
   fh.flags = header_flags(opt, bcj, precomp, false, dedup, jpeg, gif);
   fh.layers = layers;
+  fh.layers2 = layers2;
   fh.original_size = input.size();
   fh.block_count = 1;
   fh.checksum = checksum;
@@ -653,14 +657,33 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   const std::span<const uint8_t> stage_wav =
       wav ? std::span<const uint8_t>(wav_payload) : stage_in;
 
+  // Layer 0 — SQLite pages grouped by type. A reordering, so it is cheap and its
+  // recipe is 12 bytes; the gain is 5-6%, which is small for this project but the
+  // file class had nothing before it.
+  std::vector<uint8_t> sqlite_payload;
+  bool sqlite = false;
+  if (opt.sqlite && sqlite_available() && !stage_wav.empty() && sqlite_likely(stage_wav)) {
+    std::vector<uint8_t> packed;
+    if (sqlite_pack(stage_wav, packed)) {
+      std::vector<uint8_t> check;
+      if (sqlite_unpack(packed, check) && check.size() == stage_wav.size() &&
+          std::memcmp(check.data(), stage_wav.data(), stage_wav.size()) == 0) {
+        sqlite_payload = std::move(packed);
+        sqlite = true;
+      }
+    }
+  }
+  const std::span<const uint8_t> stage_sql =
+      sqlite ? std::span<const uint8_t>(sqlite_payload) : stage_wav;
+
   // Layer 0 — JPEG. First, because a JPEG is not DEFLATE, not x86 code and not
   // text, so every other layer would waste its time on it. brunsli re-encodes
   // the DCT coefficients and keeps a recipe that reproduces the file exactly;
   // verified here before it is trusted, like every other transform.
   std::vector<uint8_t> jpeg_payload;
   bool jpeg = false;
-  if (opt.jpeg && jpeg_available() && !stage_wav.empty()) {
-    const std::vector<uint8_t> in(stage_wav.begin(), stage_wav.end());
+  if (opt.jpeg && jpeg_available() && !stage_sql.empty()) {
+    const std::vector<uint8_t> in(stage_sql.begin(), stage_sql.end());
     std::vector<uint8_t> packed;
     if (jpeg_pack(in, packed)) {
       std::vector<uint8_t> check;
@@ -680,7 +703,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   {
     const std::span<const uint8_t> src =
         numeric ? std::span<const uint8_t>(numeric_payload)
-                : (jpeg ? std::span<const uint8_t>(jpeg_payload) : stage_wav);
+                : (jpeg ? std::span<const uint8_t>(jpeg_payload) : stage_sql);
     if (opt.gif && gif_available() && !src.empty()) {
       std::vector<uint8_t> packed;
       if (gif_pack(src, packed)) {
@@ -704,7 +727,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   const std::span<const uint8_t> stage0 =
       gif ? std::span<const uint8_t>(gif_payload)
           : (numeric ? std::span<const uint8_t>(numeric_payload)
-                     : (jpeg ? std::span<const uint8_t>(jpeg_payload) : stage_wav));
+                     : (jpeg ? std::span<const uint8_t>(jpeg_payload) : stage_sql));
   if (opt.precomp && preflate_available() && !stage0.empty()) {
     const std::vector<uint8_t> in(stage0.begin(), stage0.end());
     std::vector<uint8_t> payload;
@@ -774,6 +797,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
 
   // Every Layer 0 bit the stream carries, built once so the three encode paths
   // cannot disagree about which transforms were applied.
+  const uint8_t layers2 = (sqlite ? kLayer2Sqlite : 0);
   const uint8_t layers = (numeric_csv ? kLayerNumeric : 0) |
                          (numeric_nested ? kLayerNumericNested : 0) |
                          (xml_numeric ? kLayerXmlNumeric : 0) |
@@ -821,7 +845,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   CompressStats local;
   std::vector<uint8_t> native;
   if (Err e = encode_native(data, opt, bcj, precomp, dedup, jpeg, gif,
-                    layers, crc, native, local); e != Err::Ok) {
+                    layers, layers2, crc, native, local); e != Err::Ok) {
     return e;
   }
 
@@ -831,7 +855,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   if (opt.lzma2_fallback && lzma2_available() && !input.empty()) {
     std::vector<uint8_t> fallback;
     const Err e = encode_lzma2_stream(data, opt, bcj, precomp, dedup, jpeg, gif,
-                          layers, crc, fallback);
+                          layers, layers2, crc, fallback);
     if (e == Err::Ok && fallback.size() < native.size()) {
       CompressStats fb;
       fb.blocks = 1;
@@ -863,6 +887,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
       cfh.version = kFormatVersion;
       cfh.flags = header_flags(opt, bcj, precomp, /*parallel=*/false, dedup, jpeg, gif);
       cfh.layers = layers;
+      cfh.layers2 = layers2;
       cfh.original_size = input.size();
       cfh.block_count = 1;
       cfh.checksum = crc;
