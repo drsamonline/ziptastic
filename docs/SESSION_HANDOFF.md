@@ -227,7 +227,14 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    binaries. Split **output is now built**: `--split-size N` writes `.001`… with a
    16-byte footer (index, count, total, `"ZS01"`) and `ziptastic d <any part>` joins the
    siblings; a missing part is named rather than surfacing as a truncated stream.
-7. **Parallelise the try-everything selector** — free speed, no ratio cost.
+7. ~~**Parallelise the try-everything selector**~~ **MEASURED — the wrong lever.**
+   `docs/SELECTOR_PROFILE.md`. On a 1 MB text file the candidates that cost time are
+   **Huffman (18%)** and the **LZMA2 fallback (34%)**, and both produce byte-identical
+   output; BWT, which looked guilty in a bad first profile, costs 0.6% and *wins* 2.6%.
+   On two cores a fan-out buys at most 2x on a partly serial stage, so the real fix is
+   to **gate** Huffman with a sample trial and to sample the LZMA2 comparison before
+   paying for a full run — neither built, both need the trial to be right.
+   `--no-bwt` and `--no-huffman` now exist as CLI flags so this can be re-measured.
 8. WAV/PCM per-channel delta, then SQLite pages.
 9. ECM for **raw** CD images only (~12%; cooked `.iso` has no ECC).
 10. CM backend — **last**. Nobody publishes a CPU CM design at 5 MB/s.

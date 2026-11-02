@@ -56,6 +56,8 @@ void print_usage(FILE* f) {
       "      --no-wav         disable the WAV per-channel delta transform\n"
       "      --no-sqlite      disable the SQLite page-grouping transform\n"
       "      --split-size N   write output as N-byte parts (suffixes K/M/G)\n"
+      "      --no-bwt         disable the BWT backend candidate\n"
+      "      --no-huffman     disable the Huffman backend candidates\n"
       "  -T, --threads N      threads for --parallel (default: all cores)\n"
       "      --parallel       self-contained blocks, compressed on N threads\n"
       "      --no-lzma2       disable the LZMA2 fallback (breaks Tier-1)\n"
@@ -275,6 +277,10 @@ int parse_args(int argc, char** argv, Options& o) {
           return 2;
         }
       }
+    } else if (a == "--no-bwt") {
+      o.comp.bwt = false;
+    } else if (a == "--no-huffman") {
+      o.comp.huffman = false;
     } else if (a == "--no-sqlite") {
       o.comp.sqlite = false;
     } else if (a == "--no-wav") {
