@@ -364,6 +364,18 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     if (!xml_numeric_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
   }
+  // Image transforms one level down were applied last of the nested stages, so they
+  // are undone first among them.
+  if ((fh.layers2 & kLayer2GifNested) != 0) {
+    std::vector<uint8_t> original;
+    if (!gif_unpack(dst, original)) return Err::Corrupt;
+    dst = std::move(original);
+  }
+  if ((fh.layers2 & kLayer2JpegNested) != 0) {
+    std::vector<uint8_t> original;
+    if (!jpeg_unpack(dst, original)) return Err::Corrupt;
+    dst = std::move(original);
+  }
   // base64 one level down was applied after the second container level and before
   // the nested numeric transforms, so it is undone between them.
   if ((fh.layers2 & kLayer2Base64Nested) != 0) {

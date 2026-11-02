@@ -135,8 +135,12 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    **−0.7%** on a base64-of-a-JPEG fixture against **−19.5%** for the same document
    uncompressed — the gap is that the nested chain re-enters precomp, base64 and the
    numeric transforms but **not the image transforms**, so brunsli never sees the blob.
-   `docs/BASE64_NESTED.md`. **The follow-up that pays: nested JPEG and GIF**
-   (`kLayer2JpegNested` / `kLayer2GifNested`, both bits free).
+   `docs/BASE64_NESTED.md`.
+12b. **Nested JPEG and GIF — shipped the same day.** The 0.7% was the nested chain not
+   running the image transforms: a decoded JPEG was handed to the backend as ordinary
+   bytes. With `kLayer2JpegNested` / `kLayer2GifNested` the same `.json.gz` goes
+   **21,688 → 17,414 (−19.7%)**, marginally better than the document uncompressed.
+   `layers2` 0x06 = base64-nested + jpeg-nested.
 13. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
    as delta + zigzag + varint inside the `<v>` tags, per column, at the top level and
    inside the recursion. `.xlsx` went 147,525 → **73,367 (−50.3%)**, `layers = 0x08`,

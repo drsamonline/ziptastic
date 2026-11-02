@@ -556,7 +556,10 @@ bool base64_pays(std::span<const uint8_t> packed, std::span<const uint8_t> origi
   const size_t kSample = 256 * 1024;
   const size_t pn = std::min(packed.size(), kSample);
   const size_t on = std::min(original.size(), kSample);
-  if (pn < 1024 || on < 1024) return false;
+  // 256 bytes, not 1024. A small document with an embedded blob is exactly the case
+  // this transform is for, and a 1 KiB floor silently excluded it — a 1,081-byte JPEG
+  // in a 843-byte `.json.gz` declined while the same content at 21 KB gained 19.7%.
+  if (pn < 256 || on < 256) return false;
   const double p =
       static_cast<double>(actual_cost(packed.first(pn), opt)) / pn * packed.size();
   const double o =
@@ -790,6 +793,32 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
     }
   }
 
+  // Image transforms one level down. Once base64 has decoded a `.json.gz` back to
+  // the blob it wrapped, the blob sits at offset 0 and brunsli can recognise it —
+  // which is the difference between 0.7% and 19.5% on that file class.
+  bool jpeg_nested = false;
+  if ((precomp || gzip) && opt.jpeg && jpeg_available() && !precomp_payload.empty()) {
+    std::vector<uint8_t> packed;
+    if (jpeg_pack(precomp_payload, packed)) {
+      std::vector<uint8_t> check;
+      if (jpeg_unpack(packed, check) && check == precomp_payload) {
+        precomp_payload = std::move(packed);
+        jpeg_nested = true;
+      }
+    }
+  }
+  bool gif_nested = false;
+  if ((precomp || gzip) && opt.gif && gif_available() && !precomp_payload.empty()) {
+    std::vector<uint8_t> packed;
+    if (gif_pack(precomp_payload, packed)) {
+      std::vector<uint8_t> check;
+      if (gif_unpack(packed, check) && check == precomp_payload) {
+        precomp_payload = std::move(packed);
+        gif_nested = true;
+      }
+    }
+  }
+
   bool numeric_nested = false;
   bool xml_numeric_nested = false;
   if ((precomp || gzip) && opt.numeric && numeric_available() && !precomp_payload.empty()) {
@@ -814,7 +843,9 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // Every Layer 0 bit the stream carries, built once so the three encode paths
   // cannot disagree about which transforms were applied.
   const uint8_t layers2 = (sqlite ? kLayer2Sqlite : 0) |
-                          (base64_nested ? kLayer2Base64Nested : 0);
+                          (base64_nested ? kLayer2Base64Nested : 0) |
+                          (jpeg_nested ? kLayer2JpegNested : 0) |
+                          (gif_nested ? kLayer2GifNested : 0);
   const uint8_t layers = (numeric_csv ? kLayerNumeric : 0) |
                          (numeric_nested ? kLayerNumericNested : 0) |
                          (xml_numeric ? kLayerXmlNumeric : 0) |

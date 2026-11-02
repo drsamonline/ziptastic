@@ -122,9 +122,15 @@ enum LayerFlags2 : uint8_t {
   // base64 inside a container: a JSON document holding an embedded blob, reached
   // through the recursion rather than handed over as a bare file.
   kLayer2Base64Nested = 1u << 1,
+  // Image transforms one level down. A base64'd JPEG inside a `.json.gz` decodes to
+  // a JPEG at offset 0 of the payload, and without these the blob was handed to the
+  // backend as ordinary bytes — measured at 0.7% where the bare document gets 19.5%.
+  kLayer2JpegNested = 1u << 2,
+  kLayer2GifNested = 1u << 3,
 };
 
-inline constexpr uint8_t kLayerMask2 = kLayer2Sqlite | kLayer2Base64Nested;
+inline constexpr uint8_t kLayerMask2 =
+    kLayer2Sqlite | kLayer2Base64Nested | kLayer2JpegNested | kLayer2GifNested;
 
 inline constexpr uint8_t kFlagMask =
     kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup | kFlagJpeg | kFlagGif;

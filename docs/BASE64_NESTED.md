@@ -14,10 +14,14 @@ was decoding.
 | file | without | with | gain | `layers`/`layers2` |
 |---|---|---|---|---|
 | `photo.json` (base64 of a JPEG, bare) | 21,564 | **17,356** | **−19.5%** | 0x10 / 0x00 |
-| `photo.json.gz` (the same, gzipped) | 21,688 | **21,545** | **−0.7%** | 0x20 / 0x02 |
+| `photo.json.gz` (the same, gzipped) | 21,688 | **17,414** | **−19.7%** | 0x20 / 0x06 |
 
-The nested transform fires and the round trip is exact, but it recovers **0.7%, not the
-19.5% the same document gets uncompressed**. That gap is the finding.
+**Update, same day:** the 0.7% was the first version. The nested chain re-entered
+precomp, base64 and the numeric/XML transforms but *not* the image transforms, so a
+decoded JPEG was handed to the backend as ordinary bytes. Adding nested JPEG and GIF
+(`kLayer2JpegNested`, `kLayer2GifNested`) closes the gap: **−19.7%**, marginally better
+than the same document uncompressed. The 0.7% figure is kept here because it is the
+measurement that said where to look.
 
 ## Why the gap, and what it costs
 
@@ -48,3 +52,18 @@ collect the part of the win that lives in brunsli.
 - `src/engine/decompressor.cpp` — undone between them
 - `tests/unit/test_containers.cpp` — `base64_inside_gzip_is_decoded`, asserting both
   `kLayerGzip` and `kLayer2Base64Nested` and an exact round trip
+
+## Reproducing the fixture
+
+```python
+import base64, gzip, json
+jpg = open('color_photo.jpg','rb').read()
+doc = json.dumps({"name":"photo.jpg","encoding":"base64",
+                  "data": base64.b64encode(jpg).decode()})
+open('photo.json.gz','wb').write(gzip.compress(doc.encode(), 9))
+```
+
+`tests/unit/fixtures_gz_b64_jpeg.inc` holds this file as a byte array. It is 21 KB of
+source on purpose: a smaller JPEG does not exercise the path, and the reason is worth
+knowing — at 1 KB the gzip gate declines the whole chain before any of this runs, and
+the trial has no signal to work with.

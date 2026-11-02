@@ -587,6 +587,8 @@ const uint8_t kGzWithBase64[] = {
 };
 const size_t kGzWithBase64_len = sizeof(kGzWithBase64);
 
+#include "fixtures_gz_b64_jpeg.inc"
+
 std::vector<uint8_t> vec(const uint8_t* p, size_t n) { return std::vector<uint8_t>(p, p + n); }
 
 }  // namespace
@@ -694,6 +696,29 @@ TEST(base64_inside_gzip_is_decoded) {
   CHECK_MSG((fh.layers & kLayerGzip) != 0, "gzip layer not set");
   CHECK_MSG((fh.layers2 & kLayer2Base64Nested) != 0,
             "nested base64 did not fire on a gzipped document holding a blob");
+}
+
+// The image transforms must run one level down too. Without them a base64'd JPEG in a
+// `.json.gz` decodes to a JPEG at offset 0 of the payload and is then handed to the
+// backend as ordinary bytes: 0.7% instead of 19.7%.
+TEST(base64_jpeg_inside_gzip_reaches_brunsli) {
+  const auto in = vec(kGzWithBase64Jpeg, kGzWithBase64Jpeg_len);
+  CompressOptions opt;
+  opt.block_size = 64 * 1024;
+  opt.precomp = true;
+
+  std::vector<uint8_t> packed, back;
+  CHECK_ERR(compress(in, packed, opt, nullptr), Err::Ok);
+  CHECK_ERR(decompress(packed, back), Err::Ok);
+  CHECK_MSG(back == in, "gz-with-base64-jpeg round-trip mismatch");
+
+  ByteReader r(packed);
+  FileHeader fh;
+  CHECK_ERR(read_file_header(r, fh), Err::Ok);
+  CHECK_MSG((fh.layers & kLayerGzip) != 0, "gzip layer not set");
+  CHECK_MSG((fh.layers2 & kLayer2Base64Nested) != 0, "nested base64 did not fire");
+  CHECK_MSG((fh.layers2 & kLayer2JpegNested) != 0,
+            "nested JPEG did not fire, so brunsli never saw the decoded image");
 }
 
 TEST_MAIN()
