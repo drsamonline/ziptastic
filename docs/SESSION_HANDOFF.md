@@ -207,6 +207,13 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    ziptastic already handles a lone fragment correctly (exact, just ~2x worse). The
    work belongs in **heavenzip**: detect the set, join it, compress, then re-split from
    stored part sizes.
+6d. **Split the OUTPUT, and SFX.** Both answered in `docs/SFX_AND_SPLIT_OUTPUT.md`.
+   SFX **reading** is shipped: `decompress()` finds the `CHCE` magic rather than
+   requiring offset 0, so a stub + stream decodes with no special case. SFX **writing**
+   is not built and should not be built blindly — a launcher per platform, AV
+   heuristics and code signing are all real, and the format does not need us to ship
+   binaries. Split **output** (`--split N` with a per-part footer) is not built; it is
+   free in ratio, costs independent decodability, and belongs to the writer.
 7. **Parallelise the try-everything selector** — free speed, no ratio cost.
 8. WAV/PCM per-channel delta, then SQLite pages.
 9. ECM for **raw** CD images only (~12%; cooked `.iso` has no ECC).

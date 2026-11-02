@@ -568,4 +568,30 @@ TEST(a_plain_zip_still_works) {
   CHECK_MSG(back == in, "plain ZIP round-trip mismatch");
 }
 
+// A self-extracting archive is a launcher stub followed by the stream. The decoder
+// finds the magic rather than refusing the file, so an SFX needs no special case.
+TEST(a_stream_behind_a_stub_still_decodes) {
+  const std::vector<uint8_t> data = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+                                     11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+  CompressOptions opt;
+  std::vector<uint8_t> packed;
+  CHECK_ERR(compress(data, packed, opt, nullptr), Err::Ok);
+
+  // A plausible launcher prefix: a DOS stub header and some padding.
+  std::vector<uint8_t> sfx = {'M', 'Z'};
+  for (int i = 0; i < 2048; ++i) sfx.push_back(static_cast<uint8_t>(i * 7 + 3));
+  sfx.insert(sfx.end(), packed.begin(), packed.end());
+
+  std::vector<uint8_t> back;
+  CHECK_ERR(decompress(sfx, back), Err::Ok);
+  CHECK_MSG(back == data, "stream behind a stub did not decode to the original");
+}
+
+// And a file with no magic anywhere is still refused, rather than scanned forever.
+TEST(a_file_with_no_magic_is_refused) {
+  std::vector<uint8_t> junk(4096, 0x5A);
+  std::vector<uint8_t> out;
+  CHECK_ERR(decompress(junk, out), Err::BadMagic);
+}
+
 TEST_MAIN()

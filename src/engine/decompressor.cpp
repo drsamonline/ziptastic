@@ -179,7 +179,34 @@ Err decode_body(const BlockHeader& hdr, std::span<const uint8_t> body,
 
 Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
                DecompressReport* report) {
-  ByteReader r(in);
+  // A self-extracting archive is a launcher stub with the stream appended, so the
+  // magic is not at offset 0. Find it instead of refusing the file: an SFX made by
+  // us, or by any wrapper that concatenates, decodes without a special case.
+  //
+  // A false positive costs nothing: the header parse validates magic, version, flags
+  // and layers, and the CRC-32 of the rebuilt bytes has to match at the end, so a
+  // wrong offset fails as a bad stream rather than producing wrong data.
+  std::span<const uint8_t> body = in;
+  if (in.size() >= sizeof(kMagic) && std::memcmp(in.data(), kMagic, sizeof(kMagic)) != 0) {
+    const size_t limit = std::min<size_t>(in.size(), 64u << 20);
+    size_t at = 0;
+    bool found = false;
+    while (at + sizeof(kMagic) <= limit) {
+      const void* hit = std::memchr(in.data() + at, kMagic[0], limit - at);
+      if (hit == nullptr) break;
+      at = static_cast<size_t>(static_cast<const uint8_t*>(hit) - in.data());
+      if (at + sizeof(kMagic) <= in.size() &&
+          std::memcmp(in.data() + at, kMagic, sizeof(kMagic)) == 0) {
+        found = true;
+        break;
+      }
+      ++at;
+    }
+    if (!found) return Err::BadMagic;
+    body = in.subspan(at);
+  }
+
+  ByteReader r(body);
 
   FileHeader fh;
   if (Err e = read_file_header(r, fh); e != Err::Ok) return e;
