@@ -50,6 +50,7 @@ void print_usage(FILE* f) {
       "  -z, --compress       same as the compress command\n"
       "  -9                   maximum effort preset (no CM backend)\n"
       "      --max-ratio      allow the CM backend (slowest, smallest)\n"
+      "      --no-cm-stream   with --max-ratio, skip the whole-stream CM pass\n"
       "      --no-precomp     disable semantic precompression\n"
       "      --no-numeric     disable the integer CSV/TSV column transform\n"
       "      --no-base64      disable the base64 decode transform\n"
@@ -301,6 +302,8 @@ int parse_args(int argc, char** argv, Options& o) {
       o.comp.base64 = false;
     } else if (a == "--no-numeric") {
       o.comp.numeric = false;
+    } else if (a == "--no-cm-stream") {
+      o.comp.cm_stream = false;
     } else if (a == "--no-precomp") {
       o.comp.precomp = false;
     } else if (a == "--no-lzma2") {

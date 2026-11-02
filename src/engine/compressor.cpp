@@ -993,7 +993,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // 394,185 bytes while one CM pass over the same bytes gives 330,394 — 16% that
   // the block boundaries were costing. Tried last and only kept when smaller,
   // because it is the most expensive thing in the engine.
-  if (opt.max_ratio && zpaq_available() && !data.empty()) {
+  if (opt.max_ratio && opt.cm_stream && zpaq_available() && !data.empty()) {
     std::vector<uint8_t> whole(data.begin(), data.end());
     std::vector<uint8_t> packed;
     if (zpaq_compress_block(whole, packed)) {

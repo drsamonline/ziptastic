@@ -21,6 +21,10 @@ namespace chce {
 struct CompressOptions {
   size_t block_size = kDefaultBlockSize;
   bool max_ratio = false;      // --max-ratio: allow CM_ZPAQ candidates
+  // --max-ratio also runs one CM pass over the whole stream, which beats the per-block
+  // candidates by 16% on multi-block files because a CM model is stateful. This exists
+  // so the two can be measured apart.
+  bool cm_stream = true;
   bool precomp = false;        // Layer 0 semantic precompression
   bool coarse = false;         // consult the coarse (SREP-style) index
   bool lzma2_fallback = true;  // Tier-1 guarantee; --no-lzma2 disables it

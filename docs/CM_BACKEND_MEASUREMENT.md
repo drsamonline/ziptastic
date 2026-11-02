@@ -99,3 +99,36 @@ Two candidate pieces of work, neither built:
    model can carry rather than at 256 KiB. The 16% above says the chunk size matters.
 
 Corrected rather than left with a plan that would have undone an existing feature.
+
+## Block size, measured: it does not matter on any file here
+
+The open question above was whether the 256 KiB default block size is what costs the
+per-block CM candidates. Added `--no-cm-stream` to separate the two passes, then measured:
+
+| file | both passes | per-block only (256 KiB) | per-block only (1 MiB) |
+|---|---|---|---|
+| 1 MB English prose | 189,899 | **189,899** | **189,899** |
+| 2 MB heterogeneous (prose + CSV + XML + noise) | 272,328 | **272,328** | — |
+
+**Identical in every cell.** The whole-stream pass is not winning on either file, so the
+per-block candidates are already producing the shipped result, and the block size changes
+nothing. The 16% figure in the source comment came from a large xml fixture that is not in
+the current corpus.
+
+So the earlier reading — "the 6–8% is the stream pass" — was also wrong. The 6–8% is
+CM itself, at block granularity, and it is available without the stream pass.
+
+## What that actually leaves
+
+The whole-stream pass is a **full extra CM run** that has produced nothing on three files
+out of three here (prose, heterogeneous mix, and the WAV where the combined number matched
+the per-block path's behaviour). It is kept because it is only adopted when smaller, so it
+can never hurt ratio — but it doubles the cost of `--max-ratio` whenever it loses.
+
+That is a speed question, not a ratio question, and it has an obvious shape: run the
+per-block candidates first, and only attempt the stream pass when the file is large enough
+for cross-block redundancy to be plausible — which needs a measurement on a file where the
+stream pass *does* win, and the xml fixture that showed 16% is not in the corpus.
+
+`--no-cm-stream` exists now, so the next person with that fixture can settle it in two
+runs.
