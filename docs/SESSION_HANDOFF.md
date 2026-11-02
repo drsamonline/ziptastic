@@ -130,7 +130,14 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    v5 `layers2` byte. `docs/SQLITE_MEASUREMENT.md`. Two traps recorded there: the
    usual "packed must be smaller" rule silently disabled it (a reordering is larger on
    disk by construction), and the test fixture overwrote its own SQLite magic.
-12. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
+12. **base64 one level down — shipped.** `kLayer2Base64Nested` (layers2 bit 1). Fires on
+   a `.json.gz`: gzip inflates to a document whose payload is a base64 blob. Measured
+   **−0.7%** on a base64-of-a-JPEG fixture against **−19.5%** for the same document
+   uncompressed — the gap is that the nested chain re-enters precomp, base64 and the
+   numeric transforms but **not the image transforms**, so brunsli never sees the blob.
+   `docs/BASE64_NESTED.md`. **The follow-up that pays: nested JPEG and GIF**
+   (`kLayer2JpegNested` / `kLayer2GifNested`, both bits free).
+13. **XML-aware numeric transform — shipped.** Spreadsheet cell values are now coded
    as delta + zigzag + varint inside the `<v>` tags, per column, at the top level and
    inside the recursion. `.xlsx` went 147,525 → **73,367 (−50.3%)**, `layers = 0x08`,
    round trip exact; a bare `sheet1.xml` 148,615 → 72,464. Three defects came out of

@@ -774,6 +774,22 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
     }
   }
 
+  // base64 one level down. A `.json.gz` is the common shape: gzip inflates to a
+  // document whose payload is base64, and until now the nested stage only tried the
+  // numeric and XML transforms, so the blob was never decoded.
+  bool base64_nested = false;
+  if ((precomp || gzip) && opt.base64 && base64_available() && !precomp_payload.empty()) {
+    std::vector<uint8_t> nested;
+    if (base64_pack(precomp_payload, nested)) {
+      std::vector<uint8_t> check;
+      if (base64_unpack(nested, check) && check == precomp_payload &&
+          base64_pays(nested, precomp_payload, opt)) {
+        precomp_payload = std::move(nested);
+        base64_nested = true;
+      }
+    }
+  }
+
   bool numeric_nested = false;
   bool xml_numeric_nested = false;
   if ((precomp || gzip) && opt.numeric && numeric_available() && !precomp_payload.empty()) {
@@ -797,7 +813,8 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
 
   // Every Layer 0 bit the stream carries, built once so the three encode paths
   // cannot disagree about which transforms were applied.
-  const uint8_t layers2 = (sqlite ? kLayer2Sqlite : 0);
+  const uint8_t layers2 = (sqlite ? kLayer2Sqlite : 0) |
+                          (base64_nested ? kLayer2Base64Nested : 0);
   const uint8_t layers = (numeric_csv ? kLayerNumeric : 0) |
                          (numeric_nested ? kLayerNumericNested : 0) |
                          (xml_numeric ? kLayerXmlNumeric : 0) |

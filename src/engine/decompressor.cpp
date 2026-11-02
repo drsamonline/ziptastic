@@ -364,6 +364,13 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     if (!xml_numeric_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
   }
+  // base64 one level down was applied after the second container level and before
+  // the nested numeric transforms, so it is undone between them.
+  if ((fh.layers2 & kLayer2Base64Nested) != 0) {
+    std::vector<uint8_t> original;
+    if (!base64_unpack(dst, original)) return Err::Corrupt;
+    dst = std::move(original);
+  }
   // The second container level was applied before the nested numeric transforms,
   // so it is undone after them and before the container that held it.
   if ((fh.layers & kLayerPrecompNested) != 0) {

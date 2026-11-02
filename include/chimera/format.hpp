@@ -119,9 +119,12 @@ enum LayerFlags2 : uint8_t {
   // re-encoding: the decoder recomputes the order from the page type bytes, so the
   // recipe is 12 bytes.
   kLayer2Sqlite = 1u << 0,
+  // base64 inside a container: a JSON document holding an embedded blob, reached
+  // through the recursion rather than handed over as a bare file.
+  kLayer2Base64Nested = 1u << 1,
 };
 
-inline constexpr uint8_t kLayerMask2 = kLayer2Sqlite;
+inline constexpr uint8_t kLayerMask2 = kLayer2Sqlite | kLayer2Base64Nested;
 
 inline constexpr uint8_t kFlagMask =
     kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup | kFlagJpeg | kFlagGif;
