@@ -31,6 +31,11 @@ higher licence ceiling). That difference is why both exist.
 ziptastic `docs/` holds 20 files. Start with `BENCHMARKS.md`,
 `AI_REVIEWS_SYNTHESIS.md`, `RECURSION_MEASUREMENT.md`, `LEXORA_ASSESSMENT.md`.
 
+**Real-world test images** are described in `docs/TEST_CORPUS.md` — what each one actually
+is, what measured, and the important finding that the supplied `.raw` is a **disk** image
+(2,048-byte sectors, boot sector at 0), not a 2,352-byte CD image, so **ECM still has no
+test material**.
+
 **Everything in one place:** `docs/ENGINE_STATE.md` — every transform, its layer bit, its
 measured gain, its write-up, the measured negatives, and what is open. This handoff is the
 working document; that one is the reference.
