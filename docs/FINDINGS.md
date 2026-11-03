@@ -41,18 +41,21 @@ Every figure below is post-compression: how much smaller the *archive* got.
 | base64 one level down | layers2 0x02 | −19.7% | `.json.gz` with a JPEG |
 | JPEG one level down | layers2 0x04 | see section 4 | |
 | GIF one level down | layers2 0x08 | see section 4 | |
-| PNG image data inflated | layers2 0x10 | −22.9% / −68.8% ⚠️ | synthetic PNGs |
+| PNG image data inflated | layers2 0x10 | **−7.0% / −10.6%** | photographic PNGs (re-measured) |
 | **CD sector parity (ECM)** | layers2 0x20 | **−28.2%** | real Mode 2 Form 1 image |
 | BMP colour planes + row delta | layers2 0x40 | **−36.9% / −48.3%** | photographic BMPs |
-| PNG one level down | layers2 0x80 | −79.2% ⚠️ | ZIP of synthetic PNGs |
+| PNG one level down | layers2 0x80 | **−0.3%, usually declines** | ZIP of photographic PNGs |
 | **BMP one level down** | layers3 0x01 | **−36.9% / −48.3%** | ZIP of photographic BMPs |
 
-⚠️ **Synthetic fixture.** The PNG figures (and the GIF/JPEG nested ones in section 4) were
-measured on generated gradients whose pixels are a formula. Those compress to almost nothing
-under any transform, so the numbers overstate what real content will do. The BMP row was
-corrected for exactly this reason: its first figure was −99.2%, and re-measurement on
-photographic content gave −37% to −48%. **PNG and GIF have not yet been re-measured and should
-be assumed to be in the same 30–50% band until they are.**
+**These were re-measured on real content on 2026-11-04, and the earlier synthetic figures were
+2–8× too optimistic.** The original fixtures were generated gradients whose pixels are a formula;
+they compress to almost nothing under any transform, so they measured the fixture rather than the
+transform. BMP was corrected first (−99.2% → −37% to −48%), then PNG, GIF and JPEG were checked
+the same way. Every number in the tables above is now from real content.
+
+**One regression this exposed**: a 1.2 KB UI-style PNG encodes to **336 bytes with the transform
+and 309 without it** — the PNG gate accepted a payload that the block encoder then made worse.
+Small files are where the gate's estimate is weakest; recorded as an open item below.
 
 ## 3. Against the field
 
@@ -77,14 +80,29 @@ A container payload puts its own header in front of the member bytes, so every n
 now scans for its signature **anywhere** and carries a prefix and a tail. All of them are
 multi-image: every image in the payload is transformed, not just the first.
 
-| container | transform | measured | fixture quality |
+| container | transform | measured | verified on |
 |---|---|---|---|
-| ZIP of **BMPs** | plane split + row delta | **−36.9% / −48.3%** | photographic, verified |
-| ZIP of **PNGs** | inflate the PNG's DEFLATE | −79.2% ⚠️ | synthetic, **pending** |
-| ZIP of **GIFs** | decode LZW to indices | −69.6% ⚠️ | synthetic, **pending** |
-| ZIP of **JPEGs** | brunsli on every image | −16.5% ⚠️ | synthetic, **pending** |
+| ZIP of **BMPs** | plane split + row delta | **−36.9% / −48.3%** | photographic |
+| ZIP of **JPEGs** | brunsli on every image | **−24.9%** | photographic |
+| ZIP of **GIFs** | decode LZW to indices | **−11.1%** | photographic |
+| ZIP of **PNGs** | inflate the PNG's DEFLATE | **−0.3%, often declines** | photographic |
 
-The BMP row is the only one measured on real content. The others are known to be optimistic.
+Measured against the same container with the nested stage disabled, so the figure is what the
+transform adds on top of precomp.
+
+**The PNG nested case does not reproduce at all on real content.** It was −79.2% on a ZIP of
+synthetic gradients and is −0.3% on a ZIP of photographic PNGs, where the gate usually declines
+the payload outright: a photographic PNG's scanlines are not much more compressible than the
+DEFLATE stream that already holds them. The transform is not wrong; the fixture was.
+
+**JPEG is the surprise in the other direction**: −24.9% on real photographic JPEGs against −16.5%
+on the synthetic ones, because brunsli's gain comes from the DCT coefficients and a real photo
+has more of them worth modelling than a formula does.
+
+Top-level GIF is worth mentioning separately because it is the strongest image result in the
+engine: a photographic GIF goes 45,588 → **25,268** (−44.6%) and a 512×512 one 113,320 →
+**58,036** (−48.8%), because LZW is a 1980s coder and the palette indices behind it compress far
+better. That is a *file* result, not a container one.
 
 ## 5. Measured and rejected — do not rebuild these
 
@@ -123,8 +141,12 @@ internals beyond their contracts, `main.cpp`, the match finder and parser.
 
 ## 7. What is open
 
-- **Re-measure PNG and GIF on real content.** The only remaining figures known to be optimistic.
-  Everything else in this document has been verified or corrected.
+- ~~Re-measure PNG and GIF on real content.~~ **DONE** — see the note under the transform table.
+  Every figure in this document is now from real content.
+- **The PNG gate accepts payloads that encode worse on small files**: a 1.2 KB UI PNG is 336
+  bytes with the transform, 309 without. The gate compares a coded estimate at the transform
+  stage; the block encoder's framing decides afterwards, and on a file this small the framing is
+  a large fraction of the total.
 - **`precomp_helps` accuracy.** Its structural rule (payload ≥ 2× original → accept) can take a
   payload that encodes worse; a Tier-0 guard now catches that case, but the rule itself is still
   a predictor.
