@@ -25,6 +25,9 @@ struct FileHeader {
   // The second Layer 0 byte, added in v5 because the first is full. A separate field
   // rather than a wider integer, so the on-disk shape stays explicit.
   uint8_t layers2 = 0;
+  // The third Layer 0 byte, added in v7 because the first two are full. A separate field
+  // rather than a wider integer, so the on-disk shape stays explicit.
+  uint8_t layers3 = 0;
   // The size AFTER Layer 0 — what the block loop produces, not what the caller passed in.
   uint64_t original_size = 0;
   // The size the caller actually gets, added in v6. Until then the decoder had no way to

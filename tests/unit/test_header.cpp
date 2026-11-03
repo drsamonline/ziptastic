@@ -130,6 +130,7 @@ TEST(file_header_impossible_counts) {
   w.u8(0);   // flags
   w.u8(0);   // layers
   w.u8(0);   // layers2 (v5)
+  w.u8(0);   // layers3 (v7)
   w.varint(kMaxStreamSize + 1);
   w.varint(1);
   ByteReader r2(w.span());

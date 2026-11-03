@@ -406,6 +406,12 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   }
   // PNG one level down was applied after the nested base64 and before the image stages,
   // so it is undone after them.
+  if ((fh.layers3 & kLayer3BmpNested) != 0) {
+    std::vector<uint8_t> original;
+    if (!bmp_unpack(dst, original)) return Err::Corrupt;
+    dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
+  }
   if ((fh.layers2 & kLayer2PngNested) != 0) {
     std::vector<uint8_t> original;
     if (!png_repack(dst, original)) return Err::Corrupt;

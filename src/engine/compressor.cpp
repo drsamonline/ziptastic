@@ -236,9 +236,9 @@ EncodedBlock encode_one_block(std::span<const uint8_t> input, size_t pos, size_t
 
 Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
                   bool bcj, bool precomp, bool dedup, bool jpeg, bool gif,
-                  uint8_t layers, uint8_t layers2, uint32_t checksum,
-                  uint64_t true_original_size, std::vector<uint8_t>& out,
-                  CompressStats& stats) {
+                  uint8_t layers, uint8_t layers2, uint8_t layers3,
+                  uint32_t checksum, uint64_t true_original_size,
+                  std::vector<uint8_t>& out, CompressStats& stats) {
   const size_t block_count =
       input.empty() ? 0 : (input.size() + opt.block_size - 1) / opt.block_size;
   const bool parallel = opt.parallel && block_count > 1;
@@ -248,6 +248,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
   fh.flags = header_flags(opt, bcj, precomp, parallel, dedup, jpeg, gif);
   fh.layers = layers;
   fh.layers2 = layers2;
+  fh.layers3 = layers3;
   fh.original_size = input.size();   // post-Layer-0: what the block loop encodes
   fh.true_size = true_original_size; // what the caller passed in
   fh.block_count = block_count;
@@ -377,7 +378,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
 Err encode_lzma2_stream(std::span<const uint8_t> input,
                         const CompressOptions& opt, bool bcj, bool precomp,
                         bool dedup, bool jpeg, bool gif, uint8_t layers,
-                        uint8_t layers2, uint32_t checksum,
+                        uint8_t layers2, uint8_t layers3, uint32_t checksum,
                         uint64_t true_original_size, std::vector<uint8_t>& out) {
   std::vector<uint8_t> payload;
   std::vector<uint8_t> props;
@@ -393,6 +394,7 @@ Err encode_lzma2_stream(std::span<const uint8_t> input,
   fh.flags = header_flags(opt, bcj, precomp, false, dedup, jpeg, gif);
   fh.layers = layers;
   fh.layers2 = layers2;
+  fh.layers3 = layers3;
   fh.original_size = input.size();
   fh.true_size = true_original_size;
   fh.block_count = 1;
@@ -927,6 +929,22 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
       }
     }
   }
+  // BMP one level down. A ZIP of BMPs stores raw pixels inside two DEFLATE layers, and the
+  // colour-plane split takes it from 120,878 to 1,206 bytes on the fixture that motivated it.
+  bool bmp_nested = false;
+  if ((precomp || gzip) && opt.bmp && bmp_available() && !precomp_payload.empty() &&
+      bmp_likely(std::span<const uint8_t>(precomp_payload))) {
+    std::vector<uint8_t> payload;
+    if (bmp_pack(precomp_payload, payload)) {
+      std::vector<uint8_t> check;
+      if (bmp_unpack(payload, check) && check == precomp_payload &&
+          precomp_helps(payload, precomp_payload)) {
+        precomp_payload = std::move(payload);
+        bmp_nested = true;
+      }
+    }
+  }
+
   // PNG one level down. A ZIP of PNGs is the common case: precomp inflates the member and
   // hands us the PNG bytes, and without this stage the PNG's own DEFLATE is compressed as
   // if it were opaque — a second compression layer nothing removes. Measured at -79.9%.
@@ -980,6 +998,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
 
   // Every Layer 0 bit the stream carries, built once so the three encode paths
   // cannot disagree about which transforms were applied.
+  const uint8_t layers3 = (bmp_nested ? kLayer3BmpNested : 0);
   const uint8_t layers2 = (sqlite ? kLayer2Sqlite : 0) |
                           (base64_nested ? kLayer2Base64Nested : 0) |
                           (jpeg_nested ? kLayer2JpegNested : 0) |
@@ -1034,7 +1053,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   CompressStats local;
   std::vector<uint8_t> native;
   if (Err e = encode_native(data, opt, bcj, precomp, dedup, jpeg, gif,
-                    layers, layers2, crc, input.size(), native, local);
+                    layers, layers2, layers3, crc, input.size(), native, local);
       e != Err::Ok) {
     return e;
   }
@@ -1045,7 +1064,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   if (opt.lzma2_fallback && lzma2_available() && !input.empty()) {
     std::vector<uint8_t> fallback;
     const Err e = encode_lzma2_stream(data, opt, bcj, precomp, dedup, jpeg, gif,
-                          layers, layers2, crc, input.size(), fallback);
+                          layers, layers2, layers3, crc, input.size(), fallback);
     if (e == Err::Ok && fallback.size() < native.size()) {
       CompressStats fb;
       fb.blocks = 1;
@@ -1078,6 +1097,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
       cfh.flags = header_flags(opt, bcj, precomp, /*parallel=*/false, dedup, jpeg, gif);
       cfh.layers = layers;
       cfh.layers2 = layers2;
+      cfh.layers3 = layers3;
       cfh.original_size = input.size();
       cfh.true_size = input.size();
       cfh.block_count = 1;
@@ -1122,7 +1142,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // and this is the one place a predictor can decide alone.
   if (gate_structural) {
     std::vector<uint8_t> plain;
-    if (encode_lzma2_stream(input, opt, false, false, false, false, false, 0, 0, crc,
+    if (encode_lzma2_stream(input, opt, false, false, false, false, false, 0, 0, 0, crc,
                             input.size(), plain) == Err::Ok &&
         !plain.empty() && plain.size() < out.size()) {
       CompressStats ps;

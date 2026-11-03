@@ -28,7 +28,7 @@ inline constexpr uint8_t kMagic[4] = {'C', 'H', 'C', 'E'};
 // allocated and the ninth transform had nowhere to live. Adding a field is a format
 // change, hence the bump — the same clean break as v1->v2, v2->v3 and v3->v4.
 // Older streams are rejected with bad-version rather than guessed at.
-inline constexpr uint8_t kFormatVersion = 6;
+inline constexpr uint8_t kFormatVersion = 7;
 
 // Default block size. The prompt starts at 256 KB; Phase 12 tunes it.
 // 4 MiB. Measured: on dickens, 256 KiB gives 2,743,444 bytes, 1 MiB 2,496,909,
@@ -144,6 +144,16 @@ enum LayerFlags2 : uint8_t {
   // This is the last free bit in layers2.
   kLayer2PngNested = 1u << 7,
 };
+
+// The third layer byte, added in v7 because the first two are full. Bits 1-7 are free.
+enum LayerFlags3 : uint8_t {
+  // BMP one level down: a ZIP of BMPs stores raw pixels inside a DEFLATE stream inside
+  // another DEFLATE stream, and the colour-plane split takes the archive from 120,878 to
+  // 1,206 bytes on the fixture that motivated it (-99.0%).
+  kLayer3BmpNested = 1u << 0,
+};
+
+inline constexpr uint8_t kLayerMask3 = kLayer3BmpNested;
 
 inline constexpr uint8_t kLayerMask2 =
     kLayer2Sqlite | kLayer2Base64Nested | kLayer2JpegNested | kLayer2GifNested |
