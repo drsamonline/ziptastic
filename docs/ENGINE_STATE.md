@@ -102,6 +102,15 @@ format-aware transforms, and on data with neither a format nor redundancy there 
 nothing to win. `xz`/`7z` are not installed here, so the LZMA-class comparison is still
 owed.
 
+## Tools suggested from outside, and what they would add
+
+`docs/COMPETING_TOOLS.md`. **lrzip/rzip** would not replace the srep step: `dedup` already
+lands within **0.1% of the ideal** on both a 3 MB duplicate at 4 MB distance and 200
+duplicates spread over 9 MB. **oxipng/optipng** optimise the file, not the archive — a 66%
+smaller PNG changed the archive by 3 bytes, because the PNG transform stores pixels, not
+deflate choices. **browser-image-compression** is lossy and therefore a different product
+decision.
+
 ## The three habits this project keeps re-learning
 
 1. **Measure before building.** Every transform here that shipped had a number before it
