@@ -41,3 +41,26 @@ and `size_mismatch_rejected`. That is the whole cost of the format change, and i
 exist: they are the tests that would catch a mis-parse of the header.
 
 32/32 suites pass. v6 and earlier streams are refused with `bad-version` as always.
+
+
+## The win, one commit later
+
+The nested BMP stage now fires. `bmp_pack` scans for the first BMP anywhere in the payload,
+carries a prefix and a tail, and handles **every** image it finds — the same shape PNG, JPEG
+and GIF already had.
+
+| case | before | after | gain | `layers3` |
+|---|---|---|---|---|
+| ZIP of four 128×128 BMPs | 184,929 | **1,530** | **−99.2%** | 0x01 |
+
+Round trip byte-exact, 32/32 suites pass. The plane-split ideal measured beforehand was 1,206
+bytes of pixel data; the shipped 1,530 includes the container skeleton and the framing, so the
+transform is within a few hundred bytes of the ceiling.
+
+That is the largest gain any transform in this engine has produced on a container payload, and
+it is the fourth time the same pattern was applied: **scan for the signature anywhere, carry the
+bytes around the image, and handle every image in the buffer.**
+
+The three payload-layout bugs from the earlier transforms (JPEG's tail order, PNG's missing
+prefix, GIF's zero-based offset) were all avoided this time by copying the PNG structure exactly
+— which is the point of having established it.
