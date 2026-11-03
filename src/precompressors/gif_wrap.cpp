@@ -173,16 +173,29 @@ struct Image {
 
 bool gif_available() { return true; }
 
+// Any GIF anywhere in the buffer, not only at offset 0 — the same move PNG and JPEG made,
+// because a container payload puts its own header in front of the member bytes.
 bool gif_likely(std::span<const uint8_t> in) {
-  return in.size() > 13 && std::memcmp(in.data(), "GIF8", 4) == 0;
+  for (size_t i = 0; i + 4 <= in.size(); ++i) {
+    if (in[i] == 'G' && std::memcmp(in.data() + i, "GIF8", 4) == 0) return true;
+  }
+  return false;
+}
+
+size_t find_gif(std::span<const uint8_t> in) {
+  for (size_t i = 0; i + 13 <= in.size(); ++i) {
+    if (in[i] == 'G' && std::memcmp(in.data() + i, "GIF8", 4) == 0) return i;
+  }
+  return static_cast<size_t>(-1);
 }
 
 bool gif_pack(std::span<const uint8_t> in, std::vector<uint8_t>& packed) {
-  if (!gif_likely(in)) return false;
+  const size_t base = find_gif(in);
+  if (base == static_cast<size_t>(-1)) return false;
 
   std::vector<Image> images;
-  size_t pos = 13;
-  if (in[10] & 0x80) pos += 3u * (1u << ((in[10] & 7) + 1));
+  size_t pos = base + 13;
+  if (in[base + 10] & 0x80) pos += 3u * (1u << ((in[base + 10] & 7) + 1));
   if (pos >= in.size()) return false;
 
   while (pos < in.size()) {
@@ -224,6 +237,9 @@ bool gif_pack(std::span<const uint8_t> in, std::vector<uint8_t>& packed) {
   if (images.empty()) return false;
 
   packed.clear();
+  // Prefix: whatever sat in front of the GIF (a container header, for a nested case).
+  put_varint(packed, base);
+  packed.insert(packed.end(), in.begin(), in.begin() + static_cast<long>(base));
   put_varint(packed, images.size());
   for (const Image& im : images) {
     put_varint(packed, im.offset);
@@ -233,8 +249,9 @@ bool gif_pack(std::span<const uint8_t> in, std::vector<uint8_t>& packed) {
   }
   for (const Image& im : images) packed.insert(packed.end(), im.idx.begin(), im.idx.end());
 
-  // Skeleton: the file with each LZW sub-block chain cut out.
-  size_t cur = 0;
+  // Skeleton: the file with each LZW sub-block chain cut out. It starts at `base`, and the
+  // bytes before it travelled as the prefix above.
+  size_t cur = base;
   for (const Image& im : images) {
     packed.insert(packed.end(), in.begin() + cur, in.begin() + im.offset);
     cur = im.offset + im.lzw_len;
@@ -245,6 +262,12 @@ bool gif_pack(std::span<const uint8_t> in, std::vector<uint8_t>& packed) {
 
 bool gif_unpack(std::span<const uint8_t> packed, std::vector<uint8_t>& out) {
   size_t pos = 0;
+  uint64_t prefix_len = 0;
+  if (!get_varint(packed, pos, prefix_len)) return false;
+  if (prefix_len > packed.size() - pos) return false;
+  const size_t prefix_at = pos;
+  pos += static_cast<size_t>(prefix_len);
+
   uint64_t count = 0;
   if (!get_varint(packed, pos, count) || count == 0 || count > 100000) return false;
 
@@ -271,7 +294,14 @@ bool gif_unpack(std::span<const uint8_t> packed, std::vector<uint8_t>& out) {
   }
 
   out.clear();
-  size_t skel = pos, cur = 0;
+  out.insert(out.end(), packed.begin() + static_cast<long>(prefix_at),
+             packed.begin() + static_cast<long>(prefix_at + prefix_len));
+  // The recorded offsets are absolute in the ORIGINAL buffer, and the skeleton begins where
+  // the prefix ends — so the logical position starts at prefix_len, not at zero. Starting at
+  // zero copies that many bytes too many from a skeleton that does not contain them, the
+  // rebuild disagrees with the input, and the stage silently declines. Exactly the kind of
+  // error that only appears once a prefix exists.
+  size_t skel = pos, cur = static_cast<size_t>(prefix_len);
   for (size_t i = 0; i < es.size(); ++i) {
     const Entry& e = es[i];
     if (e.offset < cur) return false;
