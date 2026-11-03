@@ -86,8 +86,13 @@ size_t walk_one(const std::vector<uint8_t>& in, size_t base, std::vector<Chunk>&
 bool png_available() { return true; }
 
 bool png_likely(const std::vector<uint8_t>& in) {
-  std::vector<Chunk> chunks;
-  return walk_one(in, 0, chunks) != 0;
+  // Any PNG anywhere, because a container payload puts its own header in front.
+  for (size_t i = 0; i + 8 <= in.size(); ++i) {
+    if (in[i] != 0x89) continue;
+    std::vector<Chunk> chunks;
+    if (walk_one(in, i, chunks) != 0) return true;
+  }
+  return false;
 }
 
 // One PNG, at [base, end) of `in`, into its own payload.
@@ -264,8 +269,33 @@ bool repack_one(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out) 
 // ---------------------------------------------------------------------------
 
 bool png_unpack(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload) {
+  // Scan for the first PNG signature rather than demanding one at offset 0.
+  //
+  // This is the same move `scan_zip` made for archives inside tar: a container payload puts
+  // its own header in front, so a single-file transform that insists on offset 0 never sees
+  // the image. preflate's payload is [count][headers][corrections][inflated members]
+  // [skeleton], which puts every member image in the middle — measured as a ZIP of six PNGs
+  // compressing to 119,051 bytes against an ideal of 23,969 because of exactly this.
+  //
+  // A false positive costs nothing: walk_one validates every chunk length and requires an
+  // IEND, and the stage verifies by rebuilding the input before the payload is adopted.
+  size_t first = 0;
+  bool found = false;
+  while (first + 8 <= in.size()) {
+    const void* hit = std::memchr(in.data() + first, 0x89, in.size() - first);
+    if (hit == nullptr) break;
+    first = static_cast<size_t>(static_cast<const uint8_t*>(hit) - in.data());
+    if (first + 8 <= in.size() && std::memcmp(in.data() + first, kSig, 8) == 0) {
+      found = true;
+      break;
+    }
+    ++first;
+  }
+  if (!found) return false;
+  const size_t prefix_len = first;
+
   std::vector<std::pair<size_t, size_t>> segments;
-  size_t at = 0;
+  size_t at = first;
   for (;;) {
     std::vector<Chunk> chunks;
     const size_t end = walk_one(in, at, chunks);
@@ -282,6 +312,8 @@ bool png_unpack(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload) {
   }
 
   payload.clear();
+  put_varint(payload, prefix_len);
+  payload.insert(payload.end(), in.begin(), in.begin() + static_cast<long>(prefix_len));
   put_varint(payload, segments.size());
   for (const auto& img : per_image) {
     put_varint(payload, img.size());
@@ -294,11 +326,18 @@ bool png_unpack(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload) {
 
 bool png_repack(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out) {
   size_t pos = 0;
+  uint64_t prefix_len = 0;
+  if (!get_varint(payload, pos, prefix_len)) return false;
+  if (prefix_len > payload.size() - pos) return false;
+  const size_t prefix_at = pos;
+  pos += static_cast<size_t>(prefix_len);
+
   uint64_t count = 0;
   if (!get_varint(payload, pos, count)) return false;
   if (count == 0 || count > (1u << 16)) return false;
 
-  out.clear();
+  out.assign(payload.begin() + static_cast<long>(prefix_at),
+             payload.begin() + static_cast<long>(prefix_at + prefix_len));
   for (uint64_t i = 0; i < count; ++i) {
     uint64_t len = 0;
     if (!get_varint(payload, pos, len)) return false;

@@ -84,3 +84,36 @@ The bit is taken and the stage is wired, but it **cannot fire on the case it was
 and neither can any other image stage behind precomp. The measurement stands: a ZIP of six
 PNGs is 119,051 bytes today against an ideal of 23,969, and the gap is the recursion's payload
 contract rather than PNG handling.
+
+
+## Third pass: the anywhere-scan, and it works
+
+The fix turned out to be the one this project already uses for archives inside tar: **do not
+require the signature at offset 0.** `png_unpack` now scans for the first PNG signature
+anywhere in the payload, carries the bytes in front of it as a prefix, and finds consecutive
+PNGs from there. `png_likely` agrees, and `scan_zip` is the precedent — it made exactly this
+move for ZIPs inside a `.tar.gz` and gained 44.8%.
+
+| case | before | after | gain |
+|---|---|---|---|
+| ZIP of six 256×256 PNGs | 119,051 | **24,750** | **−79.2%** |
+| six concatenated PNGs, no container | 156,128 raw | 24,232 | — |
+
+`layers2 = 0x80`, round trip byte-exact, 32/32 suites pass. The ideal measured at the start was
+23,969; the shipped result is 24,750 — within 3%.
+
+So the earlier conclusion — "the recursion's payload contract is the ceiling" — was right about
+the *mechanism* and wrong about the *fix*. The contract did put the images in the middle; the
+answer was to look in the middle rather than to change the contract.
+
+**A false positive costs nothing**, which is why this is safe: `walk_one` validates every chunk
+length and requires an IEND, and the stage rebuilds the input and byte-compares before the
+payload is adopted. The same reasoning that made the ZIP anywhere-scan safe.
+
+## What this means for the other nested stages
+
+`jpeg_nested` and `gif_nested` still only look at offset 0, so they fire on base64-decoded
+payloads and not on container members. The same scan would work for both — JPEG is `FF D8 FF`
+and GIF is `GIF87a`/`GIF89a`, both far weaker signatures than PNG's eight bytes, so a scan for
+them needs the verify-by-rebuild to do more of the work. That is the next piece, and it is now
+a known shape rather than an open question.

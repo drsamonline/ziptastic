@@ -296,6 +296,11 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    one. The fix is either a loop over consecutive PNGs in the payload, or — better — letting
    the nested stages run before the gate that judges them, since `precomp_helps` compares the
    inflated member against the ZIP without knowing what the nested chain would do with it.
+   **RESOLVED the same session**: the fix was the anywhere-scan this project already uses for
+   archives inside tar — `png_unpack` no longer requires the signature at offset 0. A ZIP of
+   six PNGs goes **119,051 → 24,750 (−79.2%)**, round-trip exact, within 3% of the ideal.
+   The next piece is the same scan for `jpeg_nested`/`gif_nested`, which still only look at
+   offset 0 and so fire on base64 payloads but not on container members.
    **`layers2` is now full**: the next Layer 0 capability needs a third layer byte.
 11. **PNG and BMP — shipped the same session.** PNG image data inflated (preflate):
    −22.9% sprite / −68.8% gradient. BMP colour planes + row delta: −98.9% photographic,
