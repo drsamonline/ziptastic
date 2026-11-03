@@ -53,9 +53,11 @@ they compress to almost nothing under any transform, so they measured the fixtur
 transform. BMP was corrected first (−99.2% → −37% to −48%), then PNG, GIF and JPEG were checked
 the same way. Every number in the tables above is now from real content.
 
-**One regression this exposed**: a 1.2 KB UI-style PNG encodes to **336 bytes with the transform
-and 309 without it** — the PNG gate accepted a payload that the block encoder then made worse.
-Small files are where the gate's estimate is weakest; recorded as an open item below.
+**One regression this exposed, now fixed**: a 1.2 KB UI-style PNG encoded to **336 bytes with the
+transform and 309 without it** — the gate accepted a payload the block encoder then made worse,
+because on a file that small the block framing is a large fraction of the total. Below 2 MiB the
+encoder now also builds the untransformed stream and keeps whichever is smaller, so a transform
+cannot make a small file bigger. That file is **309 bytes** today.
 
 ## 3. Against the field
 
@@ -143,10 +145,10 @@ internals beyond their contracts, `main.cpp`, the match finder and parser.
 
 - ~~Re-measure PNG and GIF on real content.~~ **DONE** — see the note under the transform table.
   Every figure in this document is now from real content.
-- **The PNG gate accepts payloads that encode worse on small files**: a 1.2 KB UI PNG is 336
-  bytes with the transform, 309 without. The gate compares a coded estimate at the transform
-  stage; the block encoder's framing decides afterwards, and on a file this small the framing is
-  a large fraction of the total.
+- ~~The PNG gate accepts payloads that encode worse on small files.~~ **FIXED** — under 2 MiB the
+  encoder compares against the untransformed stream and keeps the smaller. The class of bug is
+  general: every gate compares coded payload sizes at its own stage, and none of them could see
+  the block framing that is added afterwards.
 - **`precomp_helps` accuracy.** Its structural rule (payload ≥ 2× original → accept) can take a
   payload that encodes worse; a Tier-0 guard now catches that case, but the rule itself is still
   a predictor.

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdio>
 #include <cstring>
 #include <thread>
 
@@ -1058,6 +1059,32 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
     return e;
   }
 
+  // Small-file guarantee: on a small input the block framing is a large fraction of the
+  // total, so a transform that genuinely helps the payload can still make the ARCHIVE
+  // bigger — measured at 336 bytes for a 1.2 KB PNG with the transform against 309 without.
+  // Each gate compares coded payload sizes at its own stage; nothing compared the finished
+  // streams. Below this threshold the comparison is cheap enough to always run, and it has
+  // to happen before the Tier-1 fallback because that path returns early with a stream of
+  // its own.
+  constexpr size_t kSmallEnoughToCheck = 2u << 20;
+  std::vector<uint8_t> untransformed;
+  const bool check_plain = input.size() <= kSmallEnoughToCheck &&
+                           (layers != 0 || layers2 != 0 || layers3 != 0);
+  if (check_plain) {
+    CompressOptions plain_opt = opt;
+    plain_opt.precomp = false;
+    plain_opt.numeric = false;
+    plain_opt.base64 = false;
+    plain_opt.wav = false;
+    plain_opt.bmp = false;
+    plain_opt.ecc = false;
+    plain_opt.sqlite = false;
+    plain_opt.jpeg = false;
+    plain_opt.gif = false;
+    CompressStats us;
+    if (compress(input, untransformed, plain_opt, &us) != Err::Ok) untransformed.clear();
+  }
+
   // Tier-1 guarantee: if LZMA2 does better on the whole stream, ship that.
   // Comparison is on total stream size, framing included, so the promise is
   // about the bytes the user actually gets.
@@ -1073,6 +1100,9 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
       fb.lzma2_stream = true;
       out = std::move(fallback);
       if (stats) *stats = fb;
+      if (check_plain && !untransformed.empty() && untransformed.size() < out.size()) {
+        out = std::move(untransformed);
+      }
       return Err::Ok;
     }
     // A codec failure is not fatal: the native encoding is still valid, so we
@@ -1157,6 +1187,9 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   }
 
   out = std::move(native);
+  if (check_plain && !untransformed.empty() && untransformed.size() < out.size()) {
+    out = std::move(untransformed);
+  }
   if (stats) *stats = local;
   return Err::Ok;
 }
