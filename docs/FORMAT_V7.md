@@ -1,3 +1,7 @@
+> **Superseded for current figures by [`FINDINGS.md`](FINDINGS.md).** This document is the
+> working record — how the number was arrived at and what was corrected along the way. Where the
+> two disagree, `FINDINGS.md` is right.
+
 # Format v7: a third layer byte, and the bit it makes room for
 
 Written 2026-11-03. `layers` and `layers2` are both full, so the next Layer 0 capability needs

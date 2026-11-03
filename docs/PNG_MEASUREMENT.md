@@ -1,3 +1,7 @@
+> **Superseded for current figures by [`FINDINGS.md`](FINDINGS.md).** This document is the
+> working record — how the number was arrived at and what was corrected along the way. Where the
+> two disagree, `FINDINGS.md` is right.
+
 # PNG image data inflated through preflate — shipped
 
 Written 2026-11-02. Layer bit `kLayer2Png` (layers2 bit 4).

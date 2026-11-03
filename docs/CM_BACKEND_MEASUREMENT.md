@@ -1,3 +1,7 @@
+> **Superseded for current figures by [`FINDINGS.md`](FINDINGS.md).** This document is the
+> working record — how the number was arrived at and what was corrected along the way. Where the
+> two disagree, `FINDINGS.md` is right.
+
 # The CM backend is worth 6–8%, not the 1–3% it was budgeted at
 
 Written 2026-11-02. `SESSION_HANDOFF.md` listed the context-mixing backend **last**, with

@@ -1,3 +1,7 @@
+> **Superseded for current figures by [`FINDINGS.md`](FINDINGS.md).** This document is the
+> working record — how the number was arrived at and what was corrected along the way. Where the
+> two disagree, `FINDINGS.md` is right.
+
 # PNG one level down: the bit is in, the gain is not — and why
 
 Written 2026-11-03. `kLayer2PngNested` (layers2 bit 7, the last free bit) is implemented and

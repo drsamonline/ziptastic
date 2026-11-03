@@ -1,3 +1,7 @@
+> **Superseded for current figures by [`FINDINGS.md`](FINDINGS.md).** This document is the
+> working record — how the number was arrived at and what was corrected along the way. Where the
+> two disagree, `FINDINGS.md` is right.
+
 # Two tool suggestions, measured: lrzip for srep, and the PNG optimisers
 
 Written 2026-11-03, in answer to "can lrzip replace srep" and the oxipng/optipng/

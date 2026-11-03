@@ -1,3 +1,7 @@
+> **Superseded for current figures by [`FINDINGS.md`](FINDINGS.md).** This document is the
+> working record — how the number was arrived at and what was corrected along the way. Where the
+> two disagree, `FINDINGS.md` is right.
+
 # Format v6: the header now says how big the answer is
 
 Written 2026-11-03. One field, and it closes the largest hole the audit found.

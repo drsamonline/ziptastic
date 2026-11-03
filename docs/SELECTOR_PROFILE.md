@@ -1,3 +1,7 @@
+> **Superseded for current figures by [`FINDINGS.md`](FINDINGS.md).** This document is the
+> working record — how the number was arrived at and what was corrected along the way. Where the
+> two disagree, `FINDINGS.md` is right.
+
 # Where the try-everything selector spends its time
 
 Written 2026-11-02, before attempting to parallelise it. Measured on a 1 MB English

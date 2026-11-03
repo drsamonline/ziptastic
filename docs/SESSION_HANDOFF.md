@@ -1,3 +1,7 @@
+**Read `docs/FINDINGS.md` first.** It is the single authoritative record — current numbers,
+the audit, the rejected ideas and what is open. This handoff is the working document; where the
+two disagree, `FINDINGS.md` wins.
+
 # Session handoff — ziptastic / heavenzip / lexora
 
 Written 2026-11-01, end of session. Read this first in a new session; everything

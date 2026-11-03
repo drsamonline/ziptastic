@@ -1,3 +1,7 @@
+> **Superseded for current figures by [`FINDINGS.md`](FINDINGS.md).** This document is the
+> working record — how the number was arrived at and what was corrected along the way. Where the
+> two disagree, `FINDINGS.md` is right.
+
 # Against the field: ziptastic vs zstd -19
 
 Written 2026-11-03. The project has spent a year measuring itself against itself. This is

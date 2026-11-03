@@ -1,3 +1,7 @@
+> **Superseded for current figures by [`FINDINGS.md`](FINDINGS.md).** This document is the
+> working record — how the number was arrived at and what was corrected along the way. Where the
+> two disagree, `FINDINGS.md` is right.
+
 # Tier-0: never worse than a plain compressor
 
 Written 2026-11-03. A small guard on the one path where a predictor decides alone.

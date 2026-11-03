@@ -1,3 +1,7 @@
+> **Superseded for current figures by [`FINDINGS.md`](FINDINGS.md).** This document is the
+> working record — how the number was arrived at and what was corrected along the way. Where the
+> two disagree, `FINDINGS.md` is right.
+
 # ECM for raw CD images: measured at 31%, not the 12% we assumed
 
 Written 2026-11-02. `SESSION_HANDOFF.md` listed "ECM for **raw** CD images only (~12%)"

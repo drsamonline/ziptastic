@@ -1,3 +1,7 @@
+> **Superseded for current figures by [`FINDINGS.md`](FINDINGS.md).** This document is the
+> working record — how the number was arrived at and what was corrected along the way. Where the
+> two disagree, `FINDINGS.md` is right.
+
 # Moving the precomp gate: attempted, reverted, and what it taught
 
 Written 2026-11-03. `JPEG_NESTED.md` and `PNG_NESTED.md` both ended with the same claim: the

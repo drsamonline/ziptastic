@@ -1,3 +1,7 @@
+> **Superseded for current figures by [`FINDINGS.md`](FINDINGS.md).** This document is the
+> working record — how the number was arrived at and what was corrected along the way. Where the
+> two disagree, `FINDINGS.md` is right.
+
 # BMP colour planes: 98.9% on a photographic image, declined on a sprite sheet
 
 Written 2026-11-02. Layer bit `kLayer2Bmp` (layers2 bit 6).

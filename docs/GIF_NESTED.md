@@ -1,3 +1,7 @@
+> **Superseded for current figures by [`FINDINGS.md`](FINDINGS.md).** This document is the
+> working record — how the number was arrived at and what was corrected along the way. Where the
+> two disagree, `FINDINGS.md` is right.
+
 # GIF one level down: the same scan, and the same class of bug
 
 Written 2026-11-03, the third of the nested-image series after `PNG_NESTED.md` and

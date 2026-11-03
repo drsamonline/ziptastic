@@ -1,3 +1,6 @@
+> **The authoritative record is [`FINDINGS.md`](FINDINGS.md).** This page is the map of the
+> engine; that one is the current numbers, the audit and what is open.
+
 # State of the engine — everything in one place
 
 Written 2026-11-02. This is the map: every Layer 0 transform, its bit, what it measured,
