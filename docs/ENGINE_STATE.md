@@ -89,6 +89,19 @@ real binary: round trips, layer-bit assertions, split parts, corruption paths.
 - **CM backend** last: 1–3% ceiling, hundreds of times slower.
 - **WAV chunk-level** work (LIST/INFO, `fact`), and audio formats beyond PCM/float.
 
+## Against the field
+
+| file | `-9` | zstd `-19` | difference |
+|---|---|---|---|
+| 2 MB English prose | 408,418 | 546,717 | **−25.3%** |
+| 6.8 MB sheet XML | 70,086 | 390,673 | **−82.1%** |
+| 4.8 MB cooked ISO | 3,333,900 | 3,352,732 | **−0.6%** |
+
+`docs/VS_THE_FIELD.md`. The pattern matters more than the headline: the gain comes from
+format-aware transforms, and on data with neither a format nor redundancy there is almost
+nothing to win. `xz`/`7z` are not installed here, so the LZMA-class comparison is still
+owed.
+
 ## The three habits this project keeps re-learning
 
 1. **Measure before building.** Every transform here that shipped had a number before it
