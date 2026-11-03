@@ -919,6 +919,24 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
       }
     }
   }
+  // PNG one level down. A ZIP of PNGs is the common case: precomp inflates the member and
+  // hands us the PNG bytes, and without this stage the PNG's own DEFLATE is compressed as
+  // if it were opaque — a second compression layer nothing removes. Measured at -79.9%.
+  bool png_nested = false;
+  if ((precomp || gzip) && opt.precomp && png_available() && !precomp_payload.empty() &&
+      png_likely(precomp_payload)) {
+    std::vector<uint8_t> payload;
+    if (png_unpack(precomp_payload, payload)) {
+      std::vector<uint8_t> check;
+      if (png_repack(payload, check) && check.size() == precomp_payload.size() &&
+          std::memcmp(check.data(), precomp_payload.data(), precomp_payload.size()) == 0 &&
+          precomp_helps(payload, precomp_payload)) {
+        precomp_payload = std::move(payload);
+        png_nested = true;
+      }
+    }
+  }
+
   bool gif_nested = false;
   if ((precomp || gzip) && opt.gif && gif_available() && !precomp_payload.empty()) {
     std::vector<uint8_t> packed;
@@ -959,7 +977,8 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
                           (jpeg_nested ? kLayer2JpegNested : 0) |
                           (gif_nested ? kLayer2GifNested : 0) |
                           (png ? kLayer2Png : 0) | (ecc ? kLayer2Ecc : 0) |
-                          (bmp ? kLayer2Bmp : 0);
+                          (bmp ? kLayer2Bmp : 0) |
+                          (png_nested ? kLayer2PngNested : 0);
   const uint8_t layers = (numeric_csv ? kLayerNumeric : 0) |
                          (numeric_nested ? kLayerNumericNested : 0) |
                          (xml_numeric ? kLayerXmlNumeric : 0) |

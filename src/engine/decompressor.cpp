@@ -404,6 +404,14 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     dst = std::move(original);
     if (!within_cap(dst)) return Err::SizeMismatch;
   }
+  // PNG one level down was applied after the nested base64 and before the image stages,
+  // so it is undone after them.
+  if ((fh.layers2 & kLayer2PngNested) != 0) {
+    std::vector<uint8_t> original;
+    if (!png_repack(dst, original)) return Err::Corrupt;
+    dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
+  }
   // base64 one level down was applied after the second container level and before
   // the nested numeric transforms, so it is undone between them.
   if ((fh.layers2 & kLayer2Base64Nested) != 0) {

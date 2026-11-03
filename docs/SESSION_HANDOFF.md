@@ -289,6 +289,14 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    file (70,086 → 6,437). So the gate is not "it never wins" — it wins on large structured
    multi-block files — and what is left is a **cost rule** (the stream pass triples the run
    on that file), not a gate.
+10b. **PNG one level down — bit taken, gain not realised.** `docs/PNG_NESTED.md`.
+   `kLayer2PngNested` (layers2 bit 7) is wired and round-trips, but measures **0.0%** on a ZIP
+   of six PNGs where the ideal is **−79.9%**. Precomp fires (`flags 0x05`) and hands over a
+   payload of *six concatenated PNGs*, and `png_unpack` only accepts a payload that is exactly
+   one. The fix is either a loop over consecutive PNGs in the payload, or — better — letting
+   the nested stages run before the gate that judges them, since `precomp_helps` compares the
+   inflated member against the ZIP without knowing what the nested chain would do with it.
+   **`layers2` is now full**: the next Layer 0 capability needs a third layer byte.
 11. **PNG and BMP — shipped the same session.** PNG image data inflated (preflate):
    −22.9% sprite / −68.8% gradient. BMP colour planes + row delta: −98.9% photographic,
    declined on a sprite sheet (the clearest case of a transform that is right for one image

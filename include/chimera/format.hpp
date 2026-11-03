@@ -138,11 +138,16 @@ enum LayerFlags2 : uint8_t {
   // flat, tiled sprite sheet is already trivial to compress and the split makes it
   // worse, while a photographic image gains 98.9%.
   kLayer2Bmp = 1u << 6,
+  // PNG one level down: a PNG inside a ZIP is inflated by precomp, and until this bit
+  // existed the PNG's own DEFLATE was left alone. Measured at -79.9% on a ZIP of six
+  // PNGs, because the archive then stores pixels instead of a second compression layer.
+  // This is the last free bit in layers2.
+  kLayer2PngNested = 1u << 7,
 };
 
 inline constexpr uint8_t kLayerMask2 =
     kLayer2Sqlite | kLayer2Base64Nested | kLayer2JpegNested | kLayer2GifNested |
-    kLayer2Png | kLayer2Ecc | kLayer2Bmp;
+    kLayer2Png | kLayer2Ecc | kLayer2Bmp | kLayer2PngNested;
 
 inline constexpr uint8_t kFlagMask =
     kFlagCoarse | kFlagMaxRatio | kFlagPrecomp | kFlagBcj | kFlagParallel | kFlagDedup | kFlagJpeg | kFlagGif;
