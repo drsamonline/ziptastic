@@ -467,7 +467,13 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   out = std::move(dst);
   if (report) {
     report->blocks = blocks;
-    report->original_size = fh.original_size;
+    // The size the CALLER gets, not the size the header declares. Those differ whenever
+    // a Layer 0 transform ran, because the header counts the compressed-domain payload
+    // and the output is what the inverse chain rebuilt. Reporting the header value made
+    // `DecompressReport::original_size` disagree with the bytes in `out` for every
+    // transformed stream — found by fuzzing streams built with precomp on, which the
+    // original fuzz test never did (it used default options, where precomp is false).
+    report->original_size = out.size();
   }
   return Err::Ok;
 }

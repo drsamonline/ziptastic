@@ -108,3 +108,35 @@ declaring 2^40 with no commands must be refused, produce nothing, and be refused
 fails on time as well as on the return value.
 
 With that, no decoder path allocates from a number the stream declares about itself.
+
+## The fuzz test was not fuzzing the transforms
+
+`tests/unit/test_fuzz.cpp` has mutated 1,000 streams since it was written — but it built
+them with **default options**, and `CompressOptions::precomp` defaults to `false`. So no
+Layer 0 transform ever ran in it, and **not one transform inverse function was being
+fuzzed**. Those are the parsers that read attacker-controlled structures — PNG chunks, BMP
+headers, CD sectors, gzip members, base64 runs — which is exactly where a crash would live.
+
+Two tests added:
+
+- `layered_streams_survive_mutation` builds a stream with `precomp = true` over a payload
+  containing base64, a gzip member and binary noise, then mutates it 600 times.
+- `every_unpacker_refuses_random_payloads` feeds 300 random buffers straight into
+  `dedup_unpack`, `numeric_unpack`, `wav_unpack` and `gif_unpack`, and asserts each either
+  refuses or produces something — never a silent empty success.
+
+## Two bugs it found immediately
+
+**1. `DecompressReport::original_size` lied for every transformed stream.** It reported the
+header's `original_size`, which counts the *compressed-domain* payload, while `out` holds
+what the inverse chain rebuilt. On a 2,684-byte stream with transforms on, the report said
+2,684 and the output was 3,351 bytes. The field now reports the size the caller actually
+gets. The bug was invisible to the old fuzz test because no transform ever ran in it.
+
+**2. `dedup_unpack` accepted an empty encoding.** A payload declaring `total = 0` with no
+commands returned `true` and produced nothing, so a caller could replace real data with an
+empty buffer. Not exploitable — the block digest covers the payload before the inverse runs
+— but it is the wrong answer to "is this a valid dedup stream", and it is now refused.
+
+Both were found within a minute of the first run. That is the argument for fuzzing the
+options the product actually uses, not the defaults.

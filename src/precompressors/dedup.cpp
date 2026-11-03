@@ -112,6 +112,7 @@ bool dedup_unpack(std::span<const uint8_t> packed, std::vector<uint8_t>& out) {
   size_t pos = 0;
   uint64_t total = 0;
   if (!get_varint(packed, pos, total)) return false;
+  if (total == 0) return false;  // an empty encoding is not a dedup of anything
   if (total > (uint64_t{1} << 40)) return false;
 
   out.clear();

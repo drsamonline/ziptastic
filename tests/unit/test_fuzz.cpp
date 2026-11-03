@@ -10,6 +10,10 @@
 #include "engine/compressor.hpp"
 #include "engine/decompressor.hpp"
 #include "harness.hpp"
+#include "precompressors/dedup.hpp"
+#include "precompressors/gif_wrap.hpp"
+#include "precompressors/numeric_wrap.hpp"
+#include "precompressors/wav_wrap.hpp"
 
 using namespace chce;
 
@@ -135,6 +139,82 @@ TEST(garbage_inputs) {
     // Half of them get a valid magic so the block parser is reached.
     if (i % 2 == 0 && n >= 4) std::memcpy(buf.data(), kMagic, 4);
     decode_and_check(buf);
+  }
+}
+
+// The fuzz above compresses with DEFAULT options, which means `precomp` is false and no
+// Layer 0 transform runs — so none of the transform INVERSE functions were being fuzzed at
+// all. Those are the parsers that read attacker-controlled structures (PNG chunks, BMP
+// headers, CD sectors, gzip members, base64 runs), and they are the most likely place for a
+// crash to hide.
+//
+// This builds a stream with every transform enabled, then mutates it, and separately feeds
+// random bytes straight into each unpacker.
+namespace {
+
+std::vector<uint8_t> layered_sample() {
+  // A little of everything: base64, a gzip member, a BMP and a PNG, plus plain bytes.
+  chce_test::Rng rng(4242);
+  std::vector<uint8_t> data;
+  const char* b64 = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5eg==";
+  for (int i = 0; i < 40; ++i) {
+    data.insert(data.end(), b64, b64 + std::strlen(b64));
+    data.push_back('\n');
+  }
+  // A small valid gzip member.
+  {
+    static const uint8_t gz[] = {0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03,
+                                 0x4b, 0x4c, 0x4a, 0x4e, 0x49, 0x4d, 0x4b, 0xcf, 0xc8, 0x2c,
+                                 0x2e, 0x01, 0x00, 0x1e, 0x6c, 0x3d, 0x2c, 0x0b, 0x00, 0x00,
+                                 0x00};
+    data.insert(data.end(), gz, gz + sizeof(gz));
+  }
+  for (int i = 0; i < 400; ++i) data.push_back(static_cast<uint8_t>(rng.byte()));
+  return data;
+}
+
+}  // namespace
+
+TEST(layered_streams_survive_mutation) {
+  const std::vector<uint8_t> data = layered_sample();
+  CompressOptions opt;
+  opt.block_size = 4096;
+  opt.precomp = true;  // every Layer 0 transform is allowed
+  opt.base64 = true;
+  std::vector<uint8_t> base;
+  CHECK_ERR(compress(data, base, opt, nullptr), Err::Ok);
+
+  chce_test::Rng rng(99);
+  const Mutation kinds[] = {Mutation::FlipBit, Mutation::SetByte, Mutation::Insert,
+                            Mutation::Delete,  Mutation::Truncate, Mutation::ZeroRun};
+  for (int i = 0; i < 600; ++i) {
+    auto buf = base;
+    const int rounds = 1 + static_cast<int>(rng.below(3));
+    for (int k = 0; k < rounds; ++k) apply(buf, rng, kinds[rng.below(6)]);
+    decode_and_check(buf);
+  }
+}
+
+TEST(every_unpacker_refuses_random_payloads) {
+  chce_test::Rng rng(5150);
+  for (int i = 0; i < 300; ++i) {
+    std::vector<uint8_t> payload(static_cast<size_t>(rng.below(512)));
+    for (auto& b : payload) b = rng.byte();
+
+    std::vector<uint8_t> out;
+    // Each of these must return (true or false) without crashing, and a `true` must
+    // produce something — never a partial buffer that a caller could trust.
+    const bool a = dedup_unpack(payload, out);
+    CHECK_MSG(!a || !out.empty(), "dedup_unpack returned true with no output");
+    out.clear();
+    const bool b = numeric_unpack(payload, out);
+    CHECK_MSG(!b || !out.empty(), "numeric_unpack returned true with no output");
+    out.clear();
+    const bool c = wav_unpack(payload, out);
+    CHECK_MSG(!c || !out.empty(), "wav_unpack returned true with no output");
+    out.clear();
+    const bool d = gif_unpack(payload, out);
+    CHECK_MSG(!d || !out.empty(), "gif_unpack returned true with no output");
   }
 }
 
