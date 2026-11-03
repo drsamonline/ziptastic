@@ -278,6 +278,21 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
     manifest.add(h);
   };
 
+  // Write a block, and refuse to write one whose header disagrees with its body.
+  //
+  // Every candidate sets `compressed_size` by hand, and nothing checked it against the
+  // bytes actually written: the digest covers the plaintext, not this. A backend added
+  // later that sets the size before a final tweak to the body produces a stream whose
+  // header lies, and the decoder reads the wrong number of bytes — the next block's
+  // header lands mid-payload and the failure surfaces somewhere unrelated. One comparison
+  // here turns that into an immediate, named error at the only place it can be caught.
+  auto write_block = [](ByteWriter& out, const EncodedBlock& e) -> Err {
+    if (e.hdr.compressed_size != e.body.size()) return Err::SizeMismatch;
+    write_block_header(out, e.hdr);
+    out.bytes(e.body);
+    return Err::Ok;
+  };
+
   if (parallel) {
     // Parallel mode. Every block is encoded against itself: its own match
     // finder over its own slice, no coarse index, no carried dictionary. Blocks
@@ -316,8 +331,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
       const size_t pos = b * opt.block_size;
       const size_t n = std::min(opt.block_size, input.size() - pos);
       seal(encoded[b].hdr, input.subspan(pos, n));
-      write_block_header(w, encoded[b].hdr);
-      w.bytes(encoded[b].body);
+      if (Err e = write_block(w, encoded[b]); e != Err::Ok) return e;
       account(encoded[b]);
     }
   } else {
@@ -337,8 +351,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
                                            opt.coarse ? &coarse : nullptr, opt,
                                            &stats);
       seal(best.hdr, input.subspan(pos, n));
-      write_block_header(w, best.hdr);
-      w.bytes(best.body);
+      if (Err e = write_block(w, best); e != Err::Ok) return e;
       account(best);
       pos += n;
     }
@@ -1039,6 +1052,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
       bh.sha256 = sha256(data);
       BlockManifest manifest;
       manifest.add(bh);
+      if (bh.compressed_size != packed.size()) return Err::SizeMismatch;
       write_block_header(cw, bh);
       cw.bytes(packed);
       write_trailer(cw, 1, manifest.digest());

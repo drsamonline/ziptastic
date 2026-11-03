@@ -102,7 +102,39 @@ cannot be dedup, which must be refused **in under two seconds**.
 ceiling becomes an exact check. Recorded here so the mitigation is not mistaken for the
 solution.
 
-## C. The selector — not yet read
+## C. The selector — read
+
+### C1. Candidate size vs body — **FINDING 5: nothing checked it**
+
+Every candidate sets `hdr.compressed_size` by hand, and `write_block_header` then writes that
+number followed by `body`. **Nothing compared the two.** The per-block SHA-256 covers the
+*plaintext*, not this, so a candidate whose header disagreed with its body would produce a
+stream that reads the wrong number of bytes at decode — the next block header lands
+mid-payload, and the failure surfaces somewhere unrelated to the cause.
+
+No current backend does this; the risk is the next one. A backend that computes its size
+before a final tweak to the body is an easy mistake, and the symptom would be a corrupt
+archive rather than a failed build.
+
+**Fixed**: a `write_block` helper compares `compressed_size` with `body.size()` and returns
+`Err::SizeMismatch` before a byte is written. Used by the parallel loop, the archive loop and
+the whole-stream CM path — the only three places a block is written.
+
+### C2. Failed candidates are dropped — checked, no finding
+
+Every backend appends a candidate only when its compressor returns true. No half-built
+candidate can enter the list.
+
+### C3. Never larger than RAW, and Tier-1 on the total stream — checked, no finding
+
+`std::min_element` over the candidate list, which always contains the RAW candidate first, so
+the chosen body is never larger than the block. The Tier-1 guarantee is a separate comparison
+on the **total stream including framing**, which is where it belongs.
+
+### C4. `--max-ratio`'s second pass — checked, no finding
+
+It replaces the stream only when `cw.size() < native.size()`, strictly smaller, and now also
+checks its own header/body consistency before writing.
 
 ## D. Options and defaults — **FINDING 3 (known, not yet systematic)**
 
