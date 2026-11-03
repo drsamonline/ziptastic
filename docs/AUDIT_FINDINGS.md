@@ -227,6 +227,48 @@ The additions that matter are done in `uint64_t` and compared before use
 `bh.uncompressed_size > fh.original_size - produced`). The last is the overflow-safe form:
 it subtracts rather than adds.
 
-## F. The parallel path — not yet read
+## F. The parallel path — read
+
+### F2. Shared state between workers — **FINDING 8: a data race on `stats.tokens`**
+
+Listed everything the block workers touch:
+
+| object | sharing | verdict |
+|---|---|---|
+| `encoded[b]` | one element per block, written by whichever worker takes it | safe — distinct objects |
+| `next` | `std::atomic<size_t>` | safe |
+| `finder`, `model`, `local` | constructed inside the worker | safe |
+| `input`, `opt` | read-only | safe |
+| `bwt_bsc` init | `std::call_once` | safe |
+| **`stats.tokens`** | **`+=` from every worker** | **data race** |
+
+`stats.tokens += local.tokens` inside the worker is a non-atomic read-modify-write on a
+shared struct: undefined behaviour, and a lost update in practice, so the `-v` token count
+drifted with thread scheduling.
+
+**Fixed**: per-block counts go into a `std::vector<uint64_t>` indexed by block, summed after
+the join. No atomics, no contention, and the value is now deterministic.
+
+`parallel_token_count_is_deterministic` pins it — five runs over 16 blocks must agree — and
+writing that test turned up two things worth keeping:
+
+- The first fixture was incompressible bytes, where the parser legitimately produces **zero**
+  tokens, so the "tokens > 0" guard proved nothing.
+- The second fixture compressed so well that the **Tier-1 fallback won**, and the stats then
+  describe the *fallback* stream (one block, no tokens) rather than the parallel one. The
+  test now disables the fallback so it measures what it claims to.
+
+### F1. Parallel and sequential agree — checked, and they are not supposed to
+
+The two modes are documented as producing different bytes by design: parallel blocks are
+self-contained (no cross-block matches, no coarse index, no carried dictionary) while archive
+mode keeps them coupled for ratio. That is a documented, intentional difference, not a
+divergence to be tested away. Both round-trip exactly, which the existing tests cover.
+
+### F3. The concurrent fallback — moot
+
+The experiment that ran the Tier-1 fallback on a second thread was measured and **reverted**
+(`CONCURRENT_FALLBACK.md`): it was 9% slower on this machine. There is no second thread in the
+shipped encoder, so there is no half-initialised state to audit.
 
 ## G. Integrity and reporting — one instance found (A4); not yet systematic

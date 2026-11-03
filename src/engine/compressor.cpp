@@ -304,6 +304,12 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
     if (nt > nblocks) nt = static_cast<unsigned>(nblocks);
 
     std::atomic<size_t> next{0};
+    // Per-block token counts, summed after the join. The obvious `stats.tokens +=
+    // local.tokens` inside the worker is a data race on a shared struct — undefined
+    // behaviour, and a lost update in practice, so the `-v` token count drifted with the
+    // thread scheduling. Everything else the workers touch is either indexed by block
+    // (`encoded[b]`) or constructed inside the worker.
+    std::vector<uint64_t> tokens_by_block(nblocks, 0);
     auto worker = [&]() {
       for (;;) {
         const size_t b = next.fetch_add(1, std::memory_order_relaxed);
@@ -318,7 +324,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
         StaticCostModel model(view, /*coarse_discount=*/0);
         CompressStats local;
         encoded[b] = encode_one_block(view, 0, n, finder, model, nullptr, opt, &local);
-        stats.tokens += local.tokens;
+        tokens_by_block[b] = local.tokens;
       }
     };
 
@@ -326,6 +332,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
     pool.reserve(nt);
     for (unsigned i = 0; i < nt; ++i) pool.emplace_back(worker);
     for (auto& t : pool) t.join();
+    for (uint64_t t : tokens_by_block) stats.tokens += t;
 
     for (size_t b = 0; b < nblocks; ++b) {
       const size_t pos = b * opt.block_size;

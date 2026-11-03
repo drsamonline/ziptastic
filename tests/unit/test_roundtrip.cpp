@@ -406,4 +406,40 @@ TEST(a_legitimate_multi_block_stream_still_decodes) {
   CHECK_MSG(back == data, "multi-block round-trip mismatch");
 }
 
+// Parallel mode hands each block to a worker thread, and every worker used to do
+// `stats.tokens += local.tokens` on the shared stats struct — a data race and a lost
+// update, so the count drifted with thread scheduling. Summing per-block counts after the
+// join makes it deterministic; this pins that.
+TEST(parallel_token_count_is_deterministic) {
+  // Repetitive text, so the parser certainly produces tokens: with incompressible bytes
+  // the token count can legitimately be zero and the guard below would prove nothing.
+  std::vector<uint8_t> data;
+  const char* line = "the quick brown fox jumps over the lazy dog. ";
+  while (data.size() < 64 * 1024) {
+    data.insert(data.end(), line, line + std::strlen(line));
+  }
+  CompressOptions opt;
+  opt.parallel = true;
+  opt.block_size = 4096;  // 16 blocks, so several workers take work
+  // The Tier-1 fallback would otherwise win on text this repetitive and the stats would
+  // describe the fallback stream (one block, no tokens) rather than the parallel one.
+  opt.lzma2_fallback = false;
+
+  uint64_t first = 0;
+  for (int run = 0; run < 5; ++run) {
+    std::vector<uint8_t> packed, back;
+    CompressStats stats;
+    CHECK_ERR(compress(data, packed, opt, &stats), Err::Ok);
+    CHECK_ERR(decompress(packed, back), Err::Ok);
+    CHECK_MSG(back == data, "parallel round trip differs");
+    if (run == 0) {
+      first = stats.tokens;
+      CHECK_MSG(first > 0, "no tokens were counted in parallel mode");
+    } else {
+      CHECK_MSG(stats.tokens == first,
+                "parallel token count is not deterministic — a worker is sharing state");
+    }
+  }
+}
+
 TEST_MAIN()
