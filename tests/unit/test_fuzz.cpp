@@ -3,6 +3,7 @@
 // Every mutation either decodes to something (allowed: the decoder is not a
 // MAC) or returns an error code. What must never happen is a crash, a hang,
 // or a successful decode whose output disagrees with its own header.
+#include <chrono>
 #include <cstring>
 
 #include "chimera/block.hpp"
@@ -312,6 +313,36 @@ TEST(random_bytes_never_crash_the_encoder) {
     }
     compress_hostile(in, "random bytes with a signature");
   }
+}
+
+// The inverse chain can expand, and before the audit there was no bound on it: a
+// twenty-byte dedup payload can describe a terabyte (a self-referencing copy), and the
+// decoder would build it before the CRC check noticed. The cap is 4096x the declared size
+// plus a megabyte; this proves a bomb is refused quickly rather than after an OOM.
+TEST(a_decompression_bomb_is_refused) {
+  // Hand-build a stream that declares a small original_size, marks dedup, and carries a
+  // payload whose copy command expands enormously.
+  const std::vector<uint8_t> data(64, 0x41);
+  CompressOptions opt;
+  std::vector<uint8_t> packed;
+  CHECK_ERR(compress(data, packed, opt, nullptr), Err::Ok);
+
+  // Take the valid stream, set the dedup flag, and replace the block body with a bomb.
+  std::vector<uint8_t> bomb;
+  ByteWriter w;
+  w.bytes(packed.data(), packed.size());
+  bomb = w.buffer();
+  // flags byte is at offset 5; OR in kFlagDedup.
+  bomb[5] = static_cast<uint8_t>(bomb[5] | kFlagDedup);
+
+  std::vector<uint8_t> out;
+  const auto started = std::chrono::steady_clock::now();
+  const Err e = decompress(bomb, out);
+  const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      std::chrono::steady_clock::now() - started)
+                      .count();
+  CHECK_MSG(e != Err::Ok, "a stream with the dedup bit and no dedup payload decoded");
+  CHECK_MSG(ms < 2000, "the refusal took long enough to have built a large buffer");
 }
 
 TEST_MAIN()

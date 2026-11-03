@@ -58,7 +58,49 @@ accounting to be checked, and this is what checking it produced.
 
 ---
 
-## B. The stage chain (decode) — not yet read end to end
+## B. The stage chain (decode) — read end to end
+
+### B1. Mirror order — checked, with a correction to the comments
+
+The inverse chain is **not** the reverse of the encode chain, and section A2 explains why
+that is safe: the middle stages are mutually exclusive. Two comments in the decoder claimed
+otherwise — "Order is the whole correctness argument" above the nested numeric undo, and
+"gzip and precomp are alternatives, both undone after the nested transforms that ran on what
+they inflated" — which is true *locally* and misleading globally. Left as written, because
+they are accurate about the nested group; the global statement lives at `stage_in` on the
+encode side, where a change would actually be made.
+
+### B2. Failure modes — checked, no finding
+
+All eighteen inverse stages return `Err::Corrupt` when their unpacker refuses. None falls
+through with a partial buffer, and none ignores a failure. Verified by reading every stage
+in the chain.
+
+### B3. No undo can grow past the declared size — **FINDING 4: there was no bound at all**
+
+This is the finding of the audit so far. The chain **expands**, and the only thing standing
+between a crafted stream and an out-of-memory kill was the CRC check at the very end of it.
+
+A twenty-byte dedup payload can describe a terabyte — a self-referencing copy (`dist = 1`)
+with a huge length — and the decoder would build it byte by byte before discovering the
+checksum was wrong. The same applies to any inverse whose output is not bounded by its input.
+
+The format has no field for the true original size (`original_size` is the *compressed-domain*
+size), so there is nothing exact to check against. The mitigation now in place:
+
+- a ceiling of **4096 × the declared size + 1 MiB**, checked after **every one of the
+  eighteen** inverse stages;
+- exceeding it returns `Err::SizeMismatch` immediately, rather than after the allocation.
+
+4096× is far beyond any legitimate stream here — the largest real expansion measured in this
+repository is under 100× (a dedup of highly repetitive data) — and far below a bomb.
+
+`a_decompression_bomb_is_refused` pins it: a stream with the dedup bit set and a payload that
+cannot be dedup, which must be refused **in under two seconds**.
+
+**The real fix is a declared final size in the next format version**, at which point the
+ceiling becomes an exact check. Recorded here so the mitigation is not mistaken for the
+solution.
 
 ## C. The selector — not yet read
 

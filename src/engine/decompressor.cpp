@@ -345,6 +345,25 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   if (!r.at_end()) return Err::TrailingData;
   }  // end of the sequential (archive-mode) block loop
 
+  // The inverse chain can EXPAND, and until this guard existed the only thing standing
+  // between a crafted stream and an out-of-memory kill was the CRC check at the very end.
+  // A twenty-byte dedup payload can legitimately describe a terabyte (a self-referencing
+  // copy), and the decoder would build it byte by byte before discovering the checksum
+  // was wrong.
+  //
+  // The format has no field for the true original size — `original_size` is the
+  // compressed-domain size — so there is nothing exact to check against. What there is, is
+  // a generous ceiling: no real transform here expands by more than a few hundred times,
+  // so 4096x the declared size plus a megabyte is far beyond any legitimate stream and far
+  // below a bomb. A declared final size in a future format version is the real fix; this
+  // is the mitigation that makes the current one safe.
+  const uint64_t kMaxExpansion = 4096;
+  const uint64_t expansion_cap =
+      fh.original_size * kMaxExpansion + (uint64_t{1} << 20);
+  auto within_cap = [&](const std::vector<uint8_t>& buf) {
+    return static_cast<uint64_t>(buf.size()) <= expansion_cap;
+  };
+
   // Undo the Layer 0 transforms in the reverse order they were applied:
   // BCJ first, then DEFLATE recompression.
   if ((fh.flags & kFlagBcj) != 0) {
@@ -361,11 +380,13 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     std::vector<uint8_t> original;
     if (!numeric_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
   }
   if ((fh.layers & kLayerXmlNested) != 0) {
     std::vector<uint8_t> original;
     if (!xml_numeric_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
   }
   // Image transforms one level down were applied last of the nested stages, so they
   // are undone first among them.
@@ -373,11 +394,13 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     std::vector<uint8_t> original;
     if (!gif_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
   }
   if ((fh.layers2 & kLayer2JpegNested) != 0) {
     std::vector<uint8_t> original;
     if (!jpeg_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
   }
   // base64 one level down was applied after the second container level and before
   // the nested numeric transforms, so it is undone between them.
@@ -385,6 +408,7 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     std::vector<uint8_t> original;
     if (!base64_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
   }
   // The second container level was applied before the nested numeric transforms,
   // so it is undone after them and before the container that held it.
@@ -392,6 +416,7 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     std::vector<uint8_t> original;
     if (!preflate_repack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
   }
   // gzip and precomp are alternatives, both undone after the nested transforms
   // that ran on what they inflated.
@@ -399,57 +424,68 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     std::vector<uint8_t> original;
     if (!gzip_repack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
   }
   if ((fh.flags & kFlagPrecomp) != 0) {
     std::vector<uint8_t> original;
     if (!preflate_repack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
   }
 
   if ((fh.layers & kLayerNumeric) != 0) {
     std::vector<uint8_t> original;
     if (!numeric_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
   }
   if ((fh.layers & kLayerXmlNumeric) != 0) {
     std::vector<uint8_t> original;
     if (!xml_numeric_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
   }
   if ((fh.flags & kFlagGif) != 0) {
     std::vector<uint8_t> original;
     if (!gif_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
   }
   if ((fh.flags & kFlagJpeg) != 0) {
     std::vector<uint8_t> original;
     if (!jpeg_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
   }
   if ((fh.layers2 & kLayer2Bmp) != 0) {
     std::vector<uint8_t> original;
     if (!bmp_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
   }
   if ((fh.layers2 & kLayer2Ecc) != 0) {
     std::vector<uint8_t> original;
     if (!ecc_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
   }
   if ((fh.layers2 & kLayer2Png) != 0) {
     std::vector<uint8_t> original;
     if (!png_repack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
   }
   if ((fh.layers2 & kLayer2Sqlite) != 0) {
     std::vector<uint8_t> original;
     if (!sqlite_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
   }
   if ((fh.layers & kLayerWav) != 0) {
     std::vector<uint8_t> original;
     if (!wav_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
   }
   // base64 was applied FIRST on encode, so it is undone LAST: everything above
   // this line was working on the decoded bytes.
@@ -457,6 +493,7 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     std::vector<uint8_t> original;
     if (!base64_unpack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
   }
 
   // Final check, after every inverse transform: the bytes must be the ones that
