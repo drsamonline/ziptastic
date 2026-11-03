@@ -8,6 +8,7 @@
 // The transform recomputes parity and compares it with what the image already holds, so
 // a wrong table or loop cannot round-trip this fixture. That is the property these tests
 // exist to keep.
+#include <chrono>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -473,6 +474,32 @@ TEST(packing_is_deterministic) {
   CHECK_MSG(ecc_pack(in, a), "declined a valid image");
   CHECK_MSG(ecc_pack(in, b), "declined a valid image");
   CHECK_MSG(a == b, "packing the same input twice gave different bytes");
+}
+
+// A payload may declare a sector count it does not carry. The output is 2352 bytes per
+// sector, so the declaration sizes a large allocation: without the structural bound a
+// 64 MB payload could declare 2^26 sectors and ask for 158 GB.
+TEST(a_declared_sector_count_must_be_carried) {
+  std::vector<uint8_t> packed;
+  // varint for 2^26 sectors, then two kind bytes and nothing else.
+  uint64_t sectors = uint64_t{1} << 26;
+  while (sectors >= 0x80) {
+    packed.push_back(static_cast<uint8_t>(sectors) | 0x80u);
+    sectors >>= 7;
+  }
+  packed.push_back(static_cast<uint8_t>(sectors));
+  packed.push_back(0);
+  packed.push_back(0);
+
+  std::vector<uint8_t> out;
+  const auto started = std::chrono::steady_clock::now();
+  const bool ok = ecc_unpack(packed, out);
+  const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      std::chrono::steady_clock::now() - started)
+                      .count();
+  CHECK_MSG(!ok, "accepted a sector count the payload does not carry");
+  CHECK_MSG(out.empty(), "allocated from a declared sector count");
+  CHECK_MSG(ms < 1000, "the refusal took long enough to have allocated 158 GB");
 }
 
 TEST_MAIN()

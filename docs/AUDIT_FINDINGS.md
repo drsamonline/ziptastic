@@ -183,10 +183,49 @@ decision flags. `kFlagCoarse` is the exception: it is set from `opt.coarse` alon
 not the index was consulted, because it records "was in effect" rather than "was used", and
 the decoder does not read it. Noted, not changed.
 
-## E. Memory and hostile input — partially done
+## E. Memory and hostile input — read; there was a third
 
-Two instances of "allocate from a declared number" found and fixed before the audit started
-(`block_count`, `dedup_unpack`). The audit's job is to show there is no third; not yet done.
+### E1. Allocation from a declared number — **FINDING 7: `ecc_unpack`, at 2352×**
+
+Enumerated every `reserve`/`resize`/`assign` in the engine and the transforms and checked
+each against what bounds it:
+
+| site | bounded by | verdict |
+|---|---|---|
+| `decompress` output | `min(original_size, 256 MiB)` | ok |
+| `decompress` parallel total | `min(original_size, …)` per block | ok |
+| `dedup_unpack` | `min(total, packed*32+4096)` | fixed earlier |
+| `sqlite_unpack` | `pages_bytes + perm_len + trailer == packed.size()` | ok — exact |
+| `png_wrap` | chunk length checked against the payload | ok |
+| `bmp_unpack` | `pos + header_len + planes > packed.size()` | ok |
+| `wav_unpack` | `samples` counted by walking the payload | ok |
+| **`ecc_unpack`** | **`sectors ≤ 2^26` and the payload holds the kinds** | **2352× amplification** |
+
+`ecc_unpack` allocated `sectors * 2352` from a sector count the payload declares, checked
+only against 2^26 and against the *kind bytes*. A 64 MB payload can therefore declare 2^26
+sectors and ask for **158 GB**. The expansion ceiling added in section B does not help: it
+runs *after* this allocation.
+
+**Fixed with a structural bound rather than a guess**: a legitimate payload carries 2076 or
+2352 bytes per sector plus one kind byte, so it cannot be shorter than `sectors × 2077`. The
+output is then at most 1.13× the payload by construction, and no number the stream declares
+can size an allocation larger than the bytes it brought with it.
+
+`a_declared_sector_count_must_be_carried` pins it: 2^26 sectors declared, two kind bytes
+supplied, refused in under a second with nothing allocated.
+
+### E2. Loops terminate on input exhaustion — checked, no finding
+
+Every length-reading loop either advances `pos` past consumed bytes or is bounded by a
+counter that is itself bounded by the payload (`sqlite`'s page loop, `gif`'s index loop,
+`wav`'s varint walk). No loop counts to a declared number without touching the input.
+
+### E3. Size arithmetic — checked, no finding
+
+The additions that matter are done in `uint64_t` and compared before use
+(`pages_bytes + perm_len + kTrailer != packed.size()`, `pos + keep > packed.size()`,
+`bh.uncompressed_size > fh.original_size - produced`). The last is the overflow-safe form:
+it subtracts rather than adds.
 
 ## F. The parallel path — not yet read
 

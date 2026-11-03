@@ -174,6 +174,19 @@ bool ecc_unpack(std::span<const uint8_t> packed, std::vector<uint8_t>& out) {
   }
   if (sectors == 0 || sectors > (1u << 26)) return false;
   if (pos + sectors > packed.size()) return false;
+  // The output is 2352 bytes per declared sector, so the sector count is a declared
+  // number that sizes an allocation — exactly the class of bug fixed twice already
+  // (block_count, dedup). The expansion ceiling in decompress() does not help: it is
+  // checked after this allocation has happened.
+  //
+  // The bound is structural rather than a guess: a legitimate payload carries either
+  // 2076 or 2352 bytes of sector per entry, plus one kind byte, so it cannot be shorter
+  // than `sectors * 2077`. Without this check a 64 MB payload can declare 2^26 sectors
+  // and ask for 158 GB.
+  if (static_cast<uint64_t>(packed.size()) <
+      static_cast<uint64_t>(sectors) * (kEccAt + 1)) {
+    return false;
+  }
   const uint8_t* kinds = packed.data() + pos;
   pos += static_cast<size_t>(sectors);
 
