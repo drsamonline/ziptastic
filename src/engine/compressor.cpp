@@ -839,6 +839,12 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // data-loss bug waiting to happen.
   std::vector<uint8_t> precomp_payload;
   bool precomp = false;
+  // True when the container gate accepted its payload on the STRUCTURAL rule (the inflated
+  // payload is at least twice the size of what it came from) rather than on a measured
+  // comparison. That rule is a predictor, and predictors here have a history: it is the one
+  // path that can accept a payload the engine then encodes worse than the original. The
+  // Tier-0 guard below runs only for this case, so ordinary files pay nothing for it.
+  bool gate_structural = false;
   const std::span<const uint8_t> stage0 =
       gif ? std::span<const uint8_t>(gif_payload)
           : (numeric ? std::span<const uint8_t>(numeric_payload)
@@ -848,6 +854,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
     std::vector<uint8_t> payload;
     if (preflate_unpack(in, payload) &&
         precomp_helps(std::span<const uint8_t>(payload), stage0)) {
+      gate_structural = payload.size() >= stage0.size() * 2;
       precomp_payload = std::move(payload);
       precomp = true;
     }
@@ -862,6 +869,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
     std::vector<uint8_t> payload;
     const std::vector<uint8_t> in(stage0.begin(), stage0.end());
     if (gzip_unpack(in, payload) && precomp_helps(std::span<const uint8_t>(payload), stage0)) {
+      gate_structural = payload.size() >= stage0.size() * 2;
       precomp_payload = std::move(payload);
       gzip = true;
     }
@@ -1097,6 +1105,34 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
         if (stats) *stats = cs;
         return Err::Ok;
       }
+    }
+  }
+
+  // Tier-0 guarantee: never worse than doing nothing.
+  //
+  // The Tier-1 fallback above compares against LZMA2 over the bytes AFTER Layer 0, so it
+  // cannot notice a Layer 0 transform that made the file harder to compress. That is not
+  // hypothetical: with the precomp gate restructured, a `.tar.gz` came out at 50,799 bytes
+  // from a 50,414-byte input, and every check in the engine was happy — the fallback was
+  // comparing against the transformed bytes, not the original ones.
+  //
+  // So when the container gate took the structural shortcut, also compress the ORIGINAL bytes
+  // with LZMA2 and keep whichever is smaller. Scoping it to that case keeps the guarantee and
+  // costs nothing on the ordinary path: the rule is a predictor, the check is a measurement,
+  // and this is the one place a predictor can decide alone.
+  if (gate_structural) {
+    std::vector<uint8_t> plain;
+    if (encode_lzma2_stream(input, opt, false, false, false, false, false, 0, 0, crc,
+                            input.size(), plain) == Err::Ok &&
+        !plain.empty() && plain.size() < out.size()) {
+      CompressStats ps;
+      ps.blocks = 1;
+      ps.lzma2_blocks = 1;
+      ps.lzma2_stream = true;
+      ps.payload_bytes = plain.size();
+      out = std::move(plain);
+      if (stats) *stats = ps;
+      return Err::Ok;
     }
   }
 
