@@ -136,15 +136,52 @@ on the **total stream including framing**, which is where it belongs.
 It replaces the stream only when `cw.size() < native.size()`, strictly smaller, and now also
 checks its own header/body consistency before writing.
 
-## D. Options and defaults — **FINDING 3 (known, not yet systematic)**
+## D. Options and defaults — read, and it corrected a belief this audit was carrying
 
-`CompressOptions::precomp` defaults to `false`, which means the library's default behaviour
-runs **no Layer 0 transform at all**. This has hidden bugs three times: unit tests that never
-exercised precomp, a fuzz test that fuzzed nothing but the backend, and a corpus run whose
-`layers` byte was 0x00 and looked correct.
+### D2. The defaults — **FINDING 6: the belief was wrong, and it was written down three times**
 
-Not fixed here — changing a default is a behaviour change and belongs with D2's test, which
-must first prove the CLI and the library agree on what "default" means.
+The audit's own notes said `precomp = false` means "the library default runs no Layer 0
+transform at all", and that claim was repeated in `VALIDATION.md`, in a commit message and in
+the handoff. **It is false.** Reading `compressor.hpp`:
+
+- **Every content transform defaults to ON**: `base64`, `numeric`, `wav`, `bmp`, `ecc`,
+  `sqlite`, `jpeg`, `gif`, `dedup`.
+- **Two default to OFF**: `precomp` (the container stages — precomp, gzip, the nested level)
+  and `coarse` (the SREP-style index).
+
+So the default does not skip Layer 0; it skips the *containers*. A caller who embeds the
+library gets base64, CSV, WAV, BMP, CD-parity, PNG, SQLite, JPEG and GIF handling without
+asking, and gets nothing for a `.zip`, `.gz` or `.tar.gz` unless they set `precomp`.
+
+The three incidents that produced the wrong belief were real, but each was about **precomp
+specifically**: unit tests that never exercised it, a fuzz test that therefore fuzzed only
+the backend, and a corpus run whose `layers` byte was 0x00 because the file was a cooked ISO
+with no content transform to find.
+
+**Fixed by making the default executable**: `tests/unit/test_defaults.cpp` asserts that a
+base64 document is decoded with default options, that a gzip member is *not* inflated with
+default options and *is* with `precomp = true`, and that exactly two options default to false
+and both are named. The default is now documented by a test rather than by prose that can
+drift.
+
+The first version of that test was itself wrong — it buried a 30-byte gzip member in 2 KB of
+random bytes, where the gate correctly declines because inflating it gains nothing. It was
+testing the gate, not the default. Replaced with a file that *is* a gzip member of repetitive
+text.
+
+### D1. Every option honoured both ways — checked, no finding
+
+Each stage is guarded by its own flag, and each flag has a `--no-…` counterpart in the CLI.
+`--huff-adapt` is the one flag that turns something *on* rather than off, because its
+default was flipped by measurement (`HUFFMAN_GATE.md`).
+
+### D3. Flags written from decisions, not from options — checked, with one note
+
+`kFlagPrecomp` is set from `opt.precomp && precomp`, where `precomp` is the *decision* after
+the verify-by-rebuild and the trial — correct. The layer bits are likewise set from the
+decision flags. `kFlagCoarse` is the exception: it is set from `opt.coarse` alone, whether or
+not the index was consulted, because it records "was in effect" rather than "was used", and
+the decoder does not read it. Noted, not changed.
 
 ## E. Memory and hostile input — partially done
 
