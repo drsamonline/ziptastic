@@ -49,3 +49,27 @@ wrong for another — the reason every stage here is gated rather than applied.
 `tests/unit/test_bmp.cpp`, eight cases: 24-bit and 32-bit round trips, an odd width with
 padding, payload size, RLE declined, non-BMP declined, truncated declined, damaged payload
 rejected. 31/31 suites pass.
+
+
+## Correction, 2026-11-03: the −98.9% was a formula, not a photo
+
+The table above reports **−98.9%** on `photoish.bmp`, a 512×512 image whose pixels are
+`((x*3+y*5)%256, (x*7)%256, (x*x+y*y)%256)`. That is a formula, not a photograph, and it
+compresses to almost nothing under any transform — the plane split was measuring the fixture,
+not the transform.
+
+Re-measured on real content, inside a ZIP (the nested case):
+
+| content | gain |
+|---|---|
+| photographic BMP, 320×240 | **−36.9%** |
+| photographic BMP, 512×512 | **−48.3%** |
+| pure noise | **−0.0%** (declined) |
+| photo + noise | **−18.5%** |
+
+The top-level numbers are in the same range: a real 320×240 photo goes 230,454 → 142,058
+(**−38.4%**) through the transform, while the synthetic gradient went to 628 bytes.
+
+**The transform is worth about 40% on photographic pixels and nothing on noise.** The earlier
+figures were not wrong for their fixtures; they were the wrong fixtures. Everything else in this
+document — the gate, the sprite-sheet decline, the round-trip property — stands.

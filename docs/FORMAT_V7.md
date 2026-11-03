@@ -43,24 +43,38 @@ exist: they are the tests that would catch a mis-parse of the header.
 32/32 suites pass. v6 and earlier streams are refused with `bad-version` as always.
 
 
-## The win, one commit later
+## The win, one commit later — and a correction to the number
 
-The nested BMP stage now fires. `bmp_pack` scans for the first BMP anywhere in the payload,
-carries a prefix and a tail, and handles **every** image it finds — the same shape PNG, JPEG
-and GIF already had.
+The nested BMP stage now fires: `bmp_pack` scans for the first BMP anywhere in the payload,
+carries a prefix and a tail, and handles **every** image it finds.
 
-| case | before | after | gain | `layers3` |
+The first measurement reported **−99.2%** on a ZIP of four 128×128 BMPs (184,929 → 1,530). That
+number is real for that fixture and **misleading as a claim**, because the fixture was four
+synthetic gradients whose pixels are a formula — `((x*3+i*20)%256, (y*5)%256, (x*x+y*y+i*7)%256)`
+— and those compress to almost nothing under any transform. Checked against real content:
+
+| case | zip | ziptastic `-9` | gain | vs `xz -9e` |
 |---|---|---|---|---|
-| ZIP of four 128×128 BMPs | 184,929 | **1,530** | **−99.2%** | 0x01 |
+| ZIP of a photographic BMP, 320×240 | 225,471 | **142,160** | **−36.9%** | +36.9% |
+| ZIP of a photographic BMP, 512×512 | 747,474 | **386,702** | **−48.3%** | +47.7% |
+| ZIP of pure-noise BMP, 256×256 | 196,838 | 196,913 | −0.0% | −0.0% |
+| ZIP of photo + noise | 422,287 | **344,254** | **−18.5%** | +18.5% |
 
-Round trip byte-exact, 32/32 suites pass. The plane-split ideal measured beforehand was 1,206
-bytes of pixel data; the shipped 1,530 includes the container skeleton and the framing, so the
-transform is within a few hundred bytes of the ceiling.
+All four round-trip byte-exact. The noise control declines the transform entirely
+(`layers3 = 0x00`), which is the gate doing its job.
 
-That is the largest gain any transform in this engine has produced on a container payload, and
-it is the fourth time the same pattern was applied: **scan for the signature anywhere, carry the
-bytes around the image, and handle every image in the buffer.**
+**So the honest range is −19% to −48%, not −99%.** The transform is still a large win — a
+photographic BMP inside a ZIP is two DEFLATE layers over raw pixels, and removing both is worth
+more than any general compressor gets — but the number that belongs in a summary is **about
+40% on photographic content, nothing on noise**, and the −99% figure should be read as "this
+fixture was a formula".
 
-The three payload-layout bugs from the earlier transforms (JPEG's tail order, PNG's missing
-prefix, GIF's zero-based offset) were all avoided this time by copying the PNG structure exactly
-— which is the point of having established it.
+The lesson is the same one this project keeps relearning: **a synthetic fixture can measure the
+transform instead of the content.** The gradient images were chosen to make the plane-split
+visible; they made it look like magic.
+
+## What is unchanged
+
+The scan, the multi-image payload, the prefix/tail handling, the round trip and the format are
+all as described above. Only the headline number was wrong, and the correction is cheaper than
+the embarrassment of shipping it.
