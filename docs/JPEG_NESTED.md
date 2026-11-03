@@ -7,11 +7,12 @@ Written 2026-11-03, the follow-up to `PNG_NESTED.md`.
 | case | before | after | gain | `layers2` |
 |---|---|---|---|---|
 | ZIP containing one 256×256 JPEG | 31,032 | **26,200** | **−15.6%** | 0x04 |
-| ZIP containing four JPEGs | 125,811 | 119,354 | −5.1% | 0x04 |
+| ZIP containing four JPEGs | 125,811 | **105,064** | **−16.5%** | 0x04 |
 
-The four-JPEG case gains less because **only the first image in the payload is transformed**;
-the rest ride along in the tail. PNG got a multi-image version first; JPEG does not have one
-yet, and that is the obvious next step.
+**Both cases now transform every image.** The first version handled only the first JPEG in the
+payload, which measured −5.1% on the four-image ZIP; the multi-image version takes it to
+**−16.5%**, and the single-image case is unchanged at −15.6%. A ZIP of many JPEGs is the
+game-asset case, so the difference mattered.
 
 ## What changed
 
@@ -44,8 +45,8 @@ behaviour.
 
 ## What is left
 
-- **Multi-image JPEG**, mirroring what PNG already does: find consecutive JPEGs, transform each.
-  A ZIP of many JPEGs is the game-asset case and it is currently getting 5%, not 15%.
+- ~~Multi-image JPEG~~ **DONE** — every image in the payload is transformed, −16.5% on the
+  four-image ZIP against −5.1% for the first-only version.
 - **The same scan for GIF** (`GIF87a`/`GIF89a`), which is a four-byte signature and will need
   the verify-by-rebuild to do most of the work.
 - **The precomp gate**, still the deeper issue: `precomp_helps` decides whether to keep the
