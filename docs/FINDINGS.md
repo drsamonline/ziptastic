@@ -76,6 +76,29 @@ general compressor misses, ziptastic is an LZMA-class compressor with more machi
 advantage. Speed is not in this table and is not favourable: `-9` runs at 0.3–0.6 MB/s here
 against `xz`'s 1–2 MB/s.
 
+## 3b. A realistic game-asset tree, end to end
+
+The tables above are single files. This is the shape the engine is actually for: a mixed tree of
+textures, audio, CSV and logs, 6.3 MB unpacked, shipped the two ways a game ships assets.
+
+| archive | ziptastic `-9` | `xz -9e` | `zstd -19` |
+|---|---|---|---|
+| `tree.tar` (6,328,320 B) | **1,275,048** | 1,983,636 (+35.7%) | 2,064,101 (+38.2%) |
+| `tree.zip` (2,797,544 B, deflated) | **1,284,836** | 1,610,228 (+20.2%) | 1,616,603 (+20.5%) |
+
+Both round-trip byte-exact. **On a realistic mixed tree the engine is 20–36% smaller than `xz
+-9e`**, which is the number to quote: not the 57% on sheet XML and not the 0.2% on a cooked ISO,
+but the 20–36% a real asset tree gets.
+
+Two things in that table are worth noting:
+
+- **The ZIP carries `layers = 0x40`** — the second container level fired, so precomp reached
+  inside the archive and the nested transforms ran on the members. The tar carries `layers = 0`.
+- **A ZIP inside a plain tar is not reached.** `scan_zip` looks for local headers anywhere, but
+  with 512-byte tar headers interleaved the archive inside is not found, so the tar path gets no
+  transform at all — and still lands within 1% of the ZIP result, because the backend does the
+  work. The `book.tar.gz` case works because gzip unpacks first and hands over a clean tar.
+
 ## 4. Container payloads: what the nested transforms actually do
 
 A container payload puts its own header in front of the member bytes, so every nested transform
