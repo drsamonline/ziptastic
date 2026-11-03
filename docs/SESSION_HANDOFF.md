@@ -304,8 +304,14 @@ read them end to end since they were one file. Every defect found in the last we
 the reserve that trusted a declared size, the Q parity reading the wrong bytes) was found by
 looking, not by a test that existed at the time.
 
-The plan is written; the audit runs section by section (A–G) with a test per finding and a
-named list of what was **not** audited.
+**AUDIT COMPLETE — sections A–G read, eight findings, six fixed.** `docs/AUDIT_FINDINGS.md`
+holds the log and the closing summary. The three that mattered: the inverse chain had **no
+expansion bound** (a 20-byte payload could ask for a terabyte), `ecc_unpack` allocated
+**2352×** a declared sector count, and there was a **data race** on `stats.tokens` between
+block workers. All three were invisible to a suite that was green throughout, and two were the
+same class — "allocate from a number the stream declares" — that had already been fixed twice
+before the audit began. The log names what was **not** audited: the vendored entropy coders,
+the transforms' internals beyond their contract, `main.cpp`, the match finder and parser.
 
 ## 6bis. What is actually left
 

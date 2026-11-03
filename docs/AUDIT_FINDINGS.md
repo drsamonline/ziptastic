@@ -271,4 +271,76 @@ The experiment that ran the Tier-1 fallback on a second thread was measured and 
 (`CONCURRENT_FALLBACK.md`): it was 9% slower on this machine. There is no second thread in the
 shipped encoder, so there is no half-initialised state to audit.
 
-## G. Integrity and reporting — one instance found (A4); not yet systematic
+## G. Integrity and reporting — read, no new finding
+
+### G1. Every report field true — checked
+
+| field | what it says | verdict |
+|---|---|---|
+| `blocks` | the header's declared count, until the decode finishes, then the real count | correct, and documented as deliberate — a failure message can then say "block 3 of 25" for a stream that never finished |
+| `original_size` | the size the caller gets | **was false, fixed in A4** |
+| `bad_block` | which block failed its digest | correct, set before unwinding |
+
+### G2. A block failure names the block, and the digest covers what is kept — checked
+
+The digest is over the block's **plaintext**, computed at `seal` from the input span and
+verified at decode over the decoded part before it is concatenated. That is the right thing to
+cover: a change to the compressed body cannot survive it, because the body must decode to the
+same plaintext. RAW blocks — where the body *is* the plaintext — are covered by the same
+check.
+
+`fail_block` records the index before unwinding, and the CLI prints
+`a block failed its SHA-256 check (block 2 of 13)`. Covered by `test_integrity`.
+
+### G3. Trailer and manifest digest written and read from the same values — checked
+
+`write_trailer(w, fh.block_count, manifest.digest())` against
+`read_trailer(r, fh.block_count, manifest.digest())`, with `manifest.add(h)` called once per
+block on both sides, in order. The manifest covers the block **headers** — so a dropped,
+reordered or duplicated block is caught — and the bodies are covered by their own digests.
+
+---
+
+# Closing summary
+
+**Sections A–G read. Eight findings, six of them fixed, two recorded as corrections.**
+
+| # | section | finding | outcome |
+|---|---|---|---|
+| 1 | A2 | the stage order is not a derivation, and nothing said so | documented in the code; stale JPEG comment fixed |
+| 2 | A4 | `DecompressReport::original_size` lied for transformed streams | fixed, tested |
+| 3 | D2 | "the default runs no Layer 0" — false, and written down three times | corrected; the default is now a test |
+| 4 | B3 | the inverse chain had **no expansion bound** | 4096× ceiling after every stage, tested |
+| 5 | C1 | nothing checked a block's declared size against its body | `write_block` guard, tested |
+| 6 | D2 | (same as 3 — the belief, not a second bug) | — |
+| 7 | E1 | `ecc_unpack` allocated **2352×** a declared sector count | structural bound, tested |
+| 8 | F2 | **data race** on `stats.tokens` between block workers | per-block accumulation, tested |
+
+The three that would have produced real damage — 4, 7 and 8 — were all invisible to a test
+suite that was green throughout. Two of them (4 and 7) were in the same class, "allocate from
+a number the stream declares", which had already been fixed twice before the audit started and
+had a third instance.
+
+## What was NOT audited, and is not claimed
+
+- **The entropy coders and the vendored libraries** — rANS, PPMd, BWT/libbsc, zpaq, brotli,
+  brunsli, preflate, liblzma. They are fuzzed and round-tripped from outside, and they are
+  third-party code; a real audit of them is a different project.
+- **The internals of the Layer 0 transforms** beyond their contract. Each was read at its
+  interface — precondition, verify-by-rebuild, failure mode — not line by line.
+- **`main.cpp`** beyond the option wiring: the CLI's file handling and argument parsing were
+  not read end to end.
+- **`match_finder.cpp`, `parser`, cost models** — the compression front end below the stage
+  chain. Untouched by this audit.
+- **Performance**: nothing here was about speed, and the selector profile is a separate track.
+- **Concurrency beyond the block pool**: there is no other threading in the shipped encoder
+  (the concurrent-fallback experiment was reverted).
+
+## What "done" means here
+
+Every line of `compressor.cpp` and `decompressor.cpp` was read with a contract in hand, every
+finding has a test that fails without the fix, and the parts that were not audited are named
+above. That is what the plan asked for. It is not a clean bill of health — a file this size
+audited honestly produces a list, and this one produced eight entries.
+
+**Suite: 32/32 green. Format: v5, unchanged by the audit except for the guards.**
