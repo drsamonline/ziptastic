@@ -611,8 +611,28 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   const std::span<const uint8_t> stage_in =
       base64 ? std::span<const uint8_t>(base64_payload) : input;
 
-  // Layer 0 — integer CSV/TSV. Runs first: it is the only transform that needs to
-  // see the raw text, and a CSV is not DEFLATE, not x86, not an image.
+  // Layer 0 — integer CSV/TSV. It needs to see raw text, which means it runs after
+  // base64 and before anything that would re-frame the bytes.
+  //
+  // ---------------------------------------------------------------------------
+  // THE ORDER OF THE MIDDLE STAGES IS NOT A DERIVATION — READ THIS BEFORE MOVING ONE
+  //
+  // Only two positions in this chain are forced:
+  //
+  //   1. base64 runs FIRST, because every stage after it wants the decoded payload (a
+  //      JPEG at offset 0 is what lets brunsli fire, worth 20.2% against 2.3%).
+  //   2. the container stages run LAST, because precomp and gzip need the stream.
+  //
+  // Everything between them — numeric, wav, bmp, ecc, png, sqlite, jpeg, gif — is in the
+  // order it is in because that is the order they were written, and it is safe ONLY
+  // because those stages are mutually exclusive: a file cannot be a WAV and a PNG, and a
+  // CSV cannot be a raw CD image. The decoder undoes them in a different order (numeric
+  // before gif/jpeg/bmp, for instance) and that is correct for exactly the same reason.
+  //
+  // So: if you ever add a stage that can fire on a payload another stage has already
+  // transformed, the decode order becomes load-bearing and this comment is the warning.
+  // The audit (`docs/AUDIT_PLAN.md`, A2) records this as the chain's one unstated
+  // dependency.
   std::vector<uint8_t> numeric_payload;
   // `numeric` means numeric_payload holds the stage-0 payload, whichever transform
   // produced it: the downstream stages pick the payload on this flag, so it has to
@@ -745,10 +765,13 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   const std::span<const uint8_t> stage_sql =
       sqlite ? std::span<const uint8_t>(sqlite_payload) : stage_png;
 
-  // Layer 0 — JPEG. First, because a JPEG is not DEFLATE, not x86 code and not
-  // text, so every other layer would waste its time on it. brunsli re-encodes
-  // the DCT coefficients and keeps a recipe that reproduces the file exactly;
-  // verified here before it is trusted, like every other transform.
+  // Layer 0 — JPEG. brunsli re-encodes the DCT coefficients and keeps a recipe that
+  // reproduces the file exactly; verified here before it is trusted, like every other
+  // transform.
+  //
+  // This comment used to begin "First, because a JPEG is not DEFLATE...", which stopped
+  // being true when the image stages were added ahead of it. The order is not a
+  // preference — see the note above `stage_in` for what actually makes it safe.
   std::vector<uint8_t> jpeg_payload;
   bool jpeg = false;
   if (opt.jpeg && jpeg_available() && !stage_sql.empty()) {

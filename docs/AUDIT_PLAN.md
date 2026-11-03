@@ -14,6 +14,8 @@ that hid a path (`precomp = false`), a report field that lied for transformed st
 reserve that trusted a declared size, a Q parity that read the wrong bytes. None of those
 was caught by a test that existed at the time; all were caught by looking.
 
+**Running log:** `docs/AUDIT_FINDINGS.md`. Sections are closed there, not here.
+
 ## Scope
 
 | in | out |
