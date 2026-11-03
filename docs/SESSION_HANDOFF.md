@@ -295,6 +295,18 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    and wrong for another — `docs/BMP_MEASUREMENT.md`). `kLayer2Png` bit 4, `kLayer2Bmp`
    bit 6. **`layers2` has one bit left (7).**
 
+## 6ter. MANDATORY GATE: full audit of compressor and decompressor
+
+`docs/AUDIT_PLAN.md` — **required before the format is called stable.** Both files have grown
+by accretion to seventeen transforms, nine backends and two container levels, and nobody has
+read them end to end since they were one file. Every defect found in the last week (the
+`precomp = false` default hiding a path, the report field that lied for transformed streams,
+the reserve that trusted a declared size, the Q parity reading the wrong bytes) was found by
+looking, not by a test that existed at the time.
+
+The plan is written; the audit runs section by section (A–G) with a test per finding and a
+named list of what was **not** audited.
+
 ## 6bis. What is actually left
 
 Everything above is either done or measured-and-closed. The live list is short:
