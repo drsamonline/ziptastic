@@ -218,4 +218,100 @@ TEST(every_unpacker_refuses_random_payloads) {
   }
 }
 
+// The decoder has been fuzzed above; the ENCODER had not been. compress() runs every
+// transform's DETECTOR over caller-supplied bytes — a PNG chunk walker, a BMP header
+// parser, a CD sector scanner, a gzip member finder — and a malformed file must make each
+// of them say "no" rather than crash, hang, or accept something it then cannot reverse.
+//
+// Each case below is a header that looks right and then lies, which is what a real
+// malformed file looks like.
+namespace {
+
+std::vector<uint8_t> png_lying_chunk_length() {
+  // Valid signature, valid IHDR, then a chunk that claims 1 GB of data it does not have.
+  std::vector<uint8_t> v = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+  const uint8_t ihdr_len[4] = {0, 0, 0, 13};
+  v.insert(v.end(), ihdr_len, ihdr_len + 4);
+  v.insert(v.end(), {'I', 'H', 'D', 'R'});
+  for (int i = 0; i < 13; ++i) v.push_back(0);
+  for (int i = 0; i < 4; ++i) v.push_back(0);  // crc
+  const uint8_t huge[4] = {0x40, 0x00, 0x00, 0x00};  // 1 GiB
+  v.insert(v.end(), huge, huge + 4);
+  v.insert(v.end(), {'I', 'D', 'A', 'T'});
+  for (int i = 0; i < 64; ++i) v.push_back(static_cast<uint8_t>(i));
+  return v;
+}
+
+std::vector<uint8_t> bmp_absurd_dimensions() {
+  std::vector<uint8_t> v(54, 0);
+  v[0] = 'B';
+  v[1] = 'M';
+  v[10] = 54;                       // pixels at 54
+  v[14] = 40;                       // BITMAPINFOHEADER
+  // width = 2^30, height = 2^30: the stride times the height overflows any allocation.
+  v[18] = 0x00; v[19] = 0x00; v[20] = 0x00; v[21] = 0x40;
+  v[22] = 0x00; v[23] = 0x00; v[24] = 0x00; v[25] = 0x40;
+  v[26] = 1;                        // planes
+  v[28] = 24;                       // bits
+  v.resize(54 + 1000, 0x5A);        // some bytes, but nowhere near enough
+  return v;
+}
+
+std::vector<uint8_t> cd_sector_unknown_mode() {
+  std::vector<uint8_t> v(2352 * 2, 0);
+  for (size_t off = 0; off < v.size(); off += 2352) {
+    v[off] = 0x00;
+    for (int i = 1; i <= 10; ++i) v[off + i] = 0xFF;
+    v[off + 11] = 0x00;
+    v[off + 15] = 0x7F;  // a mode byte that is not 1 or 2
+  }
+  return v;
+}
+
+std::vector<uint8_t> gzip_member_that_never_ends() {
+  std::vector<uint8_t> v = {0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00,
+                            0x00, 0x03};
+  for (int i = 0; i < 4000; ++i) v.push_back(static_cast<uint8_t>(i * 7));
+  return v;
+}
+
+void compress_hostile(const std::vector<uint8_t>& in, const char* what) {
+  CompressOptions opt;
+  opt.precomp = true;  // every detector gets a look
+  opt.block_size = 4096;
+  std::vector<uint8_t> packed, back;
+  const Err e = compress(in, packed, opt, nullptr);
+  CHECK_MSG(e == Err::Ok, what);
+  // Whatever it decided, the stream must decode back to exactly these bytes.
+  CHECK_ERR(decompress(packed, back), Err::Ok);
+  CHECK_MSG(back == in, "hostile input did not round-trip");
+}
+
+}  // namespace
+
+TEST(hostile_containers_are_declined_or_round_trip) {
+  compress_hostile(png_lying_chunk_length(), "PNG with a lying chunk length");
+  compress_hostile(bmp_absurd_dimensions(), "BMP with absurd dimensions");
+  compress_hostile(cd_sector_unknown_mode(), "CD sectors with an unknown mode");
+  compress_hostile(gzip_member_that_never_ends(), "gzip member with no end");
+}
+
+TEST(random_bytes_never_crash_the_encoder) {
+  chce_test::Rng rng(8675309);
+  for (int i = 0; i < 120; ++i) {
+    std::vector<uint8_t> in(static_cast<size_t>(rng.below(3000)));
+    for (auto& b : in) b = rng.byte();
+    // Every fourth one gets a signature that a detector will recognise.
+    if (i % 4 == 0 && in.size() > 8) {
+      const uint8_t png[8] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+      std::memcpy(in.data(), png, 8);
+    } else if (i % 4 == 1 && in.size() > 2) {
+      in[0] = 'B'; in[1] = 'M';
+    } else if (i % 4 == 2 && in.size() > 12) {
+      std::memcpy(in.data(), "\x1f\x8b\x08\x00", 4);
+    }
+    compress_hostile(in, "random bytes with a signature");
+  }
+}
+
 TEST_MAIN()

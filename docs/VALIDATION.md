@@ -140,3 +140,31 @@ empty buffer. Not exploitable — the block digest covers the payload before the
 
 Both were found within a minute of the first run. That is the argument for fuzzing the
 options the product actually uses, not the defaults.
+
+## The encoder, fuzzed for the first time — and it held
+
+The decoder has been fuzzed above and gave up two bugs in a minute. The **encoder** had
+never been fuzzed at all, and it is the side that runs every transform's *detector* over
+caller-supplied bytes: a PNG chunk walker, a BMP header parser, a CD sector scanner, a gzip
+member finder. A malformed file must make each of them say "no" rather than crash, hang, or
+accept something it then cannot reverse.
+
+Two tests added, both asserting the stronger property — whatever the encoder decides, the
+stream must decode back to **exactly the input bytes**:
+
+- `hostile_containers_are_declined_or_round_trip`: a PNG with a chunk claiming 1 GiB it does
+  not have, a BMP declaring 2^30 × 2^30 pixels in 1 KB of data, CD sectors with a mode byte
+  of 0x7F, and a gzip member with no end.
+- `random_bytes_never_crash_the_encoder`: 120 random buffers, every fourth one carrying a
+  real PNG/BMP/gzip signature so the detectors are actually reached.
+
+**No bugs.** Every case either declined the transform or round-tripped exactly. That is a
+weaker result than the decoder fuzz gave, and it is worth saying which one it is: the
+detectors were already defensive — they check lengths, bounds and magic before claiming
+anything, and each transform verifies by rebuilding its input and byte-comparing before the
+payload is returned. The encoder fuzz confirms that design rather than finding a hole in it.
+
+The lesson from both runs is the same one, and it is about *coverage of the shipped
+configuration*: the decoder fuzz found bugs the moment it stopped using default options, and
+the encoder fuzz found none because the transform contract — rebuild and compare — is
+already the check.
