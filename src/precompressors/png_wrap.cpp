@@ -7,6 +7,7 @@
 #include "png_wrap.hpp"
 
 #include <cstring>
+#include <utility>
 
 #include <preflate.h>
 
@@ -47,14 +48,23 @@ struct Chunk {
   size_t len = 0;   // data length
 };
 
-bool walk(const std::vector<uint8_t>& in, std::vector<Chunk>& chunks) {
-  if (in.size() < 8 || std::memcmp(in.data(), kSig, 8) != 0) return false;
-  size_t pos = 8;
+// Walks the chunks of ONE PNG starting at `base`, stopping at IEND. Returns the offset just
+// past that PNG, or 0 if the bytes there are not a complete PNG.
+//
+// It used to demand that the walk consume the whole buffer, which is right for a lone file
+// and wrong for the payload a ZIP produces: precomp hands over *several* concatenated PNGs
+// plus its recipe, and the single-file rule rejected all of them. That is why the nested PNG
+// stage measured 0.0% on a ZIP of six PNGs where the ideal was -79.9%.
+size_t walk_one(const std::vector<uint8_t>& in, size_t base, std::vector<Chunk>& chunks) {
+  if (base + 8 > in.size()) return 0;
+  if (std::memcmp(in.data() + base, kSig, 8) != 0) return 0;
+  size_t pos = base + 8;
   bool saw_idat = false;
+  bool saw_end = false;
   while (pos + 12 <= in.size()) {
     const uint32_t len = rd32be(in.data() + pos);
-    if (len > (1u << 30)) return false;
-    if (pos + 12 + len > in.size()) return false;
+    if (len > (1u << 30)) return 0;
+    if (pos + 12 + len > in.size()) return 0;
     Chunk c;
     c.at = pos;
     c.len = len;
@@ -62,9 +72,13 @@ bool walk(const std::vector<uint8_t>& in, std::vector<Chunk>& chunks) {
     saw_idat = saw_idat || c.idat;
     chunks.push_back(c);
     pos += 12 + len;
-    if (std::memcmp(in.data() + c.at + 4, "IEND", 4) == 0) break;
+    if (std::memcmp(in.data() + c.at + 4, "IEND", 4) == 0) {
+      saw_end = true;
+      break;
+    }
   }
-  return saw_idat && pos == in.size();
+  if (!saw_idat || !saw_end) return 0;
+  return pos;
 }
 
 }  // namespace
@@ -73,12 +87,14 @@ bool png_available() { return true; }
 
 bool png_likely(const std::vector<uint8_t>& in) {
   std::vector<Chunk> chunks;
-  return walk(in, chunks);
+  return walk_one(in, 0, chunks) != 0;
 }
 
-bool png_unpack(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload) {
+// One PNG, at [base, end) of `in`, into its own payload.
+bool unpack_one(const std::vector<uint8_t>& in, size_t base, size_t end,
+                std::vector<uint8_t>& payload) {
   std::vector<Chunk> chunks;
-  if (!walk(in, chunks)) return false;
+  if (walk_one(in, base, chunks) != end) return false;
 
   std::vector<uint8_t> idat;
   std::vector<uint8_t> skeleton;
@@ -142,7 +158,8 @@ bool png_unpack(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload) {
   return true;
 }
 
-bool png_repack(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out) {
+// One image's payload appended to `out`.
+bool repack_one(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out) {
   size_t pos = 0;
   uint64_t nchunks = 0;
   if (!get_varint(payload, pos, nchunks)) return false;
@@ -198,8 +215,7 @@ bool png_repack(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out) 
   for (int i = 2; i < 6; ++i) zstream.push_back(wrapper[i]);
   raw = zstream;
 
-  out.clear();
-  out.reserve((payload.size() - skel_at) + raw.size());
+  out.reserve(out.size() + (payload.size() - skel_at) + raw.size());
   out.insert(out.end(), kSig, kSig + 8);
   size_t skel = 0;
   size_t idat_pos = 0;
@@ -233,6 +249,70 @@ bool png_repack(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out) 
     }
   }
   return skel_at + skel == payload.size() && idat_pos == raw.size();
+}
+
+// ---------------------------------------------------------------------------
+// The public entry points: a sequence of consecutive PNGs, plus whatever follows them.
+//
+// A ZIP of PNGs is the case that matters. precomp inflates the members and hands over
+// several concatenated PNGs plus its own recipe, and the old single-file rule rejected all
+// of it — which is why the nested stage measured 0.0% where the ideal was -79.9%.
+//
+// Payload: varint image_count | per image: varint payload_len + that image's payload |
+// varint tail_len | tail. The tail is whatever came after the last IEND (for a ZIP, the
+// precomp recipe), and it is carried verbatim.
+// ---------------------------------------------------------------------------
+
+bool png_unpack(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload) {
+  std::vector<std::pair<size_t, size_t>> segments;
+  size_t at = 0;
+  for (;;) {
+    std::vector<Chunk> chunks;
+    const size_t end = walk_one(in, at, chunks);
+    if (end == 0) break;
+    segments.emplace_back(at, end);
+    at = end;
+    if (segments.size() > (1u << 16)) return false;
+  }
+  if (segments.empty()) return false;
+
+  std::vector<std::vector<uint8_t>> per_image(segments.size());
+  for (size_t i = 0; i < segments.size(); ++i) {
+    if (!unpack_one(in, segments[i].first, segments[i].second, per_image[i])) return false;
+  }
+
+  payload.clear();
+  put_varint(payload, segments.size());
+  for (const auto& img : per_image) {
+    put_varint(payload, img.size());
+    payload.insert(payload.end(), img.begin(), img.end());
+  }
+  put_varint(payload, in.size() - at);
+  payload.insert(payload.end(), in.begin() + static_cast<long>(at), in.end());
+  return true;
+}
+
+bool png_repack(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out) {
+  size_t pos = 0;
+  uint64_t count = 0;
+  if (!get_varint(payload, pos, count)) return false;
+  if (count == 0 || count > (1u << 16)) return false;
+
+  out.clear();
+  for (uint64_t i = 0; i < count; ++i) {
+    uint64_t len = 0;
+    if (!get_varint(payload, pos, len)) return false;
+    if (len > payload.size() - pos) return false;
+    const std::vector<uint8_t> one(payload.begin() + static_cast<long>(pos),
+                                   payload.begin() + static_cast<long>(pos + len));
+    if (!repack_one(one, out)) return false;
+    pos += static_cast<size_t>(len);
+  }
+  uint64_t tail = 0;
+  if (!get_varint(payload, pos, tail)) return false;
+  if (tail != payload.size() - pos) return false;
+  out.insert(out.end(), payload.begin() + static_cast<long>(pos), payload.end());
+  return true;
 }
 
 }  // namespace chce
