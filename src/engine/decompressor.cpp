@@ -351,15 +351,17 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   // copy), and the decoder would build it byte by byte before discovering the checksum
   // was wrong.
   //
-  // The format has no field for the true original size — `original_size` is the
-  // compressed-domain size — so there is nothing exact to check against. What there is, is
-  // a generous ceiling: no real transform here expands by more than a few hundred times,
-  // so 4096x the declared size plus a megabyte is far beyond any legitimate stream and far
-  // below a bomb. A declared final size in a future format version is the real fix; this
-  // is the mitigation that makes the current one safe.
-  const uint64_t kMaxExpansion = 4096;
-  const uint64_t expansion_cap =
-      fh.original_size * kMaxExpansion + (uint64_t{1} << 20);
+  // v5 had no field for the true original size — `original_size` is the compressed-domain
+  // size — so the only bound was a heuristic ceiling of 4096x. v6 declares the true size,
+  // which makes this exact; the ceiling is kept as a named value rather than deleted
+  // because the check below reads better with a name.
+  // v6 declares the true original size, which makes the FINAL check exact. It does not
+  // make the intermediate bound exact, and assuming it did broke the container paths: a
+  // `.tar.gz` of 50 KB inflates to a 300 KB tar and then to a larger inflated ZIP before
+  // the nested transforms shrink it again. The chain is not monotonic toward the final
+  // size — it goes up and comes back down — so intermediates need a ceiling above the
+  // final, and only the last comparison can be `==`.
+  const uint64_t expansion_cap = fh.true_size * 4096 + (uint64_t{1} << 20);
   auto within_cap = [&](const std::vector<uint8_t>& buf) {
     return static_cast<uint64_t>(buf.size()) <= expansion_cap;
   };
@@ -499,6 +501,8 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   // Final check, after every inverse transform: the bytes must be the ones that
   // were compressed. Without this a transform bug would return plausible-looking
   // wrong data, which is the failure mode a stack of layers invites.
+  // Exact, because the header now says what the answer must be.
+  if (dst.size() != fh.true_size) return Err::SizeMismatch;
   if (crc32(dst) != fh.checksum) return Err::ChecksumMismatch;
 
   out = std::move(dst);

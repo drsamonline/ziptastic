@@ -98,9 +98,12 @@ repository is under 100× (a dedup of highly repetitive data) — and far below 
 `a_decompression_bomb_is_refused` pins it: a stream with the dedup bit set and a payload that
 cannot be dedup, which must be refused **in under two seconds**.
 
-**The real fix is a declared final size in the next format version**, at which point the
-ceiling becomes an exact check. Recorded here so the mitigation is not mistaken for the
-solution.
+**The real fix was a declared final size, and it is now built** — `docs/FORMAT_V6.md`. The
+header carries `true_size`, the final check is `dst.size() == true_size` exactly, and the
+ceiling above is retained only as the *intermediate* bound. Building it immediately showed why
+that distinction matters: using `true_size` as the intermediate bound too broke both container
+tests, because a 50 KB `.tar.gz` inflates to a 300 KB tar and back down again. The chain is not
+monotonic, and only the last comparison can be exact.
 
 ## C. The selector — read
 

@@ -28,7 +28,7 @@ inline constexpr uint8_t kMagic[4] = {'C', 'H', 'C', 'E'};
 // allocated and the ninth transform had nowhere to live. Adding a field is a format
 // change, hence the bump — the same clean break as v1->v2, v2->v3 and v3->v4.
 // Older streams are rejected with bad-version rather than guessed at.
-inline constexpr uint8_t kFormatVersion = 5;
+inline constexpr uint8_t kFormatVersion = 6;
 
 // Default block size. The prompt starts at 256 KB; Phase 12 tunes it.
 // 4 MiB. Measured: on dickens, 256 KiB gives 2,743,444 bytes, 1 MiB 2,496,909,

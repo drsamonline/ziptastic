@@ -25,7 +25,14 @@ struct FileHeader {
   // The second Layer 0 byte, added in v5 because the first is full. A separate field
   // rather than a wider integer, so the on-disk shape stays explicit.
   uint8_t layers2 = 0;
-  uint64_t original_size = 0;  // exact byte count of the uncompressed input
+  // The size AFTER Layer 0 — what the block loop produces, not what the caller passed in.
+  uint64_t original_size = 0;
+  // The size the caller actually gets, added in v6. Until then the decoder had no way to
+  // know the final size, so a crafted stream could describe an enormous expansion and the
+  // only bound was a heuristic ceiling checked after the allocation (see
+  // docs/AUDIT_FINDINGS.md, B3 and E1). With this field every intermediate buffer is
+  // bounded by the true size and the final check is exact rather than a guess.
+  uint64_t true_size = 0;
   uint64_t block_count = 0;    // number of blocks that follow
   // CRC-32 of the original (pre-transform) bytes. Verified after every inverse
   // transform has run, so a decode that silently produced the wrong bytes — the

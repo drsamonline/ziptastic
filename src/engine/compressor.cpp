@@ -237,7 +237,8 @@ EncodedBlock encode_one_block(std::span<const uint8_t> input, size_t pos, size_t
 Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
                   bool bcj, bool precomp, bool dedup, bool jpeg, bool gif,
                   uint8_t layers, uint8_t layers2, uint32_t checksum,
-                  std::vector<uint8_t>& out, CompressStats& stats) {
+                  uint64_t true_original_size, std::vector<uint8_t>& out,
+                  CompressStats& stats) {
   const size_t block_count =
       input.empty() ? 0 : (input.size() + opt.block_size - 1) / opt.block_size;
   const bool parallel = opt.parallel && block_count > 1;
@@ -247,7 +248,8 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
   fh.flags = header_flags(opt, bcj, precomp, parallel, dedup, jpeg, gif);
   fh.layers = layers;
   fh.layers2 = layers2;
-  fh.original_size = input.size();
+  fh.original_size = input.size();   // post-Layer-0: what the block loop encodes
+  fh.true_size = true_original_size; // what the caller passed in
   fh.block_count = block_count;
   fh.checksum = checksum;
 
@@ -376,7 +378,7 @@ Err encode_lzma2_stream(std::span<const uint8_t> input,
                         const CompressOptions& opt, bool bcj, bool precomp,
                         bool dedup, bool jpeg, bool gif, uint8_t layers,
                         uint8_t layers2, uint32_t checksum,
-                        std::vector<uint8_t>& out) {
+                        uint64_t true_original_size, std::vector<uint8_t>& out) {
   std::vector<uint8_t> payload;
   std::vector<uint8_t> props;
   if (Err e = lzma2_encode(input, payload, props); e != Err::Ok) return e;
@@ -392,6 +394,7 @@ Err encode_lzma2_stream(std::span<const uint8_t> input,
   fh.layers = layers;
   fh.layers2 = layers2;
   fh.original_size = input.size();
+  fh.true_size = true_original_size;
   fh.block_count = 1;
   fh.checksum = checksum;
 
@@ -1004,7 +1007,8 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   CompressStats local;
   std::vector<uint8_t> native;
   if (Err e = encode_native(data, opt, bcj, precomp, dedup, jpeg, gif,
-                    layers, layers2, crc, native, local); e != Err::Ok) {
+                    layers, layers2, crc, input.size(), native, local);
+      e != Err::Ok) {
     return e;
   }
 
@@ -1014,7 +1018,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   if (opt.lzma2_fallback && lzma2_available() && !input.empty()) {
     std::vector<uint8_t> fallback;
     const Err e = encode_lzma2_stream(data, opt, bcj, precomp, dedup, jpeg, gif,
-                          layers, layers2, crc, fallback);
+                          layers, layers2, crc, input.size(), fallback);
     if (e == Err::Ok && fallback.size() < native.size()) {
       CompressStats fb;
       fb.blocks = 1;
@@ -1048,6 +1052,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
       cfh.layers = layers;
       cfh.layers2 = layers2;
       cfh.original_size = input.size();
+      cfh.true_size = input.size();
       cfh.block_count = 1;
       cfh.checksum = crc;
       write_file_header(cw, cfh);

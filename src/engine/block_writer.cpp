@@ -35,6 +35,7 @@ void write_file_header(ByteWriter& w, const FileHeader& h) {
   w.u8(h.layers);
   w.u8(h.layers2);
   w.varint(h.original_size);
+  w.varint(h.true_size);
   w.varint(h.block_count);
   w.u32(h.checksum);
 }
@@ -66,6 +67,10 @@ Err read_file_header(ByteReader& r, FileHeader& h) {
   if (!r.varint(original_size)) return Err::BadVarint;
   if (original_size > kMaxStreamSize) return Err::BadBlockSize;
 
+  uint64_t true_size = 0;
+  if (!r.varint(true_size)) return Err::BadVarint;
+  if (true_size > kMaxStreamSize) return Err::BadBlockSize;
+
   uint64_t block_count = 0;
   if (!r.varint(block_count)) return Err::BadVarint;
   // A block carries at least one byte, so block_count can never exceed the
@@ -83,6 +88,7 @@ Err read_file_header(ByteReader& r, FileHeader& h) {
   h.layers = layers;
   h.layers2 = layers2;
   h.original_size = original_size;
+  h.true_size = true_size;
   uint32_t checksum = 0;
   if (!r.u32(checksum)) return Err::Truncated;
 
