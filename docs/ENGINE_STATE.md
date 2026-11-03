@@ -99,8 +99,11 @@ real binary: round trips, layer-bit assertions, split parts, corruption paths.
 
 `docs/VS_THE_FIELD.md`. The pattern matters more than the headline: the gain comes from
 format-aware transforms, and on data with neither a format nor redundancy there is almost
-nothing to win. `xz`/`7z` are not installed here, so the LZMA-class comparison is still
-owed.
+nothing to win. **The LZMA-class comparison is now measured** against `xz -9e` via liblzma
+(Python's `lzma`, preset 9 + EXTREME): **+24.9%** on prose, **+57.2%** on sheet XML, **+29.6%**
+on a raw CD image, **+0.2%** on a cooked ISO, and **−0.0%** on a floppy image and an
+asset-heavy near-duplicate tree. Where a transform fires the win is structural; where none
+fires it is a tie, and twice marginally behind.
 
 ## Tools suggested from outside, and what they would add
 
