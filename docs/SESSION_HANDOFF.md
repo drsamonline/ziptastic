@@ -283,8 +283,12 @@ Layer bits: `kLayerNumeric` 0x01, `kLayerNumericNested` 0x02,
    1 MiB, and with the stream pass on or off, on prose and on a heterogeneous 2 MB file),
    so the 6–8% is CM at block granularity. What is left is a **speed** question: the
    whole-stream pass is a full extra CM run that won nothing on three files out of three.
-   `--no-cm-stream` ships so it can be gated once a file where it *does* win is available
-   (the xml fixture that showed 16% is not in the corpus).
+   `--no-cm-stream` ships so the two can be measured apart. **Then measured on a 6.8 MB
+   sheet XML, and the stream pass DOES win: −16.3%** over per-block alone (6,437 → 5,390),
+   reproducing the 16% in the source comment. CM itself is **−90.8% over `-9`** on that
+   file (70,086 → 6,437). So the gate is not "it never wins" — it wins on large structured
+   multi-block files — and what is left is a **cost rule** (the stream pass triples the run
+   on that file), not a gate.
 11. **PNG and BMP — shipped the same session.** PNG image data inflated (preflate):
    −22.9% sprite / −68.8% gradient. BMP colour planes + row delta: −98.9% photographic,
    declined on a sprite sheet (the clearest case of a transform that is right for one image

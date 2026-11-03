@@ -102,3 +102,20 @@ Nothing in this document has been measured yet — it is the field knowledge wri
 down so the next session starts from it rather than rediscovering it. The
 stored-ZIP gap, however, is a code fact: `preflate_wrap.cpp` line 92 accepts only
 `method == 8`.
+
+
+## Field note, 2026-11-02: precomp pays on large members, not many small ones
+
+Recorded from the owner's practice, and now confirmed by measurement
+(`docs/TEST_CORPUS.md`): **precomp is worth it on larger file sizes and stops paying on
+archives of many small members.**
+
+The 53 MB KolibriOS distribution ZIP is 1,172 members — 796 deflated, 376 stored, ≈45 KB
+average — and precomp **declined entirely** (`flags 0x01`, no `kFlagPrecomp`), at both
+256 KiB and 8 MiB blocks. A deflate stream on a 45 KB file is already close to what the
+backend can do with the same bytes, and per-member framing is not free, so the gate's
+answer is correct rather than broken.
+
+The practical rule that follows, and it matches the repack practice already recorded here:
+**unpack the big members, leave the small ones alone.** A pipeline that runs precomp over
+a whole distribution ZIP is paying for thousands of decisions that all come back "no".

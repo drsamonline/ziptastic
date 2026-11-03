@@ -132,3 +132,31 @@ stream pass *does* win, and the xml fixture that showed 16% is not in the corpus
 
 `--no-cm-stream` exists now, so the next person with that fixture can settle it in two
 runs.
+
+## The stream pass does earn its place — on large structured files
+
+The section above measured prose and a heterogeneous 2 MB mix and found the whole-stream
+pass identical to the per-block candidates, which suggested it could be gated away. Built a
+**6.8 MB spreadsheet sheet XML** — the file class the source comment cites — and it
+reproduces the 16%:
+
+| configuration | bytes | time |
+|---|---|---|
+| `-9` (no CM) | 70,086 | ~10 s |
+| `--max-ratio --no-cm-stream` (per-block CM) | 6,437 | ~2 min |
+| `--max-ratio` (both passes) | **5,390** | 3 min 27 s |
+
+- **CM is worth −90.8% over `-9`** on this file (70,086 → 6,437), and −92.3% with the
+  stream pass on top.
+- **The stream pass is worth −16.3%** over per-block alone (6,437 → 5,390) — matching the
+  16% the source comment recorded.
+
+So the gate must not be "it never wins". It wins exactly where the comment said it would:
+a large, highly structured, multi-block file whose blocks share a model. The two earlier
+null results were a 1 MB file (four blocks of one homogeneous text) and a 2 MB mix where
+each block had already been transformed differently.
+
+What that leaves is not a gate but a **cost rule**: the stream pass triples the run on this
+file, and it can never hurt ratio because it is only adopted when smaller. Running it only
+when the file is large enough for cross-block redundancy to be plausible is the shape —
+and the threshold needs measuring on more file classes, not guessing from two nulls.
