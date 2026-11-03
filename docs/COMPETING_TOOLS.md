@@ -67,3 +67,33 @@ If the goal is "make the game's textures smaller", it is the right tool; if the 
 - **oxipng / optipng**: no archive benefit (3 bytes on a 66% smaller PNG); real benefit only
   for files shipped outside the archive.
 - **browser-image-compression**: lossy, so a different product decision entirely.
+
+## Follow-up: the near-duplicate gap, measured — and it is not a gap
+
+The section above said the one thing possibly missing from `dedup` is **near-duplicates**
+(files that differ by a header or a few bytes), because both tests used *exact* copies.
+Tested it.
+
+| test | size | ideal | ziptastic `-9` | zstd `-19` | `flags` |
+|---|---|---|---|---|---|
+| 200 near-copies of a 20 KB asset in a 9 MB tree | 9,000,000 | 5,020,000 | 5,103,853 (+1.7%) | **5,048,962** (+0.6%) | 0x01 |
+| 40 near-copies of a 200 KB asset, 8 MB | 8,000,000 | ≈230,000 | **228,008** | 231,641 | 0x01 |
+
+`flags = 0x01` in both: **`dedup` did not fire**, because the copies are not exact.
+
+Two things fall out, and they point the same way:
+
+1. In the **mixed** case zstd beats us by 1.1%, because its LZ77 finds the long identical
+   runs *inside* each near-copy and our `dedup` skipped them entirely.
+2. In the **asset-heavy** case we beat zstd by 1.6% (228,008 against 231,641) with `dedup`
+   still not firing — the backend's own match finder found the near-duplicates.
+
+So the near-duplicate work is **already being done, by the backend rather than by a delta
+stage**. A dedicated delta transform would be duplicating a job the match finder does, and
+the one case where we trail zstd (mixed content, 1.1%) is a case where a delta stage would
+have to beat the match finder on data that is 98% random.
+
+**Conclusion: not built, and not worth building.** The gap that looked like the missing
+piece of the srep story turned out to be a measurement artefact of testing only exact
+copies. Recorded because the instinct — "srep handles near-duplicates, so we need a delta
+stage" — was reasonable and wrong, and the next person will have it too.
