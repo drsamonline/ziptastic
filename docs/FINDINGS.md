@@ -380,8 +380,35 @@ headroom above is nearly all real.
 
 **What is not established**, and is the work: a stream from an unknown encoder version or level needs
 the settings *recovered*, which is a search over the encoder's parameters plus a diff when no setting
-reproduces it — `preflate` does this for zlib's levels and it is the hard part of that project. The
-fixtures here were produced by one encoder at one setting, which is the friendliest possible case.
+reproduces it — `preflate` does this for zlib's levels and it is the hard part of that project.
+
+**Measured, 2026-11-04: the search is affordable and the full search is not.** Every stream in a sweep
+of levels is recoverable by trying them in order, and the cost is the whole problem:
+
+| encoder | settings tried | recovered | trial encodes | time |
+|---|---|---|---|---|
+| zstd | 1, 3, 5, 9, 15, 19, 22 | every one | 1 → 19 | 0.01 s → **3.25 s** |
+| brotli | 1, 5, 9, 11 | every one | 1 → 11 | 0.01 s → **5.26 s** |
+| xz | 0, 3, 6, 9, 9e | every one | 1 → 5 | 0.10 s → 2.64 s |
+
+The most common real settings are the most expensive to recover, because a linear search costs one
+encode per level and quality 11 is the slowest encoder here. Against the engine's own ~1.3 s for the
+same 512 KB, a full search is **2.5–4× the whole compression** — for an 18.5% win. That is the wrong
+slope.
+
+**A shortlist changes the arithmetic.** Two candidate settings per format, tried in order and declined
+if neither matches:
+
+| encoder | shortlist | cost |
+|---|---|---|
+| zstd | 3, 19 (the default and the release default) | **0.49 s** |
+| xz | 6, 9e | 1.18 s |
+| brotli | 5, 11 | 2.54 s |
+
+So the design that survives is **a short, ordered list of settings and a decline when none matches**,
+not a search — 0.5 s for zstd against a 29 KB win on this fixture, and streams from any other setting
+simply do not get the transform. Brotli stays expensive because quality 11 is; it may only be worth
+trying after the cheap ones fail and the payload is large enough to pay for it.
 
 Also unbuilt: zstd has no decoder in the tree. Brotli and liblzma are already vendored (`brotli_vendor`,
 `liblzma`), so `.br` and `.xz` need no new dependency; `.zst` would.
@@ -393,10 +420,16 @@ diff when it is not identical), and a test that asserts the transform fired (the
 pattern). Three formats, three bits, or one bit and a format byte inside the payload — that is a
 design decision for whoever builds it, not for this measurement.
 
-**Verdict: worth building, not yet built.** The win is 15–18% on a container class that is common and
-currently costs the engine 23%, the pattern is one this project already has, and two of the three
-formats need no new dependency. The first step is not the transform — it is the recipe recovery, and
-its cost is what decides whether this ships.
+**Verdict: worth building, with the shortlist and not the search.** The win is 15–18% on a container
+class that is common and currently costs the engine 23%, the pattern is one this project already has,
+and two of the three formats need no new dependency. The recipe recovery was the open question and it
+is now answered: a full search costs 2.5–4× the whole compression, a two-entry shortlist costs 0.5 s
+for zstd and 1.2 s for xz. `.br` is the one that may not pay, because quality 11 costs 2.5 s to
+confirm.
+
+**Not built.** What would have to be true first: a corpus of real `.zst`/`.xz` streams from other
+tools, to check that a two-entry shortlist actually matches most of them — this fixture cannot answer
+that, and a shortlist that misses is a transform that never fires.
 
 ## 4. Container payloads: what the nested transforms actually do
 

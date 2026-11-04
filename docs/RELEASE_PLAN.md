@@ -138,8 +138,11 @@ the policy in `FORMAT.md`, and the part that is not established: recovering the 
 from a stream whose encoder version and level are unknown, which is `preflate`'s actual difficulty.
 
 Order of work if this is picked up: recipe recovery first, because its cost decides whether the
-transform ships at all; then `.br` and `.xz`, which need no new dependency; `.zst` last, because it
-needs a decoder the tree does not have.
+transform ships at all — **answered 2026-11-04**: a full search over settings costs 2.5–4× the whole
+compression, a two-entry shortlist costs 0.5 s for zstd and 1.2 s for xz. So the design is a short
+ordered list with a decline, not a search; then `.xz` and `.br`, which need no new dependency; `.zst`
+last, because it needs a decoder the tree does not have. What is missing before anyone builds it is a
+corpus of real streams from other tools, to check the shortlist matches them.
 
 ---
 
