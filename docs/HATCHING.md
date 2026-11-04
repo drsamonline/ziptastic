@@ -75,10 +75,42 @@ HatchZip-class logic, and ziptastic stays the compressor it is good at being.
 
 ## Recorded conclusion
 
-- **Not adopting**: in-place shrinking extraction inside ziptastic. Wrong product, destructive,
-  and it needs a safety apparatus that belongs to a tool whose job is extraction.
-- **Adopting as a candidate**: a **block offset table** (format v8), which is the property that
-  makes hatching, random access, resume and parallel decode all possible. It is the one item in
-  this document that would change ziptastic itself.
-- **Referenced for later**: HatchZip's journal and ownership model, if a hatch tool is ever built
-  on top of `.dr`.
+**Decision, 2026-11-04: shrinking extraction belongs to heavenzip.** Confirmed with the owner. The
+reasoning is in the sections above, and the split is clean:
+
+| layer | what it owns | what it does about hatching |
+|---|---|---|
+| **ziptastic** | the codec | adds a **block offset table** (v8) so its own blocks are addressable. Nothing else. |
+| **heavenzip** | the orchestrator | owns the hatch *pipeline stage*: fit check, journal, truncate-as-you-go, resume. |
+| **hatchzip** | the extractor | does the actual work for ZIP, 7z, RAR, tar, tar.gz, tar.xz and split archives. |
+
+### For foreign archives: delegate, do not reimplement
+
+heavenzip should **call HatchZip**, not rebuild it. HatchZip is **MIT OR Apache-2.0** — compatible
+with ziptastic's MIT — mature, and its `docs/how-it-works.md` documents a dozen failure modes that
+were paid for in bugs: the saved tail, the atomic journal, the ownership record that stops a
+supplied journal from deleting the user's files, the case-collision folders, the "check it fits
+before touching anything". A reimplementation would be months of safety work to arrive at the same
+place, and every one of those items is a way to destroy somebody's data.
+
+The integration is small: heavenzip decides *what* to extract and *where*, HatchZip does it.
+
+### For `.dr`: the offset table is the prerequisite
+
+heavenzip can only hatch a `.dr` natively once the format has addressable blocks. Until then the
+honest options are "extract fully" (needs the space) or "not yet". That is why the offset table is
+Phase 3b in `RELEASE_PLAN.md` and not a later nicety — it is the one thing ziptastic owes heavenzip
+before hatching `.dr` is possible at all.
+
+And the offset table earns its place on its own: random access, resumable decode and parallel
+decode without a sequential scan are all things ziptastic wants regardless of hatching.
+
+### What ziptastic does not do
+
+It never deletes a user's archive. A codec that destroys its input on success is a codec nobody
+can run twice, and the destructive decision belongs to the layer that was told to extract.
+
+### Referenced for later
+
+HatchZip's journal and ownership model, for whoever builds the hatch stage in heavenzip. Read
+`docs/how-it-works.md` first; it is the best document of its kind either project has.
