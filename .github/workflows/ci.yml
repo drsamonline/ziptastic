@@ -42,11 +42,25 @@ jobs:
 
       - name: Round trip
         # The one property that matters more than any of the tests: what goes in comes out.
+        #
+        # The original is kept as sample.orig and compared with cmp, because the earlier
+        # version of this step deleted the input and then asserted nothing about the
+        # output — and its last line compressed sample.bin a second time, which refuses to
+        # overwrite sample.bin.dr and failed the step. Nothing reached that line until the
+        # build started getting past the compiler.
         run: |
           head -c 200000 /dev/urandom > sample.bin
+          cp sample.bin sample.orig
           ./build/ziptastic c -9 sample.bin
           test -f sample.bin.dr
           rm sample.bin
           ./build/ziptastic d sample.bin.dr
-          head -c 200000 /dev/urandom > /dev/null   # keep the shell honest
-          ./build/ziptastic c -9 --no-precomp sample.bin
+          cmp sample.orig sample.bin
+
+          # The parallel path, whose blocks are the ones the offset table makes addressable.
+          ./build/ziptastic c -9 --parallel --no-lzma2 -b 64 -o sample.par.dr sample.bin
+          ./build/ziptastic d -o sample.par.out sample.par.dr
+          cmp sample.orig sample.par.out
+
+          # And the table is readable and verified, which is the point of format v8.
+          ./build/ziptastic info sample.par.dr | grep -q "verified against the manifest digest"
