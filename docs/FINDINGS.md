@@ -206,6 +206,38 @@ obvious next idea and is not attempted.
 Speed is not in this table because this machine cannot resolve it (§3c): every size ran at
 0.37–0.45 MB/s on these corpora, which is the spread between runs, not between block sizes.
 
+## 3e. The Huffman candidate is now gated by a measurement
+
+`SELECTOR_PROFILE.md` measured the static Huffman candidate at **18% of a 1 MB prose run for
+nothing** — byte-identical output with and without it — and said the next step was a sample trial
+rather than a default flip. Built 2026-11-04.
+
+The trial encodes a 64 KiB prefix of the block with the coder that would actually run, scales that
+to the block, and runs the full candidate only if the estimate is within 1% of the best candidate so
+far. A prefix because a byte histogram is a whole-block property and any slice represents it; the 1%
+slack is deliberately in Huffman's favour, because running it needlessly costs time and skipping it
+wrongly costs ratio.
+
+**No ratio changed.** Archive sizes on all six corpora, gated against `--no-huffman`:
+
+| corpus | gated | `--no-huffman` | outcome |
+|---|---|---|---|
+| `tree.tar`, 1.6 MB | 316,900 | 316,900 | skipped |
+| `code.txt`, 846 KB | 149,468 | 149,468 | skipped |
+| `big.txt`, 1.4 MB code | 180,016 | 180,016 | skipped |
+| `huge.txt`, 2.75 MB mixed | 395,411 | 395,411 | skipped |
+| `p1m.txt`, 310 KB text | 70,726 | 70,726 | skipped |
+| **`seven.bin`, 1 MB, 7 symbols** | **287,758** | 289,862 | **ran, won 0.73%** |
+
+The first five are byte-identical to the numbers in §3d, taken before the gate existed. The last one
+is the case the candidate exists for, and the trial lets it run.
+
+**The time saving is not claimed.** `SELECTOR_PROFILE.md`'s 18% was measured on a different file
+with an older build, and this machine cannot resolve an effect that size against its own spread
+(§3c). What is measured is the decision: `-v` now reports `huffman: N offered, M skipped by the
+sample trial`, because the output is identical whether the candidate ran and lost or never ran —
+a size comparison cannot tell you whether a gate is working.
+
 ## 4. Container payloads: what the nested transforms actually do
 
 A container payload puts its own header in front of the member bytes, so every nested transform
@@ -254,6 +286,7 @@ better. That is a *file* result, not a container one.
 | decoding from the offset table instead of walking, in memory | 810–817 vs 800–842 ms, inside a ±40 ms spread | the header scan it removes is 10 KB; nothing to measure |
 | moving the block digest into the decode workers | 809.9 vs 817.3 ms median | strictly less serial work, and smaller than this machine's noise |
 | the block offset table as a speed feature | nothing to speed up | it is an addressing feature; §3c |
+| turning static Huffman off by default | no ratio change on five corpora, and it loses 0.73% on the seven-symbol file | gated by a sample trial instead; §3e |
 
 ## 6. The audit
 

@@ -55,4 +55,12 @@ already been wrong in the direction that costs ratio:
   the comparison could run on a sample first and only fall back to a full run when the
   sample is close.
 
-Neither is built. Both need the trial to be right, and this document is the baseline.
+**Update, 2026-11-04: the Huffman gate is built.** `huffman_may_win` encodes a 64 KiB prefix,
+scales it to the block, and runs the full candidate only if that estimate is within 1% of the best
+candidate so far. No archive size changed on any of six corpora, and the seven-symbol file that
+Huffman wins on still gets it (`FINDINGS.md` §3e). The 18% saving is not re-claimed here: this
+machine cannot resolve it, and the profile above was taken on a different file with an older build.
+
+The LZMA2 fallback is still ungated. It is a guarantee rather than an optimisation, so gating it
+needs the comparison to be safe by construction — a sample that can only *trigger* the full run, and
+a full run whenever the sample is close.

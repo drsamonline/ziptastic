@@ -86,6 +86,32 @@ uint8_t header_flags(const CompressOptions& opt, bool bcj, bool precomp,
 // the stream-wide finder, cost model and coarse index so matches can reach back
 // across block boundaries; parallel mode passes a finder built over the block
 // alone, which is what makes the blocks independent.
+// Would the byte-level Huffman coder have a chance on this block?
+//
+// Huffman costs 18% of a text run and wins nothing there, while on a seven-symbol file it
+// wins 0.91% — so it can be neither left on nor turned off (SELECTOR_PROFILE.md). The
+// trial is a measurement, not a rule: encode a 64 KiB prefix with the coder that would
+// actually run, scale the result to the whole block, and run the full candidate only if
+// that estimate is within kSlackPct of the best candidate so far.
+//
+// A prefix, not a middle slice, because a byte histogram is a whole-block property and
+// any slice represents it; the slack is what pays for the difference. It is deliberately
+// generous in Huffman's favour: the cost of running it needlessly is time, the cost of
+// skipping it wrongly is ratio, and this project has been wrong in the ratio direction
+// three times.
+bool huffman_may_win(std::span<const uint8_t> block, size_t best_so_far) {
+  constexpr size_t kSample = 64 * 1024;
+  constexpr size_t kSlackPct = 1;
+  // Small blocks are not worth a trial: the estimate from a fraction of a small block is
+  // worse than the thing it estimates.
+  if (block.size() <= kSample) return true;
+  const std::span<const uint8_t> sample = block.subspan(0, kSample);
+  ByteWriter w;
+  huff_static_encode(sample, w);
+  const uint64_t est = static_cast<uint64_t>(w.size()) * block.size() / sample.size();
+  return est * 100 <= static_cast<uint64_t>(best_so_far) * (100 + kSlackPct);
+}
+
 EncodedBlock encode_one_block(std::span<const uint8_t> input, size_t pos, size_t n,
                               MatchFinder& finder, const CostModel& model,
                               CoarseIndex* coarse, const CompressOptions& opt,
@@ -184,8 +210,14 @@ EncodedBlock encode_one_block(std::span<const uint8_t> input, size_t pos, size_t
     }
 
     // Byte-level Huffman: no LZ, just the block's byte distribution. Only
-    // worth offering where LZ finds little but the bytes are skewed.
-    if (opt.huffman && opt.huff_static) {
+    // worth offering where LZ finds little but the bytes are skewed — and only after a
+    // trial says so, because it is the one candidate that costs real time to lose.
+    size_t best_so_far = n;
+    for (const EncodedBlock& c : cands) {
+      best_so_far = std::min(best_so_far, static_cast<size_t>(c.hdr.compressed_size));
+    }
+    if (opt.huffman && opt.huff_static) ++stats->huff_trials;
+    if (opt.huffman && opt.huff_static && huffman_may_win(block, best_so_far)) {
       ByteWriter hs;
       huff_static_encode(block, hs);
       EncodedBlock hb;
@@ -194,6 +226,8 @@ EncodedBlock encode_one_block(std::span<const uint8_t> input, size_t pos, size_t
       hb.hdr.compressed_size = hs.size();
       hb.body = hs.take();
       cands.push_back(std::move(hb));
+    } else if (opt.huffman && opt.huff_static) {
+      ++stats->huff_skipped;
     }
     if (opt.huffman && opt.huff_adaptive) {
       ByteWriter ha;

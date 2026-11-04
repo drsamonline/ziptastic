@@ -83,7 +83,12 @@ rm -f build/.ninja_deps build/.ninja_log
 ```
 
 **The cost of that fix is real**: with depfiles stripped, a change to a *header* does not trigger a
-rebuild of the sources that include it. After any edit under `include/`, do:
+rebuild of the sources that include it. That includes `src/engine/compressor.hpp`, which is where the
+stats struct lives — editing it and rebuilding only the touched file leaves every other object
+compiled against the old layout, and the first symptom is not a link error but a corrupted argument:
+a `CompressOptions` with a block size of zero, returned as `bad-block-size` from a call that passed
+it correctly. It cost a debugging session on 2026-11-04. After any edit under `include/` **or to a
+`.hpp` under `src/`**, do:
 
 ```bash
 find src tests -name '*.cpp' -exec touch {} +

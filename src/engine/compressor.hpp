@@ -95,6 +95,11 @@ struct CompressStats {
   uint64_t mode_counts[16] = {};
   uint64_t tokens = 0;
   uint64_t payload_bytes = 0;
+  // How often the Huffman candidate was offered, and how often the sample trial skipped it.
+  // Counted rather than inferred: the output is identical whether or not the candidate ran
+  // and lost, so a size comparison cannot tell you whether a gate is working.
+  uint64_t huff_trials = 0;
+  uint64_t huff_skipped = 0;
   // True when the LZMA2 fallback won and the stream is one fallback block.
   bool lzma2_stream = false;
 };
