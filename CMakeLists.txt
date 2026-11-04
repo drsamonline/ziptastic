@@ -108,6 +108,23 @@ target_include_directories(preflate_shim PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+# Preflate's headers use uint16_t and size_t without including <cstdint> or <cstddef>, and
+# have always got away with it by transitive inclusion. GCC 16 (the ubuntu-26 runner image,
+# from 2026-11) no longer pulls them in through <algorithm>, so every target that sees these
+# headers stopped compiling — CI was red for four commits before this was noticed, because
+# the failure is in vendor code and the local toolchain (zig's libc++) still includes them.
+# Force the two headers in for the preflate targets rather than editing ten vendored files:
+# this project's rule is that vendored source is not patched.
+if(MSVC)
+  target_compile_options(preflate_vendor PRIVATE /FIcstdint /FIcstddef)
+  target_compile_options(preflate_shim PRIVATE /FIcstdint /FIcstddef)
+else()
+  # One SHELL: option, because CMake drops a repeated flag from a target's option list and
+  # `-include` is the same flag twice.
+  target_compile_options(preflate_vendor PRIVATE "SHELL:-include cstdint -include cstddef")
+  target_compile_options(preflate_shim PRIVATE "SHELL:-include cstdint -include cstddef")
+endif()
+
 # Vendored third-party code: keep its warnings out of our build log.
 if(NOT MSVC)
   target_compile_options(preflate_vendor PRIVATE -w)
