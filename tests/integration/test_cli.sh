@@ -92,6 +92,30 @@ expect_ok $rc "bench runs"
 grep -q "TOTAL" "$TMP/bench.txt" && ok "bench prints a total row" \
   || bad "bench output: $(cat "$TMP/bench.txt")"
 
+# ---------------------------------------------------------- default names (.dr)
+# `c` with no output path writes <input>.dr, `d` strips it, a renamed stream still decodes and
+# takes a .out name, and a .dr that is not a CHCE stream is refused. Detection is by magic, so
+# the extension is a convention and never a gate.
+head -c 20000 /dev/urandom > "$TMP/dr.bin"
+"$BIN" -9 "$TMP/dr.bin" 2>/dev/null; rc=$?
+[ $rc -eq 0 ] && [ -f "$TMP/dr.bin.dr" ] && ok "c with no -o writes <input>.dr" || fail "c wrote no .dr"
+
+rm -f "$TMP/dr.bin"
+"$BIN" d "$TMP/dr.bin.dr" 2>/dev/null; rc=$?
+[ $rc -eq 0 ] && [ -f "$TMP/dr.bin" ] && ok "d strips the .dr extension" || fail "d did not restore the name"
+
+cp "$TMP/dr.bin.dr" "$TMP/renamed.bin"
+"$BIN" d "$TMP/renamed.bin" 2>/dev/null; rc=$?
+if [ $rc -eq 0 ] && cmp -s "$TMP/renamed.bin.out" "$TMP/dr.bin"; then
+  ok "a renamed stream decodes to <name>.out"
+else
+  fail "a renamed stream did not decode by magic"
+fi
+
+head -c 5000 /dev/urandom > "$TMP/fake.dr"
+"$BIN" d "$TMP/fake.dr" 2>/dev/null; rc=$?
+[ $rc -ne 0 ] && ok "a .dr that is not CHCE is refused" || fail "a fake .dr was accepted"
+
 # --------------------------------------------------------------- split output
 # The parts are pieces of one stream, so they must all be present; any part can be
 # handed to the decoder and it joins the siblings itself.

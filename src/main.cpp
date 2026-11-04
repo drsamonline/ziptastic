@@ -25,10 +25,19 @@ namespace {
 // Built from the header rather than a literal: this string said "v1" through four
 // format changes, which is the kind of thing nobody notices until a user reports the
 // wrong version back.
+// The release version, in one place. `--version` prints it beside the format version, because
+// the two change for different reasons and a bug report needs both.
+constexpr const char* kReleaseVersion = "1.0.0";
+
+// The archive extension. Detection is by the CHCE magic, never by this — a .dr renamed to .bin
+// must still decode, and a .dr that is not a CHCE stream must be refused. The extension is a
+// convention for humans and file managers.
+constexpr const char* kArchiveExtension = ".dr";
+
 const char* version_string() {
-  static const std::string s = std::string("ziptastic 0.1.0-dev (CHCE format v") +
-                               std::to_string(static_cast<int>(chce::kFormatVersion)) +
-                               ")";
+  static const std::string s = std::string("ziptastic ") + kReleaseVersion +
+                               " (CHCE format v" +
+                               std::to_string(static_cast<int>(chce::kFormatVersion)) + ")";
   return s.c_str();
 }
 
@@ -350,6 +359,25 @@ int parse_args(int argc, char** argv, Options& o) {
   }
   if (!positional.empty() && positional[0] != "-") o.input = positional[0];
   if (positional.size() == 2 && positional[1] != "-") o.output = positional[1];
+  // `ziptastic c file` with no output path writes file.dr. It is the first thing anyone types,
+  // and requiring -o for the common case is friction with no purpose.
+  if (o.output.empty() && o.cmd == Options::Command::Compress && !o.input.empty() &&
+      o.input != "-") {
+    o.output = o.input + kArchiveExtension;
+  }
+  // Decoding an `x.dr` writes `x`; anything else writes `x.out`, so a stream that was renamed
+  // never overwrites the file it came from.
+  if (o.output.empty() && o.cmd == Options::Command::Decompress && !o.input.empty() &&
+      o.input != "-") {
+    const std::string ext = kArchiveExtension;
+    const std::string in = o.input;
+    if (in.size() > ext.size() &&
+        in.compare(in.size() - ext.size(), ext.size(), ext) == 0) {
+      o.output = in.substr(0, in.size() - ext.size());
+    } else {
+      o.output = in + ".out";
+    }
+  }
   return -1;
 }
 
