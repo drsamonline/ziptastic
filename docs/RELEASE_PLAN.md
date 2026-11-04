@@ -90,7 +90,9 @@ Measured, in order of expected payoff. The selector profile already says where t
    cheaper *trial* (fewer blocks, one backend) with the current gate as the fallback when the
    trial is close.
 4. **Threads.** Archive mode is sequential by design for ratio; the measurement that would justify
-   more parallelism is a per-block time split, not a guess.
+   more parallelism is a per-block time split, not a guess. **Blocked on hardware, 2026-11-04**: the
+   box these numbers come from reports two cores and delivers one core of throughput, so a per-block
+   time split here would measure oversubscription. `FINDINGS.md` §0.
 
 **Non-goals for speed**: competing with `zstd -3` on wall clock. This engine's claim is ratio at a
 speed that is tolerable for archival work, not interactive use.

@@ -60,9 +60,10 @@ read §3f before touching it. The base64 gate now has a decisive 64 KiB first pa
 where the answer is obvious, and no change where it is a tie — which is most of its remaining 2.3×
 cost, and the part that must not be guessed at.
 
-What is left: a per-block time split before any more threads, and an adaptive block size — the
-block-size sweep is done (§3d): 4 MiB stays, and the one corpus where 1 MiB beats it is the
-heterogeneous one.
+What is left: a per-block time split before any more threads — **blocked**, because the development
+box has one core of throughput and reports two (§0); and an adaptive block size, which is the
+block-size sweep's one loose end (§3d: 4 MiB stays, and 1 MiB beats it by 0.6% on heterogeneous
+content).
 
 ## How this project works, and what it keeps relearning
 

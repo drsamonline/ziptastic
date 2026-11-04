@@ -11,6 +11,29 @@ transform in two places without any indication of which was current.
 
 ---
 
+## 0. The machine every number here was measured on
+
+**One core of throughput, reported as two.** The development box reports `nproc 2` and has no
+`cpu.max` quota, but it does not execute two threads at once:
+
+- two Python threads over a pure-CPU loop: **0.95×** against serial (no speedup);
+- two *processes* over the same loop: 8,835 ms concurrent against 9,696 ms sequential — where real
+  parallelism would have been about 4,850 ms.
+
+This is written down first because it changes how to read every speed number in this document. All of
+them were taken here:
+
+- "Tier-1 fallback on a second thread: **9% slower**" (§5) is an artefact of oversubscription, not of
+  working sets failing to fit in 2 GiB. Nobody has shown that a second thread does not help.
+- "Parallelising the selector: **no gain**" (§5) is the same artefact.
+- The ±40 ms spread on an 800 ms decode (§3c) is a contended single core, not a noisy neighbour.
+- Every ratio number is unaffected: ratio does not depend on how many cores ran, and it reproduces
+  exactly run to run.
+
+So: **ratio claims in this document are solid, and thread claims are unmeasured.** Anything about
+`--parallel`, `-T`, or a per-block time split needs a machine that actually runs two cores, and this
+one does not.
+
 ## 1. What the engine is
 
 Format **v8**. Header: `"CHCE" | version | flags | layers | layers2 | layers3 | original_size |
@@ -342,8 +365,8 @@ better. That is a *file* result, not a container one.
 | LZ4 precompression by storing the parse | **+50%** worse | the recipe costs what LZ4's own descriptors cost |
 | "zip store" unpacking | **−1.4%** | the container's redundancy is already collected |
 | split archives compressed per part | **~2× worse** | belongs in the orchestrator, not the codec |
-| parallelising the selector | no gain | the cost is two backends, not the fan-out |
-| Tier-1 fallback on a second thread | **9% slower** | 2 cores, 2 GiB; the working sets do not fit |
+| parallelising the selector | no gain | the cost is two backends, not the fan-out — and measured on one core of throughput (§0) |
+| Tier-1 fallback on a second thread | **9% slower** | measured on a box with one core of throughput (§0) — the reason given here was never established |
 | adaptive Huffman | **22% of the run, never smaller** | turned off by default; `--huff-adapt` restores it |
 | base64 of single-line structured text | **−6.3%** (a loss) | the gate declines it |
 | near-duplicate delta stage | not needed | the match finder already handles it |

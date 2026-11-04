@@ -8,8 +8,10 @@ log and cost many hours to reconstruct.
 - **CMake ≥ 3.25**, **Ninja**, and a **C++20** compiler.
 - No system packages beyond that: brotli, brunsli, libbsc, zpaq, ppmd, preflate and liblzma are
   vendored under `vendor/`.
-- **~2 GB of RAM and 2 cores are enough**; that is what every number in `FINDINGS.md` was measured
-  on. More cores only help `--parallel`.
+- **~2 GB of RAM**; that is what every number in `FINDINGS.md` was measured on. It also reports two
+  cores and delivers **one core of throughput** — two threads take as long as two sequential runs —
+  so no thread claim in this repository has been tested. `FINDINGS.md` §0 has the measurement. If you
+  are timing anything about `--parallel` or `-T`, check your own machine first.
 
 ## The normal path
 
