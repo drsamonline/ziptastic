@@ -492,6 +492,16 @@ bool precomp_helps(std::span<const uint8_t> payload, std::span<const uint8_t> or
   // worth 2x. That is the third predictor failure in this project and the second
   // that cost ratio; the honest conclusion is to stop predicting where a structural
   // fact is available.
+  //
+  // What this rule can still get wrong, and where that is caught: a payload that grew 2x
+  // and codes worse than the original loses ratio, not data. Under 2 MiB — the Tier-0 guard
+  // in `compress()` — the encoder builds the untransformed stream as well and keeps the
+  // smaller, so the loss cannot reach the output; above it, nothing does, and this line
+  // decides alone. That
+  // is the honest statement of the risk — it is a predictor, and it is the only one left
+  // in this file that can be wrong in the direction that costs size. It has not been
+  // caught being wrong: every measured regression came from the estimator above, not from
+  // this line. Making it measure would mean a full encode of both streams at any size.
   if (payload.size() >= original.size() * 2) return true;
 
   if (payload.size() <= kExactBelow && original.size() <= kExactBelow) {

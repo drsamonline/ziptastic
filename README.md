@@ -49,7 +49,7 @@ Every row round-trips byte-exactly. Full tables, the audit and the rejected idea
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-ctest --test-dir build        # 33 suites, ~3 minutes
+ctest --test-dir build        # 34 suites, ~4 minutes
 ```
 
 Linux and Windows. macOS is not supported. The long form — vendor-by-vendor builds, the zig

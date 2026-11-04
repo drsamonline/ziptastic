@@ -159,7 +159,7 @@ blocks 1..1 of 3 -> 1048576 bytes (verified)</pre>
   <h2>Build it</h2>
   <pre>cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-ctest --test-dir build        # 33 suites, ~3 minutes</pre>
+ctest --test-dir build        # 34 suites, ~4 minutes</pre>
   <p>CMake ≥ 3.25, Ninja and a C++20 compiler. Nothing else — brotli, brunsli, libbsc, zpaq, ppmd,
     preflate and liblzma are vendored and built by the same CMake run. Linux and Windows; macOS is
     not supported. The long form, including the traps that cost a debugging session, is in

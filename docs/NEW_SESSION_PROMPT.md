@@ -38,6 +38,13 @@ sequential and `--block` on it is a refusal; a transformed stream cannot be slic
 chain needs everything); and the hatch *pipeline* — fit check, journal, truncate-as-you-go — is
 heavenzip's, calling HatchZip for foreign archives.
 
+## Phase 2 is closed
+
+All four items, 2026-11-04. The one that mattered was not the tar: a ZIP written to a pipe
+leaves zero sizes in its local headers and puts them in a data descriptor, so `scan_zip` skipped
+every member — and a tar around it changed nothing. −42.8% on a streamed ZIP, −44.0% on a tar
+holding one, and the corpus in `scripts/regression-corpus.sh` now asserts it.
+
 ## The next piece of work: Phase 3, speed
 
 `RELEASE_PLAN.md` §Phase 3. Nothing there is started. The offset table settled one question rather
@@ -60,6 +67,9 @@ base64 gate's 2.7× cost, and a per-block time split before any more threads.
 - **A green suite proves nothing about an untested path.** The audit found three serious bugs in a
   suite that was green throughout; the fuzz test had been fuzzing nothing because it used default
   options. Check what a test actually exercises before trusting it.
+- **A green suite proves nothing about an untested path** — and a round trip proves nothing about
+  whether a transform fired. `scripts/regression-corpus.sh` exists because every one of those bugs
+  round-tripped perfectly while the archive sat at input size.
 - **Write the negative results down.** `FINDINGS.md` §5 exists so nobody rebuilds LZ4
   precompression, zip-store unpacking, adaptive Huffman or the precomp-gate move.
 - **Never delete a user's data.** ziptastic does not remove its input; destructive decisions belong

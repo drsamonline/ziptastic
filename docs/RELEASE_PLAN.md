@@ -60,14 +60,19 @@ states ratio *and* speed.
 
 Speed work on a shaky base is wasted. These are small and each closes a real class of bug.
 
-1. **A ZIP inside a plain tar is not reached** (`FINDINGS.md` §3b). `scan_zip` misses it because
-   of the 512-byte tar headers. Small fix, real gap for game trees.
-2. **`precomp_helps`' 2× rule is a predictor.** It is the only place a predictor decides alone.
-   Either make it measure, or state in the code why it is safe — but not neither.
-3. **The `layers3` free bits need a policy**: what may take one, and what triggers format v8.
-   Otherwise the next transform is decided by whoever is holding the keyboard.
-4. **A regression corpus**: the fixtures that caught real bugs (the `.tar.gz` regression, the
-   1.2 KB PNG, the near-duplicate tree) checked in as a script, so `ctest` covers them.
+> **Done, 2026-11-04.** All four closed; `FINDINGS.md` §7 has the line for each.
+
+1. ~~**A ZIP inside a plain tar is not reached**~~ — **fixed, and the cause was not the tar.** The
+   members were streamed: zero sizes in the local headers, real ones in a data descriptor. The
+   scan reads the central directory now. −42.8% on a streamed ZIP, −44.0% on a tar holding one.
+2. ~~**`precomp_helps`' 2× rule is a predictor**~~ — **stated in the code**, with the bound named:
+   the Tier-0 guard catches it under 2 MiB, nothing does above, and that is written where the line
+   is rather than left implied.
+3. ~~**The `layers3` free bits need a policy**~~ — `FORMAT.md`, "Policy: who may take a free layer
+   bit": four conditions to allocate one, four changes that force a version bump instead.
+4. ~~**A regression corpus**~~ — `scripts/regression-corpus.sh`, registered as `integration.corpus`:
+   the streamed ZIP, the tar holding it, a small PNG (the transform must not make it bigger) and a
+   near-duplicate tree, each asserting the property that broke, not just the round trip.
 
 ## Phase 3 — speed (only after phases 1 and 2)
 

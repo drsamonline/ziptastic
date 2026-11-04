@@ -361,6 +361,38 @@ on the measured sample. See `INTEGRITY.md` for the three ways to reduce it.
 **Compatibility:** version 4 only. v3 streams are rejected with `bad-version`,
 the same clean break as v1→v2 and v2→v3.
 
+## Policy: who may take a free layer bit, and what forces a version bump
+
+Written 2026-11-04, closing `RELEASE_PLAN.md` Phase 2 item 3. Until this existed, the next
+transform was decided by whoever was holding the keyboard: `layers`, `layers2` and `layers3`
+were filled one bit at a time, each with a different standard of evidence.
+
+**A free bit in `layers3` (bits 1–7) may be allocated only when all four hold:**
+
+1. **A measured win on real content**, recorded in `FINDINGS.md`, against the same archive with
+   the transform disabled. A fixture generated from a formula does not count — that is how BMP
+   read −99% and meant −37%.
+2. **A gate that can decline**, and declines on a control. A transform that cannot say no is a
+   transform that will make something worse.
+3. **A byte-exact inverse**, verified by rebuilding the input and comparing, on the same run
+   that produced the payload. Every transform here does this; it is the rule that makes a wrong
+   transform cost ratio instead of data.
+4. **A test that asserts the transform fired**, not merely that the round trip worked. A round
+   trip passes whether or not the gate opened, which is how the streamed-ZIP gap survived a
+   green suite.
+
+**What forces a version bump** (and therefore what a free bit must never be used for):
+
+- a new field in the header or the trailer, or a field that changes width or meaning;
+- a change to the block layout — a new mode byte, or a new per-block metadata shape;
+- a change to the trailer's structure, as v8 made with the offset table;
+- running out of bits in the last layer byte: `layers3` full means v9 adds `layers4`, and that
+  is a header change even though it is "only" one byte.
+
+**What does not force a bump**: allocating an existing free bit, adding a backend inside the
+existing mode-byte space, or changing which backend wins. Those are compatible with a reader
+that knows the version it is reading.
+
 ## Version 8: the block offset table
 
 `kFormatVersion` is 8. **The header is unchanged from v7**; only the trailer grew, by one absolute

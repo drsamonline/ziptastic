@@ -26,6 +26,12 @@ if(UNIX)
     COMMAND ${CMAKE_COMMAND} -E env
             ZIPT_BIN=$<TARGET_FILE:ziptastic>
             bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_cli.sh)
+
+  # The fixtures that caught real bugs, each asserting the property that was broken.
+  add_test(NAME integration.corpus
+    COMMAND ${CMAKE_COMMAND} -E env
+            ZIPT_BIN=$<TARGET_FILE:ziptastic>
+            bash ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/regression-corpus.sh)
 endif()
 
 # Benchmark harnesses are built but not registered with ctest: they need a
