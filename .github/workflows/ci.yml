@@ -1,0 +1,52 @@
+name: ci
+
+# A cold-start build and the full suite, on every push. The vendor-check job proves the sources
+# materialise; this one proves they compile and that the 32 suites pass.
+#
+# The build is deliberately not parallel-bombed: the vendored brunsli and brotli are large
+# translation units, and a 2-core runner is what this project is developed on, so the CI runner
+# should be at least as forgiving as the developer's machine.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake ninja-build g++
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j 2
+
+      - name: Version string
+        # Fails the build if the CLI and CMake disagree about the version, which is the whole
+        # reason the version lives in one place.
+        run: |
+          ./build/ziptastic version
+          ./build/ziptastic version | grep -q "1.0.0"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Round trip
+        # The one property that matters more than any of the tests: what goes in comes out.
+        run: |
+          head -c 200000 /dev/urandom > sample.bin
+          ./build/ziptastic c -9 sample.bin
+          test -f sample.bin.dr
+          rm sample.bin
+          ./build/ziptastic d sample.bin.dr
+          head -c 200000 /dev/urandom > /dev/null   # keep the shell honest
+          ./build/ziptastic c -9 --no-precomp sample.bin

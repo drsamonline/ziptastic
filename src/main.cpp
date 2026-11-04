@@ -27,7 +27,12 @@ namespace {
 // wrong version back.
 // The release version, in one place. `--version` prints it beside the format version, because
 // the two change for different reasons and a bug report needs both.
-constexpr const char* kReleaseVersion = "1.0.0";
+// The release version comes from CMake (project(... VERSION ...)) so there is exactly one place
+// it is written down. The fallback exists so a build that bypasses CMake still compiles.
+#ifndef CHCE_VERSION
+#define CHCE_VERSION "0.0.0-unknown"
+#endif
+constexpr const char* kReleaseVersion = CHCE_VERSION;
 
 // The archive extension. Detection is by the CHCE magic, never by this — a .dr renamed to .bin
 // must still decode, and a .dr that is not a CHCE stream must be refused. The extension is a

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(ziptastic
-  VERSION 0.1.0
+  VERSION 1.0.0
   DESCRIPTION "CHCE — Chimera Hybrid Compression Engine"
   LANGUAGES C CXX)
 
@@ -292,6 +292,9 @@ endif()
 # ---------------------------------------------------------------------------
 
 add_executable(ziptastic src/main.cpp)
+
+# The release version, passed to the CLI so `ziptastic version` and the build cannot disagree.
+target_compile_definitions(ziptastic PRIVATE CHCE_VERSION="${PROJECT_VERSION}")
 target_link_libraries(ziptastic PRIVATE chce_core)
 target_include_directories(ziptastic PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 

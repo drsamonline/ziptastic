@@ -86,4 +86,9 @@ makes the decoded length an exact check rather than a heuristic.
 | Books | [Amazon author page](https://www.amazon.com/stores/author/B08ZT331LY/allbooks?ccs_id=aed72b9f-71d9-41dc-adee-e9368a317acc) |
 | Everything else | [drsamonline.github.io](https://drsamonline.github.io/) |
 
-MIT licensed.
+## Licence
+
+MIT for ziptastic itself. It links vendored compressors — liblzma, brotli, brunsli, libbsc, zpaq,
+ppmd, preflate — whose terms are summarised in [`docs/LICENCES.md`](docs/LICENCES.md), with
+`vendor/hcs/SOURCES` as the machine-readable authority. If you ship a statically linked binary,
+read the LGPL paragraph there: it is the one that asks something of you.
