@@ -88,6 +88,24 @@ Measured, in order of expected payoff. The selector profile already says where t
 **Non-goals for speed**: competing with `zstd -3` on wall clock. This engine's claim is ratio at a
 speed that is tolerable for archival work, not interactive use.
 
+## Phase 3b — addressable blocks (one format change, four features)
+
+`docs/HATCHING.md` records what was taken from HatchZip: not its shrinking extraction, which is an
+extractor's job with an extractor's risks, but the property that makes it possible — **a block
+offset table**.
+
+Parallel-mode blocks are already self-contained and carry their own SHA-256; nothing can find them
+without walking from the front. An offset table in the trailer (format **v8**) would give:
+
+- hatch-style extraction from the last block backwards, truncating as it goes;
+- random access — decode one block without reading the others;
+- resumable decode — restart at a block boundary after a crash;
+- parallel decode without a sequential scan first.
+
+This is the first thing that reads an offset index; the earlier lexora note proposed one and it was
+not built because nothing did. Cost: one trailer field per block, and a decoder that can start at
+an offset.
+
 ## Phase 4 — reach (transforms, only when something asks for them)
 
 New Layer 0 transforms need a measured win on *real* content and a free bit. The list of what has
