@@ -174,18 +174,25 @@ cmp -s "$TMP/sheet.xml" "$TMP/sheet.out" && ok "spreadsheet XML round-trip is bi
   || bad "spreadsheet XML round-trip differs"
 
 # --------------------------------------------------- block offset table (v8)
-# Three self-contained blocks, so one can be decoded without the others. Random data keeps
-# every Layer 0 transform from firing, which is what --block requires.
-head -c 3145728 /dev/urandom > "$TMP/blocks.bin"
-"$BIN" -f --parallel --no-lzma2 -b 1024 -o "$TMP/blocks.chce" "$TMP/blocks.bin"; rc=$?
-expect_ok $rc "compress 3 MiB as three self-contained blocks"
+# Self-contained blocks, so one can be decoded without the others, and no transform, which
+# is the other thing --block requires.
+#
+# The fixture is `seq` rather than /dev/urandom, and every gate that could fire is turned
+# off by hand. Both matter: a random fixture is a different file on every machine, and on
+# the CI runner a 3 MiB blob of it happened to make the BCJ gate fire, so `--block` refused
+# a stream that had been addressable here. A test whose subject is the offset table should
+# not also be a test of which transforms win on bytes nobody can reproduce.
+seq 1 700000 > "$TMP/blocks.bin"
+"$BIN" -f --parallel --no-lzma2 --no-bcj --no-base64 --no-numeric --no-precomp \
+       -b 1024 -o "$TMP/blocks.chce" "$TMP/blocks.bin"; rc=$?
+expect_ok $rc "compress a text fixture as self-contained blocks"
 
 info="$("$BIN" info "$TMP/blocks.chce")"; rc=$?
 expect_ok $rc "info exits 0"
 printf '%s\n' "$info" | grep -q "verified against the manifest digest" \
   && ok "info reports the block table as verified" \
   || bad "info did not report a verified block table"
-printf '%s\n' "$info" | grep -Eq '^blocks +3$' \
+printf '%s\n' "$info" | grep -Eq '^blocks +5$' \
   && ok "info prints the block count" || bad "info block count line missing"
 printf '%s\n' "$info" | grep -q "each block decodes on its own" \
   && ok "info says the blocks are addressable" || bad "info did not report block access"
@@ -204,7 +211,8 @@ cmp -s "$TMP/tail.want" "$TMP/tail.out" \
 
 # An archive-mode stream has an offset table too, but its blocks may reference each
 # other: the CLI must refuse rather than return bytes that look right.
-"$BIN" -f --no-lzma2 -b 1024 -o "$TMP/arch.chce" "$TMP/blocks.bin"; rc=$?
+"$BIN" -f --no-lzma2 --no-bcj --no-base64 --no-numeric --no-precomp \
+       -b 1024 -o "$TMP/arch.chce" "$TMP/blocks.bin"; rc=$?
 expect_ok $rc "compress the same data in archive mode"
 "$BIN" d --block 1 -f -o "$TMP/arch.out" "$TMP/arch.chce" 2>"$TMP/arch.err"; rc=$?
 expect_fail $rc "archive-mode --block is refused"
