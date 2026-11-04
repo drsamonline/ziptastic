@@ -78,17 +78,18 @@ Speed work on a shaky base is wasted. These are small and each closes a real cla
 
 Measured, in order of expected payoff. The selector profile already says where the time goes.
 
-1. **The candidate set costs what it costs.** On 1 MB of prose: Huffman was 18% for nothing (now
-   gated off by default), the LZMA2 fallback is 34% and is a guarantee, and BWT costs 0.6% while
-   winning 2.6%. The remaining lever is **not running candidates that cannot win** — a sample
-   trial per family, which is what `bcj_helps` and `precomp_helps` already do.
+1. ~~**The candidate set costs what it costs.**~~ **Done, 2026-11-04.** Huffman is gated by a 64 KiB
+   trial with no ratio change on six corpora (`FINDINGS.md` §3e); the LZMA2 fallback is gated by a
+   64 KiB trial with a 20% margin, worth a third of the run on a mixed tree (§3f). BWT still costs
+   0.6% and wins 2.6%, so it stays ungated.
 2. ~~**Block size vs ratio**, measured rather than assumed~~ — **swept, 2026-11-04.** 4 MiB stays:
    it is 4.3–9.3% smaller than 256 KiB on homogeneous content and within 0.6% of the best on every
    corpus. `FINDINGS.md` §3d has the table, and the one corpus where 1 MiB wins, which is the
    heterogeneous one — the selector's freedom to pick a different backend per block.
-3. **The base64 gate's 2.7× cost.** Three cheapenings have already failed; the honest option is a
-   cheaper *trial* (fewer blocks, one backend) with the current gate as the fallback when the
-   trial is close.
+3. ~~**The base64 gate's 2.7× cost.**~~ **Partly done, 2026-11-04.** A 64 KiB first pass decides when
+   the two sides differ by 20% — three times the sample's known error — and hands everything closer
+   to the existing 256 KiB trial: 1.76 s → 1.08 s where the answer is obvious, no change where it is
+   a tie. `FINDINGS.md` §3g.
 4. **Threads.** Archive mode is sequential by design for ratio; the measurement that would justify
    more parallelism is a per-block time split, not a guess. **Blocked on hardware, 2026-11-04**: the
    box these numbers come from reports two cores and delivers one core of throughput, so a per-block
@@ -127,6 +128,18 @@ an offset.
 New Layer 0 transforms need a measured win on *real* content and a free bit. The list of what has
 been measured and rejected (`FINDINGS.md` §5) is longer than the list of what remains, and that is
 healthy: the engine's advantage is already concentrated in a handful of formats.
+
+**Something asks, and it has been measured: the opaque streams.** `.tar.zst`, `.br` and `.xz` are
+invisible to the engine, and a `.tar.zst` costs **22.7% more through the engine than the tar itself**.
+Seeing inside them is worth **−18.5% (zstd), −14.7% (brotli), −16.9% (xz)** on the measured fixture,
+and the recipe is a few bytes in the easy case because re-encoding with the same encoder reproduced
+all three streams byte for byte. `FINDINGS.md` §3h has the numbers, the free-bit arithmetic against
+the policy in `FORMAT.md`, and the part that is not established: recovering the producing settings
+from a stream whose encoder version and level are unknown, which is `preflate`'s actual difficulty.
+
+Order of work if this is picked up: recipe recovery first, because its cost decides whether the
+transform ships at all; then `.br` and `.xz`, which need no new dependency; `.zst` last, because it
+needs a decoder the tree does not have.
 
 ---
 

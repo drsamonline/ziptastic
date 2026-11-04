@@ -349,6 +349,55 @@ So the saving is real on the files where the answer is obvious, and the dominant
 tie — is untouched. That is the honest shape of it: the remaining 2.3× is the price of not guessing,
 and three failed estimates say the price is worth paying.
 
+## 3h. The opaque streams: what a zstd, brotli or xz transform would be worth
+
+Phase 4 is "transforms, only when something asks for them". Something does: `.tar.zst` is now the
+default archive for several distributions and release pipelines, `.br` is what web assets ship as, and
+the engine treats all of them as opaque bytes. Measured 2026-11-04 on a 512,000-byte tar of this
+project's own documentation:
+
+| file | input | ziptastic `-9` | transform fired |
+|---|---|---|---|
+| `content.tar` | 512,000 | **127,557** (24.9%) | none, and none needed |
+| `content.tar.zst` | 156,418 | 156,526 | **no** |
+| `content.tar.br` | 149,498 | 149,606 | **no** |
+| `content.tar.xz` | 153,392 | 153,500 | **no** |
+
+The engine adds ~108 bytes to each compressed stream and gets nothing: **a `.tar.zst` costs 22.7% more
+through the engine than the tar itself**, and that gap is the headroom:
+
+| stream | if the engine could see inside | headroom |
+|---|---|---|
+| `.zst` | 127,557 + recipe | **−18.5%** |
+| `.br` | 127,557 + recipe | **−14.7%** |
+| `.xz` | 127,557 + recipe | **−16.9%** |
+
+**The recipe is free in the easy case, and that is the whole question.** Decoding each stream and
+re-encoding it with the same encoder at the same settings reproduced the original **byte for byte** in
+all three cases — so a stream produced by a known encoder at a known level needs only that level
+recorded, which is a few bytes. That is exactly the `preflate` pattern for DEFLATE, and it is why the
+headroom above is nearly all real.
+
+**What is not established**, and is the work: a stream from an unknown encoder version or level needs
+the settings *recovered*, which is a search over the encoder's parameters plus a diff when no setting
+reproduces it — `preflate` does this for zlib's levels and it is the hard part of that project. The
+fixtures here were produced by one encoder at one setting, which is the friendliest possible case.
+
+Also unbuilt: zstd has no decoder in the tree. Brotli and liblzma are already vendored (`brotli_vendor`,
+`liblzma`), so `.br` and `.xz` need no new dependency; `.zst` would.
+
+**The free bit.** `layers3` has seven (bits 1–7) and the policy in `FORMAT.md` asks for four things
+before one may be taken: a measured win on real content (the table above), a gate that can decline
+(the existing `precomp_helps` shape, on the decoded payload), a byte-exact inverse (re-encode, then
+diff when it is not identical), and a test that asserts the transform fired (the corpus script's
+pattern). Three formats, three bits, or one bit and a format byte inside the payload — that is a
+design decision for whoever builds it, not for this measurement.
+
+**Verdict: worth building, not yet built.** The win is 15–18% on a container class that is common and
+currently costs the engine 23%, the pattern is one this project already has, and two of the three
+formats need no new dependency. The first step is not the transform — it is the recipe recovery, and
+its cost is what decides whether this ships.
+
 ## 4. Container payloads: what the nested transforms actually do
 
 A container payload puts its own header in front of the member bytes, so every nested transform
