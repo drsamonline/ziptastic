@@ -53,10 +53,11 @@ cannot resolve it. **Two cores, ±40 ms per run on an 800 ms decode.** Anything 
 more runs or a quieter box before it is a claim; the earlier "4–6% for index-driven decode" was a
 benchmark artefact (order bias, now fixed in `index_cost`), and `FINDINGS.md` §3c says so.
 
-**The Huffman candidate is gated** (`FINDINGS.md` §3e): a 64 KiB trial, no ratio change on six
-corpora, and the seven-symbol file still gets it. The remaining levers are the LZMA2 fallback —
-34% of a run and a guarantee, so gating it needs a trial that can only *trigger* the full run — the
-base64 gate's 2.7× cost, and a per-block time split before any more threads. **The block-size
+**Both expensive candidates are gated now.** Huffman: a 64 KiB trial, no ratio change on six corpora
+(`FINDINGS.md` §3e). The LZMA2 fallback: a 64 KiB trial with a 20% margin, which took a 6.6 s run to
+4.1 s on a mixed tree with no archive change (§3f) — and cost the promise its unconditional form, so
+read §3f before touching it. What is left: the base64 gate's 2.7× cost, and a per-block time split
+before any more threads. **The block-size
 sweep is done** — `FINDINGS.md` §3d: 4 MiB stays, and the one corpus where 1 MiB beats it is the
 heterogeneous one, which makes an adaptive block size the next idea worth trying.
 

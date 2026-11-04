@@ -100,6 +100,9 @@ struct CompressStats {
   // and lost, so a size comparison cannot tell you whether a gate is working.
   uint64_t huff_trials = 0;
   uint64_t huff_skipped = 0;
+  // The same for the Tier-1 fallback: offered, and declined by the sample trial.
+  uint64_t lzma2_trials = 0;
+  uint64_t lzma2_skipped = 0;
   // True when the LZMA2 fallback won and the stream is one fallback block.
   bool lzma2_stream = false;
 };

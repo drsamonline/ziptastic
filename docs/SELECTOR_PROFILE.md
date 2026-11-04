@@ -61,6 +61,8 @@ candidate so far. No archive size changed on any of six corpora, and the seven-s
 Huffman wins on still gets it (`FINDINGS.md` §3e). The 18% saving is not re-claimed here: this
 machine cannot resolve it, and the profile above was taken on a different file with an older build.
 
-The LZMA2 fallback is still ungated. It is a guarantee rather than an optimisation, so gating it
-needs the comparison to be safe by construction — a sample that can only *trigger* the full run, and
-a full run whenever the sample is close.
+**Update, 2026-11-04: the LZMA2 gate is built too, with a 20% margin.** A 64 KiB slice is encoded
+with the real encoder, scaled, and the full run happens unless that estimate is more than 20% worse
+than the native stream — the margin is the safety argument, and it is free: at 5% the gate skipped
+exactly the same corpora. `FINDINGS.md` §3f has the table and the 256 KiB trial that had to be
+abandoned because liblzma's setup, not its coding, is what a trial pays for.

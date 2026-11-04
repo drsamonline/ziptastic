@@ -238,6 +238,45 @@ with an older build, and this machine cannot resolve an effect that size against
 sample trial`, because the output is identical whether the candidate ran and lost or never ran —
 a size comparison cannot tell you whether a gate is working.
 
+## 3f. The LZMA2 fallback, gated with a 20% margin
+
+The Tier-1 fallback is a guarantee, not an optimisation: it exists so a stream is never much worse
+than an LZMA-class compressor. `SELECTOR_PROFILE.md` measured it at 34% of a run and said the fix
+was a sample comparison that could only *trigger* the full run.
+
+Gated 2026-11-04. A 64 KiB middle slice is encoded with the real LZMA2 encoder at the same settings,
+scaled to the whole stream, and the full run happens unless that estimate is more than **20% worse**
+than the native stream.
+
+| corpus | trial | archive | ungated archive |
+|---|---|---|---|
+| `tree.tar`, 1.6 MB mixed | skipped | 316,900 | 316,900 |
+| `code.txt`, 846 KB | skipped | 149,468 | 149,468 |
+| `big.txt`, 1.4 MB code | skipped | 180,016 | 180,016 |
+| `seven.bin`, 1 MB, 7 symbols | ran | 287,758 | 287,758 |
+| `huge.txt`, 2.75 MB mixed | ran | 395,411 | 395,411 |
+| `p1m.txt`, 310 KB text | ran (below the trial threshold) | 70,726 | 70,726 |
+
+**No archive size changed.** On `tree.tar` the fallback cost 2.8 s of a 6.6 s run and won nothing;
+with the gate that is **6.6 s → 4.1–4.8 s**, about a third, against 3.8 s with `--no-lzma2`.
+
+Three things about the margin, because it is the whole safety argument:
+
+- **20%, not 5%.** At 5% the gate also skipped everywhere it skipped at 20% on these corpora, and
+  saved nothing extra — so the extra margin is free. It is the difference between "LZMA2 might just
+  win" and "LZMA2 would have to win by more than a fifth".
+- **The estimate is biased against LZMA2.** A 64 KiB slice starts with a cold dictionary, so it
+  encodes worse than the whole stream would; the margin is spent correcting a bias that points the
+  safe way.
+- **The sample is 64 KiB because liblzma's setup, not its coding, is what the trial pays for.** At
+  256 KiB the trial cost 1.4 s on a 1.6 MB archive — within a third of the run it was trying to
+  avoid — which made the first version of this gate worthless. That was measured, not assumed.
+
+**What this costs the promise**: the fallback is no longer unconditional. On a stream where the
+sample says LZMA2 is more than 20% out of reach and the whole-stream run would have proved it wrong,
+the archive is up to that much larger than it would have been. `--no-lzma2` is still the flag that
+removes the candidate outright; `-v` reports `lzma2: N offered, M skipped`.
+
 ## 4. Container payloads: what the nested transforms actually do
 
 A container payload puts its own header in front of the member bytes, so every nested transform
@@ -287,6 +326,7 @@ better. That is a *file* result, not a container one.
 | moving the block digest into the decode workers | 809.9 vs 817.3 ms median | strictly less serial work, and smaller than this machine's noise |
 | the block offset table as a speed feature | nothing to speed up | it is an addressing feature; §3c |
 | turning static Huffman off by default | no ratio change on five corpora, and it loses 0.73% on the seven-symbol file | gated by a sample trial instead; §3e |
+| a 256 KiB trial for the LZMA2 fallback | 1.4 s of a 1.6 MB run, within a third of what it skips | liblzma's setup dominates, not its coding; 64 KiB and a 20% margin; §3f |
 
 ## 6. The audit
 

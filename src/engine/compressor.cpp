@@ -650,6 +650,39 @@ bool base64_pays(std::span<const uint8_t> packed, std::span<const uint8_t> origi
   return p < o;
 }
 
+// Should the Tier-1 LZMA2 fallback run in full?
+//
+// It is a guarantee, not an optimisation — the promise that a stream is never much worse
+// than an LZMA-class compressor — and it costs 43% of a run on a mixed asset tree where it
+// wins nothing (measured below). It cannot be turned off, and it cannot be gated the way
+// the Huffman candidate was: skipping when the sample is *close* would break the promise
+// exactly where the sample is least representative.
+//
+// So it declines only when a sample says LZMA2 is far out of reach — 20% worse, scaled to
+// the whole stream. Two things make that margin conservative rather than arbitrary: the
+// sample is a real LZMA2 encode at the same settings, and a slice always encodes worse than
+// the whole stream because its dictionary starts cold, so the estimate is biased against
+// LZMA2 and the margin is spent correcting a bias that points the safe way.
+//
+// The sample is 64 KiB because liblzma's setup, not its coding, is what the trial pays for:
+// at 256 KiB the trial cost 1.4 s on a 1.6 MB archive, within a third of the run it was
+// trying to avoid.
+bool lzma2_may_win(std::span<const uint8_t> input, size_t native_size) {
+  constexpr size_t kSample = 64 * 1024;
+  constexpr size_t kSlackPct = 20;
+  // Below this the trial costs more than the run it would skip.
+  if (input.size() <= kSample * 2) return true;
+
+  const size_t off = (input.size() - kSample) / 2;
+  const std::span<const uint8_t> sample = input.subspan(off, kSample);
+  std::vector<uint8_t> payload;
+  std::vector<uint8_t> props;
+  if (lzma2_encode(sample, payload, props) != Err::Ok) return true;  // no opinion: run it
+  const uint64_t est =
+      static_cast<uint64_t>(payload.size()) * input.size() / sample.size();
+  return est * 100 <= static_cast<uint64_t>(native_size) * (100 + kSlackPct);
+}
+
 Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
              const CompressOptions& opt, CompressStats* stats) {
   if (opt.block_size == 0 || opt.block_size > kMaxBlockSize) {
@@ -1142,6 +1175,14 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // Comparison is on total stream size, framing included, so the promise is
   // about the bytes the user actually gets.
   if (opt.lzma2_fallback && lzma2_available() && !input.empty()) {
+    // Counted on `local`: it is what gets published at the end of this function, so an
+    // increment on the caller's struct would be overwritten and read as zero.
+    ++local.lzma2_trials;
+    if (!lzma2_may_win(data, native.size())) {
+      // Declined by the sample trial. `--no-lzma2` removes the candidate entirely; this only
+      // says the full run was more than 20% out of reach.
+      ++local.lzma2_skipped;
+    } else {
     std::vector<uint8_t> fallback;
     const Err e = encode_lzma2_stream(data, opt, bcj, precomp, dedup, jpeg, gif,
                           layers, layers2, layers3, crc, input.size(), fallback);
@@ -1160,6 +1201,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
     }
     // A codec failure is not fatal: the native encoding is still valid, so we
     // fall through rather than failing the whole compression.
+    }
   }
 
   // --max-ratio: context mixing over the WHOLE stream, not per block.

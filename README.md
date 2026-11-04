@@ -60,7 +60,8 @@ toolchain, and the depfile trap that costs a debugging session if you hit it —
 
 Format **v8**. Per block, nine encoders compete and the smallest wins: RAW, rANS (static and
 adaptive), range, static Huffman, BWT (libbsc), PPMd, an LZMA2 fallback that guarantees the output
-is never worse than `xz`, and context mixing under `--max-ratio`. Above them sit eighteen Layer 0
+is never much worse than `xz` — it declines the full run only when a sample says it is more than 20%
+out of reach (`FINDINGS.md` §3f) — and context mixing under `--max-ratio`. Above them sit eighteen Layer 0
 transforms — container inflation (ZIP, gzip, PDF), base64, spreadsheet cells, CSV columns, WAV PCM,
 SQLite pages, CD-sector Reed-Solomon parity, and PNG/JPEG/GIF/BMP one level down inside archives.
 
