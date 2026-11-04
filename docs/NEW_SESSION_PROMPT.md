@@ -40,13 +40,15 @@ heavenzip's, calling HatchZip for foreign archives.
 
 ## The next piece of work: Phase 3, speed
 
-`RELEASE_PLAN.md` §Phase 3. Nothing there is started, and the offset table changes one thing about
-it: index-driven parallel decode no longer needs a sequential header scan, but in memory that scan
-was nearly free, so **do not claim a speed win for it without measuring I/O**, which the current
-benchmark does not do. The measured levers are still: not running candidates that cannot win (a
-sample trial per family), a block-size sweep (256 KiB is nobody's decision, 4 MiB is the default and
-nothing has swept it), the base64 gate's 2.7× cost, and a per-block time split before any more
-threads.
+`RELEASE_PLAN.md` §Phase 3. Nothing there is started. The offset table settled one question rather
+than raising it: index-driven parallel decode was measured at 4–6% and **the table contributed none
+of it** — the difference was the block digest moving into the worker threads, which `decompress()`
+does not do. That digest check is the cheapest thing on this list to try: about 26 ms of a 3.7 MB
+decode here, measured only as a difference between two code paths and not yet done on its own.
+
+The measured levers are still: not running candidates that cannot win (a sample trial per family), a
+block-size sweep (256 KiB is nobody's decision, 4 MiB is the default and nothing has swept it), the
+base64 gate's 2.7× cost, and a per-block time split before any more threads.
 
 ## How this project works, and what it keeps relearning
 

@@ -83,4 +83,25 @@ bool stream_is_untransformed(const FileHeader& h);
 Err decode_blocks(std::span<const uint8_t> in, const StreamIndex& index, uint64_t first,
                   uint64_t last, std::vector<uint8_t>& out, uint64_t* bad_block = nullptr);
 
+// The whole stream, decoded on `threads` threads, each taking a contiguous run of blocks
+// from the index. This is the fourth feature the release plan listed — parallel decode
+// without a sequential scan.
+//
+// It is a separate entry point rather than a rewrite of `decompress()`, because the
+// measurement did not support a rewrite: on a 225-block, 1.38 MB archive this path is
+// 4–6% faster (821 ms against 855 ms, means of six runs), and **none of that is the
+// table**. Removing a 10 KB header scan from an 800 ms decode is microseconds; the
+// difference is that the digests here are computed inside the workers, while
+// `decompress()` still checks them after the join, on one thread. See FINDINGS.md §3c.
+//
+// Where the index genuinely pays is a caller that never holds the whole stream: with an
+// index in hand it reads each block's bytes and no others, and that is I/O this project
+// has not measured because its own API takes a whole buffer.
+//
+// Same refusals as `decode_blocks`, and the same promise when it succeeds: every block's
+// SHA-256 checked before its bytes are kept, the whole-stream CRC-32 checked at the end.
+Err decode_blocks_parallel(std::span<const uint8_t> in, const StreamIndex& index,
+                           unsigned threads, std::vector<uint8_t>& out,
+                           uint64_t* bad_block = nullptr);
+
 }  // namespace chce

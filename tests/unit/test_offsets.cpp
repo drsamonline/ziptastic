@@ -251,6 +251,41 @@ TEST(decode_blocks_matches_the_full_decode) {
   CHECK_MSG(all == data, "decode_blocks over every block is not the original");
 }
 
+// The threaded entry point must produce the same bytes as the single-threaded one, at
+// every thread count including the ones that do not divide the block count evenly.
+TEST(decode_blocks_parallel_matches_the_walking_decode) {
+  const auto data = make_data(24 * 1024, 0x0DDBA11u);
+  std::vector<uint8_t> packed, whole;
+  CHECK_ERR(compress(data, packed, parallel_raw(4096), nullptr), Err::Ok);
+  CHECK_ERR(decompress(packed, whole), Err::Ok);
+  CHECK_MSG(whole == data, "full decode mismatch");
+
+  StreamIndex idx;
+  CHECK_ERR(read_index(packed, idx), Err::Ok);
+  CHECK_EQ(idx.size(), size_t{6});
+
+  // 1, 2, 3 and 8: 8 is more threads than blocks, which must not lose one.
+  for (unsigned threads : {1u, 2u, 3u, 8u}) {
+    std::vector<uint8_t> out;
+    CHECK_ERR(decode_blocks_parallel(packed, idx, threads, out), Err::Ok);
+    CHECK_MSG(out == data,
+              "parallel decode with " + std::to_string(threads) + " threads differs");
+  }
+
+  // A damaged block is still named, whichever thread found it.
+  auto damaged = packed;
+  damaged[static_cast<size_t>(idx.body_offsets[4] + 3)] ^= 0x80;
+  std::vector<uint8_t> out;
+  uint64_t bad = kNoBlock;
+  CHECK_ERR(decode_blocks_parallel(damaged, idx, 2, out, &bad),
+            Err::BlockChecksumMismatch);
+  CHECK_EQ(bad, uint64_t{4});
+
+  // And the refusals hold on this entry point too.
+  idx.header.layers = kLayerNumeric;
+  CHECK_ERR(decode_blocks_parallel(packed, idx, 2, out), Err::NotSelfContained);
+}
+
 // Archive mode is the mode where a block may reference an earlier one. Asking for one
 // block on its own has no answer, and the answer must say so rather than guess.
 TEST(decode_blocks_refuses_archive_mode) {

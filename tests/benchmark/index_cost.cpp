@@ -107,14 +107,21 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // The whole stream, the way a decoder without a table has to.
+  // The whole stream, the way a decoder without a table has to. Timed twice and the
+  // smaller kept, exactly like the index above and the block below: a comparison where one
+  // side gets two runs and the other one is not a comparison.
   std::vector<uint8_t> whole;
-  const auto d0 = Clock::now();
-  if (const Err e = decompress(packed, whole); e != Err::Ok) {
-    std::fprintf(stderr, "index_cost: decompress failed: %s\n", err_message(e));
-    return 1;
+  double walk = 1e9;
+  for (int i = 0; i < 2; ++i) {
+    whole.clear();
+    const auto d0 = Clock::now();
+    if (const Err e = decompress(packed, whole); e != Err::Ok) {
+      std::fprintf(stderr, "index_cost: decompress failed: %s\n", err_message(e));
+      return 1;
+    }
+    const auto d1 = Clock::now();
+    walk = std::min(walk, ms(d0, d1));
   }
-  const auto d1 = Clock::now();
   if (whole != input) {
     std::fprintf(stderr, "index_cost: round trip mismatch\n");
     return 1;
@@ -130,6 +137,28 @@ int main(int argc, char** argv) {
     return 1;
   }
   const auto b1 = Clock::now();
+
+  // The fourth feature the release plan asked for: parallel decode without a sequential
+  // scan. `decompress()` walks every block header from the front before it hands anything
+  // to a thread; this asks the index where the blocks are instead. Both are timed, because
+  // the honest question is not "is it possible" but "is it faster".
+  auto index_parallel = [&](unsigned nt) {
+    StreamIndex local;
+    if (read_index(packed, local) != Err::Ok) return std::vector<uint8_t>{};
+    std::vector<uint8_t> joined;
+    if (decode_blocks_parallel(packed, local, nt, joined) != Err::Ok) return std::vector<uint8_t>{};
+    return joined;
+  };
+
+  double best_par = 1e9;
+  std::vector<uint8_t> par;
+  for (int i = 0; i < 2; ++i) {
+    const auto p0 = Clock::now();
+    par = index_parallel(2);
+    const auto p1 = Clock::now();
+    best_par = std::min(best_par, ms(p0, p1));
+  }
+  const bool par_ok = par == input;
 
   const double trailer = static_cast<double>(trailer_bytes(idx.size()));
   // What v7's trailer cost for the same block count: "ZTIX", the count varint, the
@@ -155,9 +184,11 @@ int main(int argc, char** argv) {
               best_index, static_cast<unsigned long long>(idx.bytes_read), packed.size(),
               100.0 * static_cast<double>(idx.bytes_read) /
                   static_cast<double>(packed.size()));
-  std::printf("decompress (all)       %.1f ms, %zu bytes out\n", ms(d0, d1), whole.size());
+  std::printf("decompress (all)       %.1f ms, %zu bytes out\n", walk, whole.size());
   std::printf("decode one block       %.1f ms, %zu bytes out (block %llu of %zu)\n",
               ms(b0, b1), one.size(), static_cast<unsigned long long>(which), idx.size());
-  std::printf("ratio                  %.1fx\n", ms(d0, d1) / std::max(ms(b0, b1), 0.001));
+  std::printf("ratio                  %.1fx\n", walk / std::max(ms(b0, b1), 0.001));
+  std::printf("decode (index, 2 thr)  %.1f ms, %s\n", best_par,
+              par_ok ? "identical to the original" : "MISMATCH");
   return 0;
 }

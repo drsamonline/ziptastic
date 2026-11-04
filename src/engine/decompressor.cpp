@@ -529,20 +529,25 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   return Err::Ok;
 }
 
-// Reaching one block, or a run of them, without walking the stream from the front. See
-// include/chimera/block_index.hpp for what this is for and what it refuses.
-Err decode_blocks(std::span<const uint8_t> in, const StreamIndex& index, uint64_t first,
-                  uint64_t last, std::vector<uint8_t>& out, uint64_t* bad_block) {
+namespace {
+
+// The two refusals every block-addressed request shares: the index must describe this
+// stream, and the stream's blocks must mean something on their own.
+Err check_block_request(const StreamIndex& index) {
   const FileHeader& fh = index.header;
   if (index.size() != fh.block_count) return Err::Corrupt;  // an index of another stream
-  if (first > last || last >= fh.block_count) return Err::BadBlockSize;
-
   // Both halves of "a block's bytes mean something on their own": it must not reference
   // another block, and nothing outside the block loop may have changed the payload.
   if (!blocks_are_independently_decodable(fh) || !stream_is_untransformed(fh)) {
     return Err::NotSelfContained;
   }
+  return Err::Ok;
+}
 
+// Decodes blocks [first, last] and appends. No whole-stream check: that belongs to the
+// caller that knows whether the range it asked for is the whole stream.
+Err decode_range(std::span<const uint8_t> in, const StreamIndex& index, uint64_t first,
+                 uint64_t last, std::vector<uint8_t>& out, uint64_t* bad_block) {
   for (uint64_t i = first; i <= last; ++i) {
     const BlockHeader& bh = index.blocks[static_cast<size_t>(i)];
     const uint64_t body_at = index.body_offsets[static_cast<size_t>(i)];
@@ -564,14 +569,76 @@ Err decode_blocks(std::span<const uint8_t> in, const StreamIndex& index, uint64_
     }
     out.insert(out.end(), part.begin(), part.end());
   }
+  return Err::Ok;
+}
 
-  // A range that covers every block is a whole decode, so it can make the whole-stream
-  // promise: the exact length and the CRC-32 of the bytes the caller asked for.
-  if (first == 0 && last + 1 == fh.block_count) {
-    if (static_cast<uint64_t>(out.size()) != fh.true_size) return Err::SizeMismatch;
-    if (crc32(out) != fh.checksum) return Err::ChecksumMismatch;
+// The whole-stream promise, made only by a decode that covered every block: the exact
+// length and the CRC-32 of the bytes the caller asked for.
+Err check_whole_stream(const StreamIndex& index, const std::vector<uint8_t>& out) {
+  if (static_cast<uint64_t>(out.size()) != index.header.true_size) return Err::SizeMismatch;
+  if (crc32(out) != index.header.checksum) return Err::ChecksumMismatch;
+  return Err::Ok;
+}
+
+}  // namespace
+
+// Reaching one block, or a run of them, without walking the stream from the front. See
+// include/chimera/block_index.hpp for what this is for and what it refuses.
+Err decode_blocks(std::span<const uint8_t> in, const StreamIndex& index, uint64_t first,
+                  uint64_t last, std::vector<uint8_t>& out, uint64_t* bad_block) {
+  if (Err e = check_block_request(index); e != Err::Ok) return e;
+  if (first > last || last >= index.header.block_count) return Err::BadBlockSize;
+
+  if (Err e = decode_range(in, index, first, last, out, bad_block); e != Err::Ok) return e;
+
+  if (first == 0 && last + 1 == index.header.block_count) {
+    return check_whole_stream(index, out);
   }
   return Err::Ok;
+}
+
+Err decode_blocks_parallel(std::span<const uint8_t> in, const StreamIndex& index,
+                           unsigned threads, std::vector<uint8_t>& out,
+                           uint64_t* bad_block) {
+  if (Err e = check_block_request(index); e != Err::Ok) return e;
+  const uint64_t count = index.header.block_count;
+  if (count == 0) return check_whole_stream(index, out);
+
+  if (threads < 2 || count < 2) return decode_blocks(in, index, 0, count - 1, out, bad_block);
+  if (threads > count) threads = static_cast<unsigned>(count);
+
+  // Contiguous ranges, one per thread: the blocks are independent, so the split can be
+  // anywhere, and contiguous keeps each thread's output in stream order without a sort.
+  std::vector<std::vector<uint8_t>> parts(threads);
+  std::vector<Err> errors(threads, Err::Ok);
+  std::vector<uint64_t> bad(threads, kNoBlock);
+  {
+    std::vector<std::thread> pool;
+    pool.reserve(threads);
+    for (unsigned t = 0; t < threads; ++t) {
+      pool.emplace_back([&, t]() {
+        const uint64_t lo = count * t / threads;
+        const uint64_t hi = count * (t + 1) / threads;
+        if (lo >= hi) return;
+        errors[t] = decode_range(in, index, lo, hi - 1, parts[t], &bad[t]);
+      });
+    }
+    for (std::thread& th : pool) th.join();
+  }
+
+  for (unsigned t = 0; t < threads; ++t) {
+    if (errors[t] == Err::Ok) continue;
+    if (bad_block != nullptr && bad[t] != kNoBlock) *bad_block = bad[t];
+    return errors[t];
+  }
+
+  out.reserve(static_cast<size_t>(index.header.true_size));
+  for (std::vector<uint8_t>& part : parts) {
+    out.insert(out.end(), part.begin(), part.end());
+    part.clear();
+    part.shrink_to_fit();
+  }
+  return check_whole_stream(index, out);
 }
 
 }  // namespace chce

@@ -101,8 +101,11 @@ plan listed:
 
 - **random access** — `decode_blocks(in, index, n, n, out)`, and `ziptastic d --block N`;
 - **resumable decode** — `--from-block N`, which is what a crashed decode restarts with;
-- **parallel decode without a sequential scan** — the index hands out every block's position before
-  a thread touches anything;
+- **parallel decode without a sequential scan** — `decode_blocks_parallel(in, index, threads, out)`.
+  It is an entry point of its own, not a rewrite of `decompress()`: measured against the walking
+  decoder it is 4–6% faster, and **the table contributes none of that** — the difference is that it
+  checks each block's SHA-256 inside the worker instead of after the join. `decompress()` was left
+  alone. `FINDINGS.md` §3c has the numbers and the reasoning;
 - **hatch-style extraction** — heavenzip's to build, on top of the above. ziptastic still never
   deletes its input.
 
@@ -127,6 +130,14 @@ may reference an earlier one.
 inherently sequential. The table is written for those streams too — a decoder that seeks, or that
 wants to know where a block is without reading it, still benefits — but `--block` on one is a
 refusal by design.
+
+## What it does not speed up
+
+The table makes blocks *findable*. It does not make decoding faster when the stream is already in
+memory, because the thing it replaces — parsing a few hundred headers — is a rounding error against
+decoding the blocks themselves. Anyone claiming a speed win for an offset table on an in-memory
+decode has measured something else. Where it pays is a reader that never loads the bytes it is not
+decoding, and that is I/O this project's own API does not expose.
 
 ## What it costs
 

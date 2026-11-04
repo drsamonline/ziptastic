@@ -116,8 +116,9 @@ Measured with `tests/benchmark/index_cost.cpp` on 3.68 MB of concatenated projec
 | | |
 |---|---|
 | reading the whole index | **0.04 ms**, touching **10,414 of 1,377,975 bytes (0.76%)** |
-| decoding the whole stream | 888 ms |
+| decoding the whole stream, walking the headers | 798 ms (best of two, six runs) |
 | decoding one block from its offset | **4–11 ms** (two runs on a 2-core box) |
+| decoding the whole stream from the index, 2 threads | 747 ms (same method) |
 
 The table costs `8 × blocks + 4` bytes over a v7 trailer:
 
@@ -139,6 +140,19 @@ the table's structure; that the entries tile the stream from the end of the file
 trailer with no gap; that the headers found at those offsets re-hash to the stored manifest; and
 that a decoder which walked the blocks sees the same offsets. A corrupted table is a refusal, never
 a wrong answer.
+
+**The 4–6% on the last two rows is not the table.** Removing a 10 KB header scan from an
+800 ms decode is microseconds, and that is what the arithmetic says it should be. The
+difference is that `decode_blocks_parallel` computes each block's SHA-256 inside the worker
+that decoded it, while `decompress()`'s parallel path still checks them after the join, on
+one thread — 3.7 MB of digest at 140 MB/s is about 26 ms of the 51 ms gap. So the honest
+summary is: **an index-driven decode is not measurably faster than a walk when the stream is
+already in memory**, and the one number that did move is a digest check that could be
+parallelised in the walking path too. That is a Phase 3 item, not a v8 one.
+
+`decompress()` was therefore **not** rewritten to decode from the index. A second decode path
+in the same function, for a difference that belongs to the digest and not the table, is a
+bad trade — `FORMAT_V8.md` records it.
 
 **And a partial decode of a transformed stream is refused, not answered** (`not-self-contained`):
 an archive-mode block may reference an earlier one, and the inverse chain needs the whole stream,
@@ -190,6 +204,8 @@ better. That is a *file* result, not a container one.
 | lrzip/rzip for the srep step | nothing to add | `dedup` is within 0.1% of the ideal |
 | oxipng/optipng before archiving | 3 bytes on a 66%-smaller PNG | the transform stores pixels, not deflate choices |
 | moving the precomp gate after the nested stages | identical output | the gate was never the blocker |
+| decoding from the offset table instead of walking, in memory | 747 vs 798 ms, and none of it is the table | the header scan was 10 KB; the difference is the digest check moving into the workers |
+| the block offset table as a speed feature | nothing to speed up | it is an addressing feature; §3c |
 
 ## 6. The audit
 
@@ -228,11 +244,15 @@ internals beyond their contracts, `main.cpp`, the match finder and parser.
 - ~~The block offset table (Phase 3b).~~ **DONE** — format v8, section 3c. What it does not do is
   make archive mode addressable: that mode is sequential by construction, and `--block` on one is
   a refusal by design.
-- **Nothing has been built on the offset table yet except the reader.** Random access, resumable
-  decode and `--parallel` without a scan all work; the hatch pipeline is heavenzip's, and the
-  shrinking extraction is HatchZip's. A speed claim for index-driven parallel decode is
-  unmeasured — in memory the sequential header scan it replaces is nearly free, so the gain is
-  I/O, and I/O is the thing this benchmark does not exercise.
+- ~~Nothing has been built on the offset table except the reader.~~ **Now also `decode_blocks`,
+  `decode_blocks_parallel`, `--block` and `--from-block`.** The hatch pipeline is still heavenzip's
+  and the shrinking extraction is HatchZip's.
+- **Index-driven parallel decode is not a speed win in memory** (section 3c): 4–6%, and the digest
+  check accounts for it. The gain the table actually offers is I/O — a reader that seeks — and this
+  project's API takes a whole buffer, so that gain is unmeasurable here and untested.
+- **`decompress()` checks block digests after the join, on one thread**, while
+  `decode_blocks_parallel` checks them in the workers. About 26 ms on a 3.7 MB decode here. Small,
+  measured only as a difference between two paths, and not yet done on its own.
 - **The 1.7% table cost on a single-block small archive** (section 3c) is unaddressed.
 
 ## 8. How to read the rest of this directory
