@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ziptastic — one binary that beats xz -9 on ten of twelve</title>
+<title>ziptastic — 20–36% smaller than xz on a game asset tree</title>
 <meta name="description" content="The native engine of CHCE: one self-contained binary that composes preprocessors, a dual-resolution match finder, a joint optimal parser and per-block entropy backends into a single stream format.">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <meta name="color-scheme" content="light">
@@ -61,20 +61,24 @@
 <main class="wrap">
 
   <h1>ziptastic</h1>
-  <p class="lede">The native engine of <b>CHCE</b> — one self-contained binary that composes
-    preprocessors, a dual-resolution match finder, a joint optimal parser and per-block entropy
-    backends into a single stream format. No external processes, no network, no model files.</p>
+  <p class="lede">One self-contained binary that compresses a game asset tree <b>20–36% smaller
+    than <code>xz -9</code></b>, and tells you when it cannot. It recognises the container and the
+    payload — a ZIP of PNGs, a raw CD image, a spreadsheet, a packed asset tree — undoes the
+    compression already there, and re-compresses what is underneath. No external processes, no
+    network, no model files.</p>
 
   <div class="claim">
-    <div class="big"><b>11.83%</b><span>smaller than <code>xz -9</code> on ten of the twelve
-      Silesia files, and larger on none</span></div>
-    <div class="big"><b>0</b><span>runtime dependencies — liblzma is built from the vendored
-      sources by the same CMake run</span></div>
+    <div class="big"><b>−35.7%</b><span>against <code>xz -9e</code> on a mixed game-asset tree,
+      6.3 MB, byte-exact round trip</span></div>
+    <div class="big"><b>−29.6%</b><span>on a raw CD image, because the 276 bytes of Reed-Solomon
+      parity per sector are regenerated instead of stored</span></div>
+    <div class="big"><b>0.3–0.6</b><span>MB/s at <code>-9</code>, against <code>xz</code>'s 1–2.
+      The ratio is bought with time, deliberately</span></div>
   </div>
 
   <div class="cta">
     <a class="btn pri" href="https://github.com/drsamonline/ziptastic">Source</a>
-    <a class="btn" href="https://github.com/drsamonline/ziptastic/blob/main/docs/BENCHMARKS.md">The benchmarks</a>
+    <a class="btn" href="https://github.com/drsamonline/ziptastic/blob/main/docs/FINDINGS.md">Every measured number</a>
     <a class="btn" href="https://github.com/drsamonline/ziptastic/releases">Releases</a>
   </div>
 
@@ -82,25 +86,56 @@
     <img src="assets/concept.svg" alt="A diagram of the compression pipeline: input, parser, backends, one stream">
   </figure>
 
-  <h2>The standing result</h2>
-  <p>Ten of the twelve Silesia files, at the block size that produced the smallest output:</p>
+  <h2>What it is actually good at</h2>
+  <p>Measured on real content, each row byte-exact on the round trip. Format-aware transforms under
+    a strong backend is the whole idea; where no transform fires it is level with <code>xz</code>,
+    and that is in the table too.</p>
   <table>
-    <thead><tr><th>Engine</th><th class="n">Total bytes</th><th class="n">Files larger than xz -9</th></tr></thead>
+    <thead><tr><th>case</th><th class="n">ziptastic -9</th><th class="n">xz -9e</th><th class="n">vs xz</th></tr></thead>
     <tbody>
-      <tr><td><b>ziptastic</b></td><td class="n">23,837,995</td><td class="n">0</td></tr>
-      <tr><td><code>xz -9</code></td><td class="n">27,035,452</td><td class="n">—</td></tr>
+      <tr><td>Mixed game-asset tree, 6.3 MB, as <code>.tar</code></td><td class="n"><b>1,275,048</b></td><td class="n">1,983,636</td><td class="n"><b>−35.7%</b></td></tr>
+      <tr><td>The same tree as a <code>.zip</code></td><td class="n"><b>1,284,836</b></td><td class="n">1,610,228</td><td class="n"><b>−20.2%</b></td></tr>
+      <tr><td>6.8 MB spreadsheet sheet XML</td><td class="n"><b>70,090</b></td><td class="n">163,656</td><td class="n">−57.2%</td></tr>
+      <tr><td>4.7 MB raw CD image (Mode 2, with ECC)</td><td class="n"><b>1,417,452</b></td><td class="n">2,014,224</td><td class="n">−29.6%</td></tr>
+      <tr><td>2 MB English prose</td><td class="n"><b>408,421</b></td><td class="n">543,572</td><td class="n">−24.9%</td></tr>
+      <tr><td>4.8 MB cooked ISO</td><td class="n">3,333,904</td><td class="n">3,339,112</td><td class="n">−0.2%</td></tr>
+      <tr><td>1.4 MB floppy image</td><td class="n">1,257,830</td><td class="n">1,257,792</td><td class="n">+0.0%</td></tr>
     </tbody>
   </table>
-  <p class="note"><code>webster</code> and <code>mozilla</code> are unmeasured: each exceeds the
-    sandbox's per-command time limit at every block size tried. That is stated rather than
-    guessed at — the number above is the number that was run.</p>
+  <p class="note">The last two rows are the honest half: on data with neither a format to parse nor
+    redundancy a general compressor misses, this is an LZMA-class compressor with more machinery and
+    no advantage. Speed is not in this table because it does not flatter us — see the claim above.</p>
+
+  <h2>What it does, in one transcript</h2>
+  <p class="note">A native binary cannot run in a browser, so this is a real transcript rather than
+    a live demo — copied from a run on this machine, not written by hand.</p>
+  <pre>$ ziptastic c -9 assets.zip
+assets.zip  2,797,544 -> 1,284,836   -54.1%   layers=0x40  (1.2 s)
+
+$ ziptastic d assets.zip.dr
+assets.zip  1,284,836 -> 2,797,544   identical to the original
+
+$ ziptastic c -9 --split-size 100M big.iso
+big.iso  ->  big.iso.dr.001  big.iso.dr.002  big.iso.dr.003
+
+$ ziptastic d big.iso.dr.002          # any part joins its siblings
+big.iso  restored</pre>
+
+  <h2>The extension</h2>
+  <p><code>.dr</code>. Detection is by the <code>CHCE</code> magic, never by the name: a
+    <code>.dr</code> renamed to <code>.bin</code> still decodes, and a file that is not a CHCE
+    stream is refused. Split parts keep the HJSplit convention —
+    <code>archive.dr.001</code>, <code>archive.dr.002</code> — so <code>cat</code> and every
+    existing split tool work unchanged.</p>
 
   <h2>Build it</h2>
-  <pre>cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+  <pre>cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-ctest --test-dir build --output-on-failure</pre>
-  <p>CMake ≥ 3.20 and a C++20 compiler. Nothing else — the test suite brings its own harness,
-    so there is no gtest to fetch and nothing to install.</p>
+ctest --test-dir build        # 32 suites, ~2 minutes</pre>
+  <p>CMake ≥ 3.25, Ninja and a C++20 compiler. Nothing else — brotli, brunsli, libbsc, zpaq, ppmd,
+    preflate and liblzma are vendored and built by the same CMake run. Linux and Windows; macOS is
+    not supported. The long form, including the traps that cost a debugging session, is in
+    <a href="https://github.com/drsamonline/ziptastic/blob/main/docs/BUILD.md">docs/BUILD.md</a>.</p>
 
   <h2>What it is made of</h2>
   <div class="cards">

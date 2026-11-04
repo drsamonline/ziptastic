@@ -1,161 +1,89 @@
 # ziptastic
 
-[![Licence](https://img.shields.io/badge/licence-MIT-3f7a52
+[![Licence](docs/assets/badge-licence.svg)](LICENSE)
+[![Dependencies](docs/assets/badge-deps.svg)](docs/BUILD.md)
+[![Build](docs/assets/badge-build.svg)](docs/BUILD.md)
+[![Live](docs/assets/badge-live.svg)](https://drsamonline.github.io/ziptastic/)
 
-The native engine of **CHCE** (Chimera Hybrid Compression Engine): one
-self-contained binary that composes preprocessors, a dual-resolution match
-finder, a joint optimal parser and per-block entropy backends into a single
-stream format. No external processes, no network, no model files.
+**One self-contained binary that compresses a game asset tree 20–36% smaller than `xz -9`, and
+tells you when it cannot.** No external processes, no network, no model files.
 
-**Standing result:** on 10 of the 12 Silesia files, ziptastic produces
-**23,837,995 bytes against `xz -9`'s 27,035,452 — 11.83% smaller**, and no file
-is larger than `xz -9`. `webster` and `mozilla` are unmeasured: each exceeds the
-sandbox's per-command time limit at every block size tried. Details in
-`docs/BENCHMARKS.md`.
+```bash
+ziptastic c assets/          # → assets.dr
+ziptastic d assets.dr        # → byte-identical
+```
 
-**Status: Phase 5b done.** A source review (`docs/SOURCES_REVIEW.md`) turned up
-the x86 BCJ filter already vendored and already linked; applying it as a Layer 0
-transform takes the corpus to 54,243,754 bytes (+11.17% vs `xz -9`, from
-+11.94%), and `ooffice` to −4.06% against `xz -9` — the first file to beat the
-baseline.
+`.dr` is the format's extension. Detection is by the `CHCE` magic, not the name: a `.dr` renamed
+to `.bin` still decodes, and a file that is not a CHCE stream is refused.
 
-**Phase 5, for the record:** Three entropy models are offered per block and the
-smallest wins: static rANS, chunked adaptive rANS, and a range-coded model that
-adapts after every bit. The corpus drops from 57,930,807 to 54,619,596 bytes
-(-5.72%), and the gap to `xz -9` from +18.72% to +11.94%. The chunked rANS
-model alone gained only 0.087% — the range coder is where the phase's win
-actually came from, because it is FIFO and rANS is not.
+## What it is actually good at
 
-**Phase 4, for the record:** The parse is now coded with context-modelled
-rANS: Silesia lands at 57.9 MB against `xz -9`'s 48.8 MB (+18.7%), down from
-+84% when the parse had no coder at all. Decode speed is 26–70 MB/s, short of
-the 150 MB/s target — that needs interleaved streams (Phase 12).
+Format-aware transforms under a strong backend. A ZIP of PNGs, a raw CD image, a spreadsheet, a
+packed asset tree — the engine recognises the container and the payload, undoes the compression
+that is already there, and re-compresses what is underneath.
 
-**Phase 3, for the record:** The optimal parser works and
-round-trips all 12 Silesia files bit-exactly, but the phase's ratio gate is
-**not met**: the parse path stores literals as raw bytes (no entropy coder
-until Phase 4), so it lands 84% larger than `xz -9` rather than within 5%.
-The stream you actually get on disk is still never worse than `xz -9`, because
-the Tier-1 LZMA2 fallback wins whenever the parse path is larger. See
-`docs/BENCHMARKS.md` for the measurements and the reasoning. Every input is also encoded as raw LZMA2 and the smaller
-stream wins, so output is never worse than `xz -9` (measured: −0.73% over the
-whole Silesia corpus, every file individually smaller). The CHCE-native
-backends that are meant to win by more start at Phase 4.
+| case | ziptastic `-9` | `xz -9e` | |
+|---|---|---|---|
+| Mixed game-asset tree, 6.3 MB, as `.tar` | **1,275,048** | 1,983,636 | **−35.7%** |
+| The same tree as a `.zip` | **1,284,836** | 1,610,228 | **−20.2%** |
+| 6.8 MB spreadsheet sheet XML | **70,090** | 163,656 | −57.2% |
+| 4.7 MB raw CD image (Mode 2, with ECC) | **1,417,452** | 2,014,224 | −29.6% |
+| 2 MB English prose | **408,421** | 543,572 | −24.9% |
+| 4.8 MB cooked ISO | 3,333,904 | 3,339,112 | −0.2% |
+| 1.4 MB floppy image | 1,257,830 | 1,257,792 | +0.0% |
 
-## What it is meant to do
+Every row round-trips byte-exactly. Full tables, the audit and the rejected ideas:
+**[`docs/FINDINGS.md`](docs/FINDINGS.md)**.
 
-1. Beat `xz -9` by **≥3%** on Deflate-heavy archives (ZIP, PDF, PNG, nightly
-   builds).
-2. **Never be worse than `xz -9`** by more than 0.5% on any input, guaranteed
-   by a per-block LZMA2 fallback.
-3. With `--max-ratio`, approach the `paq8px` ratio class on general data.
+## What it is not
 
-The differentiator is not a new compressor. It is the composition: one parser
-pricing fine matches, coarse (long-range) matches and semantic tokens with one
-cost model, a per-block mode selector that re-optimises the parse for the mode
-it picked, and a hard LZMA2 fallback under all of it.
+- **Fast.** 0.3–0.6 MB/s at `-9` against `xz`'s 1–2 MB/s on the same machine. The ratio is bought
+  with time, deliberately. `--parallel` trades ratio for speed.
+- **A general-purpose winner.** Where no format transform fires it is level with `xz`, and twice
+  marginally behind. The advantage is concentrated in a handful of formats, not spread evenly.
+- **Magic on incompressible data.** A cooked ISO gains 0.2%; a file of random bytes gains nothing.
 
 ## Build
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-ctest --test-dir build --output-on-failure
+ctest --test-dir build        # 32 suites, ~2 minutes
 ```
 
-Requirements: CMake ≥ 3.20 and a C++20 compiler. Nothing else — liblzma is
-built from the vendored xz sources by the same CMake run, and the test suite
-brings its own harness, so there is no gtest to fetch and nothing to install.
+Linux and Windows. macOS is not supported. The long form — vendor-by-vendor builds, the zig
+toolchain, and the depfile trap that costs a debugging session if you hit it — is in
+**[`docs/BUILD.md`](docs/BUILD.md)**.
 
-## Use
+## What is inside
 
-```bash
-ziptastic -9 corpus/archive.zip > archive.chce   # compress
-ziptastic -d archive.chce archive.zip            # decompress
-cat file | ziptastic | ziptastic -d              # pipe
-ziptastic bench corpus/                          # ratio + speed table
-ziptastic --help
-```
+Format **v7**. Per block, nine encoders compete and the smallest wins: RAW, rANS (static and
+adaptive), range, static Huffman, BWT (libbsc), PPMd, an LZMA2 fallback that guarantees the output
+is never worse than `xz`, and context mixing under `--max-ratio`. Above them sit eighteen Layer 0
+transforms — container inflation (ZIP, gzip, PDF), base64, spreadsheet cells, CSV columns, WAV PCM,
+SQLite pages, CD-sector Reed-Solomon parity, and PNG/JPEG/GIF/BMP one level down inside archives.
 
-| option | meaning |
-|---|---|
-| `-9` | maximum effort preset (no CM backend) |
-| `--no-lzma2` | disable the LZMA2 fallback (removes the Tier-1 guarantee) |
-| `--no-parse` | disable the optimal parse (RAW blocks only) |
-| `--max-ratio` | allow the CM backend — slowest, smallest (Phase 10) |
-| `-b N` | block size in KiB (default 256) |
-| `-o FILE` | output file |
-| `-f` | overwrite an existing output |
-| `-v` | per-run statistics on stderr |
+Each block carries its own SHA-256, the stream carries a manifest digest, and a `true_size` field
+makes the decoded length an exact check rather than a heuristic.
 
-## Phase plan
-
-Phases run in order and each one's exit tests must pass before the next
-begins. See `prompt` (the build instructions) and `docs/BENCHMARKS.md` for
-measured results.
-
-| Phase | Deliverable | Status |
-|---|---|---|
-| 0 | CMake skeleton, CLI, RAW blocks, header validation | **done** |
-| 1 | LZMA2 fallback — the "never worse than xz" guarantee | **done** |
-| 2 | Fine (binary-tree) match finder | **done** |
-| 3 | Joint optimal parser | **done, ratio gate not met** |
-| 4 | Context-modelled rANS backend | **done** (ratio pass, speed gate not met) |
-| 5 | Adaptive frequency tables | **done** (via range coder) — corpus -5.72% |
-| 5b | x86 BCJ transform | **done** — ooffice now beats `xz -9` |
-| 6 | Coarse long-range index | **done** (written from scratch — SREP is not public domain) |
-| 7 | Static + adaptive Huffman | **done** — adaptive beats static 3.52% on mozilla |
-| 8 | Semantic precompression (Preflate) | **done** — ZIP subset −28.8% vs `xz -9` |
-| 9 | BWT, Brotli, Zstd, LZ4 backends | |
-| 10 | CM backend (`--max-ratio`) | |
-| 11 | PPMd backend | |
-| 20 | Integer CSV/TSV columns | **done** — −77.4% on a CSV, bit-exact, format v3 |
-| 19 | GIF recompression | **done** — −29.5% on a dithered image, bit-exact |
-| 18 | JPEG recompression (brunsli) | **done** — −19.4% on a real photo, bit-exact |
-| 17 | Interleaved rANS | **done** — ~12% faster decode, 9 bytes of payload |
-| 16 | Parallel decode | **done** — −17% at 82 blocks; gated at 8 blocks |
-| 15 | Whole-stream CM for `--max-ratio` | **done** — xml −16.2%, reymont −6.9% |
-| 14 | CRC-32 integrity | **done** — format v2, corruption is now detected |
-| 13 | SREP-style dedup stage | **done** — −10.8% on duplicate archives, no regressions |
-| 12 | Speed/ratio optimisation | **block size tuned** (4 MiB); CLI fuzzing; **parallel mode** (`--parallel`) |
-
-## Layout
-
-```
-include/chimera/   public headers (format, block, …)
-src/engine/        compressor, decompressor, block writer, (later) match
-                   finder, parser, mode selector
-src/codecs/        thin wrappers around vendored codecs (liblzma so far)
-src/entropy/       rANS and Huffman backends
-src/precompressors/ DEFLATE / text / numeric pre-filters
-src/dedup/         coarse block-hash index
-tests/             unit, integration, benchmark, fixtures
-docs/              FORMAT.md (bitstream spec), BENCHMARKS.md (results log)
-vendor/hcs/        vendored upstream sources — read-only
-```
-
-`vendor/hcs/` is a mirror and is never modified. Anything that needs a change
-gets a wrapper under `src/`.
-
-## Support
-
-<img src="docs/assets/support-portrait.jpg" width="72" height="72" alt="Dr. Sohil Momin" align="left" style="border-radius:50%;margin-right:1rem">
-
-Free, offline, accountless — and staying that way. If it earned its keep:
+## Where to read next
 
 | | |
 |---|---|
-| UPI (India) | `drsohilboi@ybl` — payee Dr. Sohil Momin, open amount, or scan [the QR](docs/assets/upi-qr.svg) |
+| [`docs/FINDINGS.md`](docs/FINDINGS.md) | every measured number, the audit, what was rejected, what is open |
+| [`docs/RELEASE_PLAN.md`](docs/RELEASE_PLAN.md) | 1.0 first, speed after, and why in that order |
+| [`docs/BUILD.md`](docs/BUILD.md) | building it, including the traps |
+| [`docs/FORMAT.md`](docs/FORMAT.md) | the stream format |
+| [`docs/index.html`](docs/index.html) | the landing page |
+
+## Support
+
+| | |
+|---|---|
+| UPI (India) | `drsohilboi@ybl` |
 | Ko-fi | [ko-fi.com/matneo](https://ko-fi.com/matneo) |
 | PayPal | [paypal.me/drsohilmomin](https://paypal.me/drsohilmomin?locale.x=en_GB&country.x=IN) |
-| My books | [Amazon author store](https://www.amazon.com/stores/author/B08ZT331LY/allbooks?ccs_id=aed72b9f-71d9-41dc-adee-e9368a317acc) |
-| More apps | [drsamonline.github.io](https://drsamonline.github.io/) |
-| Email | [sohilmomin2000@gmail.com](mailto:sohilmomin2000@gmail.com) |
+| Books | [Amazon author page](https://www.amazon.com/stores/author/B08ZT331LY/allbooks?ccs_id=aed72b9f-71d9-41dc-adee-e9368a317acc) |
+| Everything else | [drsamonline.github.io](https://drsamonline.github.io/) |
 
-Nothing is gated behind it: no accounts, no tracking, no network requests.
-
-## License
-
-MIT — see `LICENSE`. Only permissively licensed sources are ever linked in;
-GPL/LGPL tools (paq8px, upx, advancecomp, packJPG, lzo) are excluded from this
-repository entirely.
+MIT licensed.
