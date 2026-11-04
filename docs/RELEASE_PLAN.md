@@ -90,6 +90,13 @@ speed that is tolerable for archival work, not interactive use.
 
 ## Phase 3b — addressable blocks (one format change, four features)
 
+> **Done, 2026-11-04 — format v8.** `docs/FORMAT_V8.md` is the record, `FINDINGS.md` §3c has the
+> numbers. The offset table is in the trailer; `read_index`, `decode_blocks`, `ziptastic info`,
+> `d --block N` and `d --from-block N` read it. The four features below are the ones it was built
+> for, and the fourth (hatching) remains heavenzip's to build on top. What it does **not** do is
+> make archive mode addressable: that mode is sequential by construction, and a partial decode of
+> it is refused rather than guessed at.
+
 `docs/HATCHING.md` records what was taken from HatchZip: not its shrinking extraction, which is an
 extractor's job with an extractor's risks, but the property that makes it possible — **a block
 offset table**.

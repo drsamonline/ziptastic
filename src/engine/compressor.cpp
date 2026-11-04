@@ -290,8 +290,16 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
   // header lies, and the decoder reads the wrong number of bytes — the next block's
   // header lands mid-payload and the failure surfaces somewhere unrelated. One comparison
   // here turns that into an immediate, named error at the only place it can be caught.
-  auto write_block = [](ByteWriter& out, const EncodedBlock& e) -> Err {
+  //
+  // Where each block's header starts, stream-relative, for the v8 trailer's offset table.
+  // Recorded here rather than at the two call sites because this is the only place that
+  // knows the position, and a table written from a second place would eventually disagree
+  // with the bytes it describes.
+  std::vector<uint64_t> offsets;
+  offsets.reserve(nblocks);
+  auto write_block = [&offsets](ByteWriter& out, const EncodedBlock& e) -> Err {
     if (e.hdr.compressed_size != e.body.size()) return Err::SizeMismatch;
+    offsets.push_back(out.size());
     write_block_header(out, e.hdr);
     out.bytes(e.body);
     return Err::Ok;
@@ -368,7 +376,7 @@ Err encode_native(std::span<const uint8_t> input, const CompressOptions& opt,
     }
   }
 
-  write_trailer(w, fh.block_count, manifest.digest());
+  write_trailer(w, fh.block_count, manifest.digest(), offsets);
   out = w.take();
   return Err::Ok;
 }
@@ -413,9 +421,10 @@ Err encode_lzma2_stream(std::span<const uint8_t> input,
   ByteWriter w;
   w.reserve(body.size() + 128);
   write_file_header(w, fh);
+  const uint64_t block_at = w.size();
   write_block_header(w, bh);
   w.bytes(body.span());
-  write_trailer(w, 1, manifest.digest());
+  write_trailer(w, 1, manifest.digest(), std::span<const uint64_t>(&block_at, 1));
 
   out = w.take();
   return Err::Ok;
@@ -1142,9 +1151,10 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
       BlockManifest manifest;
       manifest.add(bh);
       if (bh.compressed_size != packed.size()) return Err::SizeMismatch;
+      const uint64_t block_at = cw.size();
       write_block_header(cw, bh);
       cw.bytes(packed);
-      write_trailer(cw, 1, manifest.digest());
+      write_trailer(cw, 1, manifest.digest(), std::span<const uint64_t>(&block_at, 1));
 
       if (cw.size() < native.size()) {
         CompressStats cs;

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(ziptastic
-  VERSION 1.0.0
+  VERSION 1.1.0
   DESCRIPTION "CHCE — Chimera Hybrid Compression Engine"
   LANGUAGES C CXX)
 
@@ -237,6 +237,7 @@ endif()
 
 add_library(chce_core STATIC
   src/engine/block_writer.cpp
+  src/engine/block_index.cpp
   src/engine/sha256.cpp
   src/engine/plugin_host.cpp
   src/engine/compressor.cpp

@@ -1,7 +1,7 @@
 # Test suite. Each unit test is its own executable with TEST_MAIN() inside,
 # registered with CTest. Integration tests are shell scripts driving the CLI.
 
-set(CHCE_UNIT_TESTS varint header lzma2 match_finder parser rans range_coder bcj coarse_index huffman bwt zpaq ppmd dedup jpeg gif numeric xml_numeric base64 gzip wav sqlite png ecc bmp defaults containers integrity roundtrip fuzz)
+set(CHCE_UNIT_TESTS varint header lzma2 match_finder parser rans range_coder bcj coarse_index huffman bwt zpaq ppmd dedup jpeg gif numeric xml_numeric base64 gzip wav sqlite png ecc bmp defaults containers integrity offsets roundtrip fuzz)
 
 foreach(t ${CHCE_UNIT_TESTS})
   add_executable(test_${t} unit/test_${t}.cpp)
@@ -37,3 +37,8 @@ target_include_directories(match_stats PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_executable(parse_stats benchmark/parse_stats.cpp)
 target_link_libraries(parse_stats PRIVATE chce_core)
 target_include_directories(parse_stats PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# What the v8 offset table costs and what reaching a single block saves.
+add_executable(index_cost benchmark/index_cost.cpp)
+target_link_libraries(index_cost PRIVATE chce_core)
+target_include_directories(index_cost PRIVATE ${CMAKE_SOURCE_DIR}/src)

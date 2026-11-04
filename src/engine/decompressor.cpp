@@ -10,7 +10,9 @@
 #include <thread>
 
 #include "chimera/block.hpp"
+#include "chimera/block_index.hpp"
 #include "chimera/sha256.hpp"
+#include "stream_locate.hpp"
 #include "codecs/lzma2_fallback.hpp"
 #include "token_stream.hpp"
 #include "chimera/huffman.hpp"
@@ -189,25 +191,9 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   // A false positive costs nothing: the header parse validates magic, version, flags
   // and layers, and the CRC-32 of the rebuilt bytes has to match at the end, so a
   // wrong offset fails as a bad stream rather than producing wrong data.
-  std::span<const uint8_t> body = in;
-  if (in.size() >= sizeof(kMagic) && std::memcmp(in.data(), kMagic, sizeof(kMagic)) != 0) {
-    const size_t limit = std::min<size_t>(in.size(), 64u << 20);
-    size_t at = 0;
-    bool found = false;
-    while (at + sizeof(kMagic) <= limit) {
-      const void* hit = std::memchr(in.data() + at, kMagic[0], limit - at);
-      if (hit == nullptr) break;
-      at = static_cast<size_t>(static_cast<const uint8_t*>(hit) - in.data());
-      if (at + sizeof(kMagic) <= in.size() &&
-          std::memcmp(in.data() + at, kMagic, sizeof(kMagic)) == 0) {
-        found = true;
-        break;
-      }
-      ++at;
-    }
-    if (!found) return Err::BadMagic;
-    body = in.subspan(at);
-  }
+  size_t start = 0;
+  if (!locate_stream(in, start)) return Err::BadMagic;
+  std::span<const uint8_t> body = in.subspan(start);
 
   ByteReader r(body);
 
@@ -235,6 +221,11 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   // Per-block digests are checked as blocks come out; this binds the ordered set
   // of headers so a dropped or reordered block is caught too.
   BlockManifest manifest;
+  // Where each block actually started, stream-relative. The v8 trailer carries a table of
+  // these, and a decoder that walked the blocks is the only thing that can check it: the
+  // table must name the same positions, or it is a lie about a stream that decoded fine.
+  std::vector<uint64_t> observed_offsets;
+  observed_offsets.reserve(static_cast<size_t>(fh.block_count));
 
   // Declared block count, so a failure message can say "block 3 of 25" even
   // though the decode never finished. Overwritten with the real count at the end.
@@ -264,6 +255,7 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     std::vector<Blk> blks(static_cast<size_t>(fh.block_count));
     uint64_t total = 0;
     for (size_t i = 0; i < blks.size(); ++i) {
+      observed_offsets.push_back(r.offset());
       if (Err e = read_block_header(r, blks[i].bh); e != Err::Ok) return e;
       manifest.add(blks[i].bh);
       if (blks[i].bh.uncompressed_size > fh.original_size - total) {
@@ -307,12 +299,14 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
       dst.insert(dst.end(), parts[i].begin(), parts[i].end());
     }
     blocks = blks.size();
-    if (Err e = read_trailer(r, fh.block_count, manifest.digest()); e != Err::Ok) {
+    if (Err e = read_trailer(r, fh.block_count, manifest.digest(), observed_offsets);
+        e != Err::Ok) {
       return e;
     }
     if (!r.at_end()) return Err::TrailingData;
   } else {
   while (blocks < fh.block_count) {
+    observed_offsets.push_back(r.offset());
     BlockHeader bh;
     if (Err e = read_block_header(r, bh); e != Err::Ok) return e;
 
@@ -339,7 +333,8 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   }
 
   if (dst.size() != fh.original_size) return Err::SizeMismatch;
-  if (Err e = read_trailer(r, fh.block_count, manifest.digest()); e != Err::Ok) {
+  if (Err e = read_trailer(r, fh.block_count, manifest.digest(), observed_offsets);
+      e != Err::Ok) {
     return e;
   }
   if (!r.at_end()) return Err::TrailingData;
@@ -529,6 +524,51 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     // transformed stream — found by fuzzing streams built with precomp on, which the
     // original fuzz test never did (it used default options, where precomp is false).
     report->original_size = out.size();
+  }
+  return Err::Ok;
+}
+
+// Reaching one block, or a run of them, without walking the stream from the front. See
+// include/chimera/block_index.hpp for what this is for and what it refuses.
+Err decode_blocks(std::span<const uint8_t> in, const StreamIndex& index, uint64_t first,
+                  uint64_t last, std::vector<uint8_t>& out, uint64_t* bad_block) {
+  const FileHeader& fh = index.header;
+  if (index.size() != fh.block_count) return Err::Corrupt;  // an index of another stream
+  if (first > last || last >= fh.block_count) return Err::BadBlockSize;
+
+  // Both halves of "a block's bytes mean something on their own": it must not reference
+  // another block, and nothing outside the block loop may have changed the payload.
+  if (!blocks_are_independently_decodable(fh) || !stream_is_untransformed(fh)) {
+    return Err::NotSelfContained;
+  }
+
+  for (uint64_t i = first; i <= last; ++i) {
+    const BlockHeader& bh = index.blocks[static_cast<size_t>(i)];
+    const uint64_t body_at = index.body_offsets[static_cast<size_t>(i)];
+    if (body_at > in.size() || bh.compressed_size > in.size() - body_at) {
+      return Err::Truncated;
+    }
+    const std::span<const uint8_t> body =
+        in.subspan(static_cast<size_t>(body_at), static_cast<size_t>(bh.compressed_size));
+
+    std::vector<uint8_t> part;
+    part.reserve(static_cast<size_t>(bh.uncompressed_size));
+    if (Err e = decode_body(bh, body, part); e != Err::Ok) return e;
+    if (part.size() != bh.uncompressed_size) return Err::SizeMismatch;
+    // The digest before the bytes, exactly as the walking decoder does it: a damaged
+    // block is named and contributes nothing.
+    if (!sha256_equal(sha256(part), bh.sha256)) {
+      if (bad_block != nullptr) *bad_block = i;
+      return Err::BlockChecksumMismatch;
+    }
+    out.insert(out.end(), part.begin(), part.end());
+  }
+
+  // A range that covers every block is a whole decode, so it can make the whole-stream
+  // promise: the exact length and the CRC-32 of the bytes the caller asked for.
+  if (first == 0 && last + 1 == fh.block_count) {
+    if (static_cast<uint64_t>(out.size()) != fh.true_size) return Err::SizeMismatch;
+    if (crc32(out) != fh.checksum) return Err::ChecksumMismatch;
   }
   return Err::Ok;
 }

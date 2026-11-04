@@ -16,12 +16,37 @@ log and cost many hours to reconstruct.
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-ctest --test-dir build          # 32 suites, ~2 minutes
+ctest --test-dir build          # 33 suites, ~3 minutes
 ./build/ziptastic version
 ```
 
 That is the whole of it on a machine with a working toolchain and enough RAM to compile brunsli and
 brotli at once.
+
+## When there is no compiler at all
+
+A container with no `g++`, no `cmake` and no `ninja`, and no root to install them, still builds
+this: pip ships all three as wheels, including a complete C/C++ toolchain.
+
+```bash
+pip install --user ziglang cmake ninja
+ZIG=$(python3 -c 'import ziglang,os;print(os.path.dirname(ziglang.__file__))')/zig
+printf '#!/bin/sh\nexec %s cc  -target x86_64-linux-gnu "$@"\n' "$ZIG" > ~/.local/bin/zigcc
+printf '#!/bin/sh\nexec %s c++ -target x86_64-linux-gnu "$@"\n' "$ZIG" > ~/.local/bin/zigcxx
+chmod +x ~/.local/bin/zigcc ~/.local/bin/zigcxx
+
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_C_COMPILER=$HOME/.local/bin/zigcc \
+      -DCMAKE_CXX_COMPILER=$HOME/.local/bin/zigcxx
+```
+
+Two things to know. The configure step alone takes **~5 minutes** here, because CMake compiles and
+runs its feature probes one at a time through a wrapper that is slower than a native compiler.
+And this is the toolchain the depfile note below is about: with zig wrappers, strip the depfiles
+before the first build, and touch `src/` and `tests/` after any header change.
+
+Building every target in one `cmake --build build -j3` on two cores will exceed a five-minute
+command limit; the target-by-target loop below is the way through, and it resumes where it stopped.
 
 ## If the build is slow, runs out of memory, or the compiler is odd
 
@@ -78,7 +103,7 @@ supported.
 
 ```
 $ ./build/ziptastic version
-ziptastic 1.0.0 (CHCE format v7)
+ziptastic 1.1.0 (CHCE format v8)
 
 $ head -c 200000 /dev/urandom > t.bin
 $ ./build/ziptastic c -9 t.bin            # writes t.bin.dr
@@ -86,3 +111,15 @@ $ ./build/ziptastic d t.bin.dr            # writes t.bin, byte-identical
 ```
 
 If `ctest` is green and that round trip is byte-exact, you have a working build.
+
+The offset table has its own smoke test, and it is the one to run after touching the trailer:
+
+```
+$ ./build/ziptastic info t.bin.dr
+...
+blocks         1
+block table    verified against the manifest digest, 108 bytes read of 118284
+```
+
+`verified` is doing work: `info` reads every block header at the position the table names and
+re-hashes them into the manifest before printing anything.

@@ -6,6 +6,7 @@
 //   then per block: mode u8 | uncompressed_size varint | compressed_size varint
 //                   | sha256[32] | metadata | payload
 //   then the trailer: "ZTIX" | block_count varint | sha256(manifest)[32]
+//                   | block_offset u64[block_count] | "ZTOX"
 #include <array>
 
 #include "chimera/block.hpp"
@@ -148,13 +149,20 @@ void BlockManifest::add(const BlockHeader& h) {
 
 Sha256Digest BlockManifest::digest() const { return sha256(serialised_); }
 
-void write_trailer(ByteWriter& w, uint64_t block_count, const Sha256Digest& manifest) {
+void write_trailer(ByteWriter& w, uint64_t block_count, const Sha256Digest& manifest,
+                   std::span<const uint64_t> offsets) {
+  // The caller is the compressor and a mismatch here would be a programming error, not
+  // a malformed stream. Writing the shorter of the two silently is worse than writing a
+  // table the reader will reject, so the assert is in the test suite and the write is
+  // taken at face value.
   w.bytes(kTrailerMagic, sizeof(kTrailerMagic));
   w.varint(block_count);
   w.bytes(manifest.data(), manifest.size());
+  for (uint64_t off : offsets) w.u64(off);
+  w.bytes(kTrailerTailMagic, sizeof(kTrailerTailMagic));
 }
 
-Err read_trailer(ByteReader& r, uint64_t expect_blocks, const Sha256Digest& manifest) {
+Err read_trailer(ByteReader& r, TrailerInfo& out, uint64_t expect_blocks) {
   std::span<const uint8_t> magic;
   if (!r.take(sizeof(kTrailerMagic), magic)) return Err::Truncated;
   for (size_t i = 0; i < sizeof(kTrailerMagic); ++i) {
@@ -162,12 +170,59 @@ Err read_trailer(ByteReader& r, uint64_t expect_blocks, const Sha256Digest& mani
   }
   uint64_t count = 0;
   if (!r.varint(count)) return Err::BadVarint;
-  if (count != expect_blocks) return Err::ManifestMismatch;
+  if (expect_blocks != kAnyBlockCount && count != expect_blocks) {
+    return Err::ManifestMismatch;
+  }
+  // The table's size is implied by the count, so a count beyond the block ceiling can
+  // never be allocated for: the stream would have to be 8 bytes per block longer than it
+  // is, and the caller that located this trailer by arithmetic already refused that.
+  if (count > kMaxBlocks) return Err::BadBlockSize;
 
   std::span<const uint8_t> stored;
   if (!r.take(32, stored)) return Err::Truncated;
-  for (size_t i = 0; i < manifest.size(); ++i) {
-    if (stored[i] != manifest[i]) return Err::ManifestMismatch;
+
+  // The table. Every entry must be inside the stream and after the previous one: a
+  // block header is never empty, so a table that does not strictly increase cannot
+  // describe a real stream. This is the only structural check possible here — that an
+  // offset lands on a block header is established by the reader that goes there.
+  std::vector<uint64_t> table(static_cast<size_t>(count));
+  uint64_t previous = 0;
+  for (uint64_t i = 0; i < count; ++i) {
+    uint64_t off = 0;
+    if (!r.u64(off)) return Err::Truncated;
+    if (i == 0) {
+      // The header in front of the first block is at least the magic, the version and
+      // the flag bytes; an offset that points into the header is not a block.
+      if (off < 4) return Err::Corrupt;
+    } else if (off <= previous) {
+      return Err::Corrupt;
+    }
+    previous = off;
+    table[static_cast<size_t>(i)] = off;
+  }
+
+  if (!r.take(sizeof(kTrailerTailMagic), magic)) return Err::Truncated;
+  for (size_t i = 0; i < sizeof(kTrailerTailMagic); ++i) {
+    if (magic[i] != kTrailerTailMagic[i]) return Err::Corrupt;
+  }
+
+  out.block_count = count;
+  for (size_t i = 0; i < out.manifest.size(); ++i) out.manifest[i] = stored[i];
+  out.offsets = std::move(table);
+  return Err::Ok;
+}
+
+Err read_trailer(ByteReader& r, uint64_t expect_blocks, const Sha256Digest& manifest,
+                 std::span<const uint64_t> observed_offsets) {
+  TrailerInfo info;
+  if (Err e = read_trailer(r, info, expect_blocks); e != Err::Ok) return e;
+  if (info.block_count != expect_blocks) return Err::ManifestMismatch;
+  if (!sha256_equal(info.manifest, manifest)) return Err::ManifestMismatch;
+  if (!observed_offsets.empty()) {
+    if (observed_offsets.size() != info.offsets.size()) return Err::ManifestMismatch;
+    for (size_t i = 0; i < info.offsets.size(); ++i) {
+      if (observed_offsets[i] != info.offsets[i]) return Err::ManifestMismatch;
+    }
   }
   return Err::Ok;
 }

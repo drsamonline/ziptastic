@@ -1,7 +1,7 @@
 name: ci
 
 # A cold-start build and the full suite, on every push. The vendor-check job proves the sources
-# materialise; this one proves they compile and that the 32 suites pass.
+# materialise; this one proves they compile and that the 33 suites pass.
 #
 # The build is deliberately not parallel-bombed: the vendored brunsli and brotli are large
 # translation units, and a 2-core runner is what this project is developed on, so the CI runner
@@ -35,7 +35,7 @@ jobs:
         # reason the version lives in one place.
         run: |
           ./build/ziptastic version
-          ./build/ziptastic version | grep -q "1.0.0"
+          ./build/ziptastic version | grep -q "1.1.0"
 
       - name: Test
         run: ctest --test-dir build --output-on-failure

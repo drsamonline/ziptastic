@@ -27,8 +27,15 @@ inline constexpr uint8_t kMagic[4] = {'C', 'H', 'C', 'E'};
 // v5 added a second `layers` byte. The first is full: all eight Layer 0 bits are
 // allocated and the ninth transform had nowhere to live. Adding a field is a format
 // change, hence the bump — the same clean break as v1->v2, v2->v3 and v3->v4.
+// v6 added `true_size`, so a crafted stream cannot describe an unbounded expansion.
+// v7 added a third `layers` byte, because the first two were full.
+// v8 added a block offset table to the trailer: one absolute u64 per block, plus a
+// "ZTOX" marker so the table can be found from the end of the stream without walking
+// the blocks in front of it. No header field changed, only the trailer, which is why
+// the header layout is identical to v7 — and why a v7 stream must still be refused
+// rather than read as v8, since its trailer has no table.
 // Older streams are rejected with bad-version rather than guessed at.
-inline constexpr uint8_t kFormatVersion = 7;
+inline constexpr uint8_t kFormatVersion = 8;
 
 // Default block size. The prompt starts at 256 KB; Phase 12 tunes it.
 // 4 MiB. Measured: on dickens, 256 KiB gives 2,743,444 bytes, 1 MiB 2,496,909,
@@ -231,6 +238,11 @@ enum class Err : int {
   Corrupt,        // an entropy backend rejected its own payload
   BlockChecksumMismatch,  // a block's SHA-256 does not match its bytes
   ManifestMismatch,       // the trailer disagrees with the block set
+  // The stream is intact but its blocks are not independently decodable: an
+  // archive-mode block may reference bytes an earlier block produced, so asking
+  // for one block on its own has no answer. A distinct error rather than
+  // `corrupt`, because nothing is corrupt — the request was wrong.
+  NotSelfContained,
   Io,             // read or write failure on the CLI side
 };
 
@@ -250,6 +262,7 @@ constexpr const char* err_name(Err e) {
     case Err::Corrupt: return "corrupt";
     case Err::BlockChecksumMismatch: return "block-checksum-mismatch";
     case Err::ManifestMismatch: return "manifest-mismatch";
+    case Err::NotSelfContained: return "not-self-contained";
     case Err::Io: return "io-error";
   }
   return "unknown";
@@ -272,6 +285,8 @@ constexpr const char* err_message(Err e) {
     case Err::Corrupt: return "compressed payload is corrupt";
     case Err::BlockChecksumMismatch: return "a block failed its SHA-256 check";
     case Err::ManifestMismatch: return "the block manifest does not match the stream";
+    case Err::NotSelfContained:
+      return "blocks are not independently decodable in this stream (archive mode)";
     case Err::Io: return "i/o error";
   }
   return "unknown error";
@@ -287,9 +302,15 @@ class ByteWriter {
 
   void u8(uint8_t v) { buf_.push_back(v); }
 
-  // Fixed-width little-endian, for fields whose size must not vary.
+  // Fixed-width little-endian, for fields whose size must not vary. The offset table
+  // uses u64 for exactly this reason: a reader that reaches it from the end of the
+  // stream must be able to compute its start without having parsed anything inside it.
   void u32(uint32_t v) {
     for (int i = 0; i < 4; ++i) buf_.push_back(static_cast<uint8_t>(v >> (8 * i)));
+  }
+
+  void u64(uint64_t v) {
+    for (int i = 0; i < 8; ++i) buf_.push_back(static_cast<uint8_t>(v >> (8 * i)));
   }
 
   void varint(uint64_t v) {
@@ -330,6 +351,15 @@ class ByteReader {
     uint32_t out = 0;
     for (int i = 0; i < 4; ++i) out |= static_cast<uint32_t>(in_[pos_ + i]) << (8 * i);
     pos_ += 4;
+    v = out;
+    return true;
+  }
+
+  bool u64(uint64_t& v) {
+    if (in_.size() - pos_ < 8) return false;
+    uint64_t out = 0;
+    for (int i = 0; i < 8; ++i) out |= static_cast<uint64_t>(in_[pos_ + i]) << (8 * i);
+    pos_ += 8;
     v = out;
     return true;
   }

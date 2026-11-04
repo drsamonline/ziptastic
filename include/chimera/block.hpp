@@ -5,6 +5,7 @@
 // selector share one definition.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -61,11 +62,44 @@ struct BlockHeader {
   bool operator==(const BlockHeader&) const = default;
 };
 
-// The stream trailer: "ZTIX" | varint block_count | sha256 of the manifest.
+// The stream trailer (v8):
+//
+//   "ZTIX" | block_count varint | sha256(manifest)[32]
+//          | block_offset[0..count-1], each u64 little-endian
+//          | "ZTOX"
+//
 // The manifest binds, per block and in order, the mode byte, both sizes and the
 // block's own digest — so a dropped, duplicated or reordered block, or an edited
 // header field, fails before any payload is decoded.
+//
+// The offset table is v8's whole addition. Each entry is the absolute position of a
+// block's header, counted from the first byte of the stream (the 'C' of CHCE), so an
+// SFX stub or a joined split set in front of it changes nothing. Fixed width rather
+// than a varint, for one reason: a reader that arrives from the end of the stream can
+// compute where the table starts — end - 4 - 8*count — without having parsed a single
+// byte inside it. A delta-coded varint table would be about five bytes per block
+// smaller and would have to be walked from the front, which is the thing this table
+// exists to avoid.
 inline constexpr uint8_t kTrailerMagic[4] = {'Z', 'T', 'I', 'X'};
+// Marks the end of the trailer. Four bytes that let a reader tell a complete v8 stream
+// from one truncated inside its offset table, without trusting any length field.
+inline constexpr uint8_t kTrailerTailMagic[4] = {'Z', 'T', 'O', 'X'};
+// The fixed cost of the offset table's framing: its four-byte tail marker, and nothing
+// else. The entries themselves are 8 bytes each.
+inline constexpr size_t kTrailerTailBytes = 4;
+
+// Bytes the trailer occupies for a given block count: "ZTIX", the count varint, the
+// manifest, one u64 per block, and the tail marker. Used both by the writer (implicitly)
+// and by a reader locating the trailer from the end of the stream.
+constexpr size_t trailer_bytes(uint64_t block_count) {
+  size_t n = sizeof(kTrailerMagic) + sizeof(kTrailerTailMagic) + 32 + 8 * block_count;
+  uint64_t v = block_count;
+  do {
+    ++n;
+    v >>= 7;
+  } while (v != 0);
+  return n;
+}
 
 class BlockManifest {
  public:
@@ -77,8 +111,37 @@ class BlockManifest {
   std::vector<uint8_t> serialised_;
 };
 
-void write_trailer(ByteWriter& w, uint64_t block_count, const Sha256Digest& manifest);
-Err read_trailer(ByteReader& r, uint64_t expect_blocks, const Sha256Digest& manifest);
+// Writes the trailer. `offsets` holds one absolute stream position per block, in order,
+// and must be exactly `block_count` long.
+void write_trailer(ByteWriter& w, uint64_t block_count, const Sha256Digest& manifest,
+                   std::span<const uint64_t> offsets);
+
+// What the trailer says, once it has been read.
+struct TrailerInfo {
+  uint64_t block_count = 0;
+  Sha256Digest manifest{};
+  std::vector<uint64_t> offsets;  // one per block, stream-relative
+};
+
+// Sentinel for "the caller has no opinion about how many blocks the trailer should
+// describe", used by a reader that is discovering the stream rather than checking it.
+inline constexpr uint64_t kAnyBlockCount = ~0ull;
+
+// Reads the trailer at the reader's current position and validates its internal
+// structure: the two magics, the table's monotonicity, and that the table is exactly
+// `block_count` entries long. `expect_blocks` is checked as soon as the count is read —
+// before the table, because a wrong count means the table's length is wrong too, and
+// "the trailer disagrees with the block set" is the useful error rather than whatever
+// the misaligned parse happens to trip over.
+Err read_trailer(ByteReader& r, TrailerInfo& out,
+                 uint64_t expect_blocks = kAnyBlockCount);
+
+// Reads the trailer and additionally requires that it agrees with what the caller saw
+// while walking the blocks: the count, the manifest digest, and — entry for entry — the
+// offsets. A decoder that walked the blocks already knows where they were, so a table
+// that disagrees is a lie about the stream and is refused as manifest-mismatch.
+Err read_trailer(ByteReader& r, uint64_t expect_blocks, const Sha256Digest& manifest,
+                 std::span<const uint64_t> observed_offsets);
 
 // ---------------------------------------------------------------------------
 // Serialisation

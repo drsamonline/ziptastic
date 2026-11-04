@@ -16,6 +16,7 @@
 
 #include "engine/compressor.hpp"
 #include "engine/decompressor.hpp"
+#include "chimera/block_index.hpp"
 #include "chimera/format.hpp"
 
 namespace fs = std::filesystem;
@@ -55,6 +56,7 @@ void print_usage(FILE* f) {
       "commands:\n"
       "  compress, c        compress input to output (default)\n"
       "  decompress, d      decompress input to output\n"
+      "  info, i            print the header, the block table and its offsets\n"
       "  bench              compress and report ratio + speed, no output file\n"
       "  version            print version and exit\n"
       "  help               print this text and exit\n"
@@ -85,7 +87,9 @@ void print_usage(FILE* f) {
       "      --no-range       disable the range-coded model\n"
       "      --no-bcj         disable the x86 BCJ transform\n"
       "      --no-coarse      disable the coarse match index\n"
-      "  -b, --block-size N   block size in KiB (default 256)\n"
+      "  -b, --block-size N   block size in KiB (default 4096)\n"
+      "      --block N        with d: decode block N alone (needs --parallel blocks)\n"
+      "      --from-block N   with d: decode blocks N to the end (resumable)\n"
       "  -o, --output FILE    write to FILE instead of stdout\n"
       "  -f, --force          overwrite an existing output file\n"
       "  -v, --verbose        print per-run statistics to stderr\n"
@@ -233,13 +237,18 @@ int fail(const char* what, chce::Err e) {
 struct Options {
   // --split-size: bytes per output part. 0 keeps one file.
   size_t split_size = 0;
-  enum class Command { Compress, Decompress, Bench, Version, Help } cmd =
+  enum class Command { Compress, Decompress, Bench, Info, Version, Help } cmd =
       Command::Compress;
   chce::CompressOptions comp;
   std::string input;
   std::string output;
   bool force = false;
   bool verbose = false;
+  // --block N / --from-block N. -1 means "the whole stream". Two flags rather than one
+  // range, because they are two different requests: one block, or everything from a
+  // block onwards (which is what a crashed decode resumes with).
+  long long block = -1;
+  long long from_block = -1;
 };
 
 // Parses argv. Returns -1 to continue, or an exit code to return immediately.
@@ -271,6 +280,24 @@ int parse_args(int argc, char** argv, Options& o) {
       o.cmd = Options::Command::Decompress;
     } else if (a == "bench") {
       o.cmd = Options::Command::Bench;
+    } else if (a == "info" || a == "i") {
+      o.cmd = Options::Command::Info;
+    } else if (a == "--block") {
+      const char* v = need_value("--block");
+      if (!v) return 2;
+      o.block = std::strtoll(v, nullptr, 10);
+      if (o.block < 0) {
+        std::fprintf(stderr, "ziptastic: --block needs a block index\n");
+        return 2;
+      }
+    } else if (a == "--from-block") {
+      const char* v = need_value("--from-block");
+      if (!v) return 2;
+      o.from_block = std::strtoll(v, nullptr, 10);
+      if (o.from_block < 0) {
+        std::fprintf(stderr, "ziptastic: --from-block needs a block index\n");
+        return 2;
+      }
     } else if (a == "-9") {
       o.comp.block_size = chce::kDefaultBlockSize;
       o.comp.precomp = true;
@@ -405,6 +432,9 @@ FILE* open_output(const Options& o, bool& ok) {
   return f;
 }
 
+// Defined below, beside the other decode commands: `d --block` needs the offset table.
+int run_partial_decode(const Options& o, const std::vector<uint8_t>& input);
+
 int run_compress(const Options& o) {
   std::vector<uint8_t> input;
   FILE* in = o.input.empty() ? stdin : std::fopen(o.input.c_str(), "rb");
@@ -489,6 +519,15 @@ int run_decompress(const Options& o) {
     if (join_parts(o.input, input, joined)) input = std::move(joined);
   }
 
+  // --block / --from-block: answer from the offset table instead of decoding the stream.
+  if (o.block >= 0 || o.from_block >= 0) {
+    if (o.block >= 0 && o.from_block >= 0) {
+      std::fprintf(stderr, "ziptastic: --block and --from-block are alternatives\n");
+      return 2;
+    }
+    return run_partial_decode(o, input);
+  }
+
   std::vector<uint8_t> out;
   chce::DecompressReport rep;
   const chce::Err e = chce::decompress(input, out, &rep);
@@ -518,6 +557,158 @@ int run_decompress(const Options& o) {
   if (o.verbose) {
     std::fprintf(stderr, "ziptastic: %zu -> %zu bytes, %llu blocks\n", input.size(),
                  out.size(), static_cast<unsigned long long>(rep.blocks));
+  }
+  return 0;
+}
+
+// Reads a whole input (file or stdin) for the commands that need the bytes in hand.
+bool read_input(const Options& o, std::vector<uint8_t>& data) {
+  FILE* in = o.input.empty() ? stdin : std::fopen(o.input.c_str(), "rb");
+  if (!in) {
+    std::fprintf(stderr, "ziptastic: cannot read %s\n", o.input.c_str());
+    return false;
+  }
+  const bool ok = read_all(in, data);
+  if (in != stdin) std::fclose(in);
+  if (!ok) {
+    std::fprintf(stderr, "ziptastic: read error on %s\n",
+                 o.input.empty() ? "<stdin>" : o.input.c_str());
+  }
+  return ok;
+}
+
+const char* kFlagNames[8] = {"coarse", "max-ratio", "precomp", "bcj",
+                             "parallel", "dedup", "jpeg", "gif"};
+
+std::string describe_flags(uint8_t f) {
+  std::string s;
+  for (int i = 0; i < 8; ++i) {
+    if ((f & (1u << i)) == 0) continue;
+    if (!s.empty()) s += ", ";
+    s += kFlagNames[i];
+  }
+  return s.empty() ? "none" : s;
+}
+
+// `ziptastic info` — the header, and the block table that v8 added.
+//
+// This is the command the offset table needed to justify itself. An index nothing reads is
+// an index that rots; every field printed here is read through `read_index`, which
+// validates the table against the manifest before any of it is shown.
+int run_info(const Options& o) {
+  std::vector<uint8_t> input;
+  if (!read_input(o, input)) return 1;
+
+  chce::StreamIndex idx;
+  const chce::Err e = chce::read_index(input, idx);
+  if (e != chce::Err::Ok) return fail("cannot read the stream index", e);
+
+  const chce::FileHeader& h = idx.header;
+  std::printf("%-14s %s\n", "file", o.input.empty() ? "<stdin>" : o.input.c_str());
+  std::printf("%-14s %s\n", "format", version_string());
+  std::printf("%-14s %s (0x%02x)\n", "flags", describe_flags(h.flags).c_str(), h.flags);
+  std::printf("%-14s 0x%02x 0x%02x 0x%02x%s\n", "layers", h.layers, h.layers2, h.layers3,
+              (h.layers | h.layers2 | h.layers3) == 0 ? " (no Layer 0 transform)" : "");
+  std::printf("%-14s %llu\n", "original size",
+              static_cast<unsigned long long>(h.original_size));
+  std::printf("%-14s %llu\n", "true size", static_cast<unsigned long long>(h.true_size));
+  std::printf("%-14s 0x%08x\n", "crc32", h.checksum);
+  std::printf("%-14s %zu\n", "blocks", idx.size());
+  if (idx.stream_offset != 0) {
+    std::printf("%-14s %llu bytes before the magic\n", "prefix",
+                static_cast<unsigned long long>(idx.stream_offset));
+  }
+  std::printf("%-14s verified against the manifest digest, %llu bytes read of %zu\n",
+              "block table", static_cast<unsigned long long>(idx.bytes_read),
+              input.size());
+  std::printf("%-14s %s\n", "block access",
+              chce::blocks_are_independently_decodable(h)
+                  ? "each block decodes on its own (--parallel)"
+                  : "archive mode: a block may reference an earlier one");
+
+  if (idx.size() == 0) return 0;
+  std::printf("\n  %-4s %-12s %-10s %-10s %s\n", "#", "offset", "csize", "usize", "mode");
+  for (size_t i = 0; i < idx.size(); ++i) {
+    const chce::BlockHeader& b = idx.blocks[i];
+    std::printf("  %-4zu 0x%08llx %-10llu %-10llu %s\n", i,
+                static_cast<unsigned long long>(idx.block_offsets[i]),
+                static_cast<unsigned long long>(b.compressed_size),
+                static_cast<unsigned long long>(b.uncompressed_size),
+                chce::mode_name(b.mode));
+  }
+  return 0;
+}
+
+// `ziptastic d --block N` / `--from-block N`: decode part of a stream without walking it.
+//
+// Only a stream whose blocks are self-contained and untransformed can answer this: a
+// partial decode cannot run the inverse chain, which needs every byte. Saying that plainly
+// beats returning bytes that look right and are not.
+int run_partial_decode(const Options& o, const std::vector<uint8_t>& input) {
+  chce::StreamIndex idx;
+  if (const chce::Err e = chce::read_index(input, idx); e != chce::Err::Ok) {
+    return fail("cannot read the stream index", e);
+  }
+  const uint64_t count = idx.size();
+  if (count == 0) {
+    std::fprintf(stderr, "ziptastic: the stream has no blocks\n");
+    return 1;
+  }
+
+  const uint64_t first = static_cast<uint64_t>(o.block >= 0 ? o.block : o.from_block);
+  const uint64_t last = o.block >= 0 ? first : count - 1;
+  if (first >= count) {
+    std::fprintf(stderr, "ziptastic: block %llu does not exist (the stream has %llu)\n",
+                 static_cast<unsigned long long>(first),
+                 static_cast<unsigned long long>(count));
+    return 1;
+  }
+
+  if (!chce::blocks_are_independently_decodable(idx.header)) {
+    std::fprintf(stderr,
+                 "ziptastic: block %llu is not independently decodable: this stream is in "
+                 "archive mode, where a block may reference an earlier one.\n"
+                 "  re-compress with --parallel to make every block self-contained\n",
+                 static_cast<unsigned long long>(first));
+    return 1;
+  }
+  if (!chce::stream_is_untransformed(idx.header)) {
+    std::fprintf(stderr,
+                 "ziptastic: block %llu cannot be decoded alone: this stream carries a "
+                 "Layer 0 or stream-level transform, and its inverse needs the whole "
+                 "stream.\n",
+                 static_cast<unsigned long long>(first));
+    return 1;
+  }
+
+  std::vector<uint8_t> out;
+  uint64_t bad = chce::kNoBlock;
+  const chce::Err e = chce::decode_blocks(input, idx, first, last, out, &bad);
+  if (e != chce::Err::Ok) {
+    if (e == chce::Err::BlockChecksumMismatch && bad != chce::kNoBlock) {
+      std::fprintf(stderr, "ziptastic: block %llu of %llu failed its SHA-256 check\n",
+                   static_cast<unsigned long long>(bad),
+                   static_cast<unsigned long long>(count));
+      return 1;
+    }
+    return fail("block decode failed", e);
+  }
+
+  bool ok = true;
+  FILE* fo = open_output(o, ok);
+  if (!ok) return 1;
+  const bool wrote = write_all(fo, out);
+  if (fo != stdout) std::fclose(fo);
+  if (!wrote) {
+    std::fprintf(stderr, "ziptastic: write error\n");
+    return 1;
+  }
+  if (o.verbose) {
+    std::fprintf(stderr,
+                 "ziptastic: blocks %llu..%llu of %llu -> %zu bytes (verified)\n",
+                 static_cast<unsigned long long>(first),
+                 static_cast<unsigned long long>(last),
+                 static_cast<unsigned long long>(count), out.size());
   }
   return 0;
 }
@@ -609,6 +800,7 @@ int main(int argc, char** argv) {
     case Options::Command::Compress: return run_compress(o);
     case Options::Command::Decompress: return run_decompress(o);
     case Options::Command::Bench: return run_bench(o);
+    case Options::Command::Info: return run_info(o);
     case Options::Command::Version: std::printf("%s\n", version_string()); return 0;
     case Options::Command::Help: print_usage(stdout); return 0;
   }

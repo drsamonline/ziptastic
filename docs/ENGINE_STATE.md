@@ -9,6 +9,10 @@ and why); this one is the reference.
 
 ## Format
 
+> **Written at v5; the engine is at v8.** The current layout is in `FORMAT.md` — the header
+> gained `true_size` in v6 and `layers3` in v7, and the trailer gained a block offset table in v8
+> (`FORMAT_V8.md`). Everything below about the Layer 0 bits is still accurate.
+
 **v5.** `"CHCE" | version | flags | layers | layers2 | original_size | block_count |
 crc32`, per block `mode | usize | csize | sha256[32] | metadata | payload`, then a `ZTIX`
 trailer carrying the block count and a digest of the block manifest. Both `layers` bytes

@@ -19,6 +19,10 @@ A 4 MiB block is worth 32 bytes. That was the whole argument.
 
 ## What the format does now (v4)
 
+> **Historical.** This section describes v4. The format is now v8; the trailer gained a block
+> offset table in `FORMAT_V8.md`, and `FORMAT.md` is the current layout. The integrity machinery
+> below is unchanged and still current.
+
 ```
 "CHCE" | version u8 = 4 | flags u8 | layers u8 | original_size varint
        | block_count varint | crc32 u32

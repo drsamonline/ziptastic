@@ -360,3 +360,50 @@ on the measured sample. See `INTEGRITY.md` for the three ways to reduce it.
 
 **Compatibility:** version 4 only. v3 streams are rejected with `bad-version`,
 the same clean break as v1→v2 and v2→v3.
+
+## Version 8: the block offset table
+
+`kFormatVersion` is 8. **The header is unchanged from v7**; only the trailer grew, by one absolute
+u64 per block and a four-byte tail marker. Full write-up, measurements and the shapes that were
+rejected: `FORMAT_V8.md`.
+
+```
+"CHCE" | version u8 = 8 | flags u8 | layers u8 | layers2 u8 | layers3 u8
+       | original_size varint | true_size varint | block_count varint | crc32 u32
+
+per block:
+  mode u8 | uncompressed_size varint | compressed_size varint | sha256[32]
+         | metadata | payload
+
+trailer:
+  "ZTIX" | block_count varint | sha256(manifest)[32]
+        | block_offset[0..count-1], each u64 little-endian
+        | "ZTOX"
+```
+
+- Each `block_offset` is the position of that block's **header**, counted from the first byte of
+  the stream (the `C` of `CHCE`). An SFX stub or a joined split set in front of the stream does not
+  change the table: the reader adds its own prefix offset.
+- The trailer is a fixed size for a given block count — `trailer_bytes(count)` in `block.hpp` — so
+  a reader that has the header can compute `end - trailer_bytes(count)` and land on `ZTIX` without
+  parsing anything. That is why the entries are fixed-width and not delta-coded varints, which
+  would be about five bytes a block smaller and could only be walked from one end.
+- `ZTOX` marks the end of the table. It distinguishes a complete stream from one truncated inside
+  its table, and it is checked: a missing marker is `corrupt`, not a length field that happens to
+  be wrong.
+- **Validation.** `read_trailer` checks the structure and that the offsets strictly increase.
+  `read_index` additionally follows every entry to a block header, requires the blocks to tile the
+  stream from the end of the file header to the trailer with no gap, and re-hashes those headers
+  into the manifest. `decompress()` compares the table against the offsets it observed while
+  walking, so a table that disagrees with the stream it describes is `manifest-mismatch`.
+- **`not-self-contained`** is new. `decode_blocks` (and `ziptastic d --block N`) refuse a stream
+  whose blocks are not independently decodable — archive mode, or any Layer 0 or stream-level
+  transform — rather than returning a block's plaintext when it is an intermediate of the inverse
+  chain.
+
+**Cost:** `8 × blocks + 4` bytes over a v7 trailer: 0.13% of a 225-block archive, 0.01% of a
+one-block 118 KB archive, and **1.7% of a 687-byte one-block archive** — the case where it buys
+nothing and costs the most. See `FINDINGS.md` §3c.
+
+**Compatibility:** version 8 only. A v7 stream is rejected with `bad-version`: its trailer has no
+table, and a reader that guessed would read the manifest as offsets.

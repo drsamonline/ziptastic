@@ -13,16 +13,20 @@ transform in two places without any indication of which was current.
 
 ## 1. What the engine is
 
-Format **v7**. Header: `"CHCE" | version | flags | layers | layers2 | layers3 | original_size |
+Format **v8**. Header: `"CHCE" | version | flags | layers | layers2 | layers3 | original_size |
 true_size | block_count | crc32`, per block `mode | usize | csize | sha256[32] | metadata |
-payload`, then a `ZTIX` trailer with the block count and a manifest digest.
+payload`, then a `ZTIX` trailer with the block count, a manifest digest, **one absolute u64 per
+block** and a `ZTOX` tail marker.
 
 - **`original_size`** is the size *after* Layer 0; **`true_size`** is what the caller gets back.
 - Three layer bytes, because each was filled as it was needed. `layers3` has seven free bits.
 - Nine backends per block (RAW, rANS, static Huffman, range, BWT, PPMd, LZMA2 fallback, CM under
   `--max-ratio`), chosen by smallest output. Adaptive Huffman is off by default.
-- 32 test suites, all passing. A full audit of `compressor.cpp` and `decompressor.cpp` is
-  recorded in section 6.
+- **The block offset table** (v8, Phase 3b): every block's position is in the trailer, so a
+  block can be reached without walking the stream — 0.76% of the archive read to find any one
+  block, and one block decoded in about 1/100th of a full decode. Section 3c.
+- 33 test suites, all passing; 53 CLI assertions. A full audit of `compressor.cpp` and
+  `decompressor.cpp` is recorded in section 6.
 
 ## 2. Layer 0 transforms, with the numbers that are current
 
@@ -98,6 +102,48 @@ Two things in that table are worth noting:
   with 512-byte tar headers interleaved the archive inside is not found, so the tar path gets no
   transform at all — and still lands within 1% of the ZIP result, because the backend does the
   work. The `book.tar.gz` case works because gzip unpacks first and hands over a clean tar.
+
+## 3c. Addressable blocks (v8), and what the table costs
+
+Format v8 adds a block offset table to the trailer: one absolute u64 per block, plus a `ZTOX`
+marker that lets a reader compute where the table starts from the end of the stream. Blocks were
+already self-contained in parallel mode and already carried their own SHA-256; nothing could find
+one without walking from the front. `FORMAT_V8.md` is the design record.
+
+Measured with `tests/benchmark/index_cost.cpp` on 3.68 MB of concatenated project documentation,
+16 KiB blocks, **225 blocks**, 1,377,975-byte archive:
+
+| | |
+|---|---|
+| reading the whole index | **0.04 ms**, touching **10,414 of 1,377,975 bytes (0.76%)** |
+| decoding the whole stream | 888 ms |
+| decoding one block from its offset | **4–11 ms** (two runs on a 2-core box) |
+
+The table costs `8 × blocks + 4` bytes over a v7 trailer:
+
+| case | archive | blocks | added | share |
+|---|---|---|---|---|
+| 3.68 MB of docs, 16 KiB blocks | 1,377,975 | 225 | 1,804 | 0.131% |
+| 460 KB of docs, 64 KiB blocks | 145,164 | 8 | 68 | 0.047% |
+| 460 KB of docs, default block size | 118,284 | 1 | 12 | 0.010% |
+| 1 KB of text | 687 | 1 | 12 | **1.7%** |
+
+**The last row is a real cost, not a rounding error**, and it is the same shape as the 1.2 KB PNG
+in section 2: on a single-block archive the table is 1.7% of the output and says nothing the reader
+could not derive. It is kept for now because removing it means a second trailer shape, and the flag
+byte is full, so it would cost another header field. If small files ever matter more than
+uniformity, that is the change to make.
+
+What the table is **not** allowed to do is be wrong. Four checks, none of which decodes a payload:
+the table's structure; that the entries tile the stream from the end of the file header to the
+trailer with no gap; that the headers found at those offsets re-hash to the stored manifest; and
+that a decoder which walked the blocks sees the same offsets. A corrupted table is a refusal, never
+a wrong answer.
+
+**And a partial decode of a transformed stream is refused, not answered** (`not-self-contained`):
+an archive-mode block may reference an earlier one, and the inverse chain needs the whole stream,
+so a block's plaintext is only the caller's bytes when the stream was written `--parallel` with no
+Layer 0 transform.
 
 ## 4. Container payloads: what the nested transforms actually do
 
@@ -179,6 +225,15 @@ internals beyond their contracts, `main.cpp`, the match finder and parser.
 - **Speed.** 0.3–0.6 MB/s is the trade for the ratio, and it has not been attacked.
 - **The 99 MB ISO and 128 MB raw image** are unmeasured: ~8–10 minutes each at these speeds.
 - **LZ4 salvage** by re-encode-and-compare — untried, and the only route that could still pay.
+- ~~The block offset table (Phase 3b).~~ **DONE** — format v8, section 3c. What it does not do is
+  make archive mode addressable: that mode is sequential by construction, and `--block` on one is
+  a refusal by design.
+- **Nothing has been built on the offset table yet except the reader.** Random access, resumable
+  decode and `--parallel` without a scan all work; the hatch pipeline is heavenzip's, and the
+  shrinking extraction is HatchZip's. A speed claim for index-driven parallel decode is
+  unmeasured — in memory the sequential header scan it replaces is nearly free, so the gain is
+  I/O, and I/O is the thing this benchmark does not exercise.
+- **The 1.7% table cost on a single-block small archive** (section 3c) is unaddressed.
 
 ## 8. How to read the rest of this directory
 

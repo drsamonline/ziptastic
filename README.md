@@ -11,6 +11,7 @@ tells you when it cannot.** No external processes, no network, no model files.
 ```bash
 ziptastic c assets/          # → assets.dr
 ziptastic d assets.dr        # → byte-identical
+ziptastic info assets.dr     # → header, block table, offsets
 ```
 
 `.dr` is the format's extension. Detection is by the `CHCE` magic, not the name: a `.dr` renamed
@@ -48,7 +49,7 @@ Every row round-trips byte-exactly. Full tables, the audit and the rejected idea
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-ctest --test-dir build        # 32 suites, ~2 minutes
+ctest --test-dir build        # 33 suites, ~3 minutes
 ```
 
 Linux and Windows. macOS is not supported. The long form — vendor-by-vendor builds, the zig
@@ -57,14 +58,17 @@ toolchain, and the depfile trap that costs a debugging session if you hit it —
 
 ## What is inside
 
-Format **v7**. Per block, nine encoders compete and the smallest wins: RAW, rANS (static and
+Format **v8**. Per block, nine encoders compete and the smallest wins: RAW, rANS (static and
 adaptive), range, static Huffman, BWT (libbsc), PPMd, an LZMA2 fallback that guarantees the output
 is never worse than `xz`, and context mixing under `--max-ratio`. Above them sit eighteen Layer 0
 transforms — container inflation (ZIP, gzip, PDF), base64, spreadsheet cells, CSV columns, WAV PCM,
 SQLite pages, CD-sector Reed-Solomon parity, and PNG/JPEG/GIF/BMP one level down inside archives.
 
 Each block carries its own SHA-256, the stream carries a manifest digest, and a `true_size` field
-makes the decoded length an exact check rather than a heuristic.
+makes the decoded length an exact check rather than a heuristic. The trailer also carries a
+**block offset table**, so a block can be reached without walking the stream: `ziptastic info`
+prints it, `ziptastic d --block N` decodes one block on its own, and `--from-block N` resumes a
+decode that stopped. Reading the index touches under 1% of an archive.
 
 ## Where to read next
 

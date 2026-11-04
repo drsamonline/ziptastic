@@ -127,7 +127,27 @@ $ ziptastic c -9 --split-size 100M big.iso
 big.iso  ->  big.iso.dr.001  big.iso.dr.002  big.iso.dr.003
 
 $ ziptastic d big.iso.dr.002          # any part joins its siblings
-big.iso  restored</pre>
+big.iso  restored
+
+$ ziptastic info blocks.dr
+blocks         3
+block table    verified against the manifest digest, 204 bytes read of 3145932
+block access   each block decodes on its own (--parallel)
+  #    offset       csize      usize      mode
+  0    0x00000016 1048576    1048576    RAW
+  1    0x0010003d 1048576    1048576    RAW
+  2    0x00200064 1048576    1048576    RAW
+
+$ ziptastic d --block 1 blocks.dr      # one block, without reading the other two
+blocks 1..1 of 3 -> 1048576 bytes (verified)</pre>
+
+  <h2>Addressable blocks</h2>
+  <p>The trailer carries a table of every block's offset, so a block can be reached without
+    walking the stream: <code>--block N</code> decodes one on its own, <code>--from-block N</code>
+    resumes a decode that stopped. Reading the index touches under 1% of an archive — 0.76% on a
+    225-block, 1.4&nbsp;MB one — and the table costs 0.01–0.13% of an archive to store. It needs
+    <code>--parallel</code> blocks with no format transform: a block of an archive-mode stream may
+    reference an earlier one, and asking for it alone is refused rather than guessed at.</p>
 
   <h2>The extension</h2>
   <p><code>.dr</code>. Detection is by the <code>CHCE</code> magic, never by the name: a
@@ -139,7 +159,7 @@ big.iso  restored</pre>
   <h2>Build it</h2>
   <pre>cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-ctest --test-dir build        # 32 suites, ~2 minutes</pre>
+ctest --test-dir build        # 33 suites, ~3 minutes</pre>
   <p>CMake ≥ 3.25, Ninja and a C++20 compiler. Nothing else — brotli, brunsli, libbsc, zpaq, ppmd,
     preflate and liblzma are vendored and built by the same CMake run. Linux and Windows; macOS is
     not supported. The long form, including the traps that cost a debugging session, is in

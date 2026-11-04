@@ -173,17 +173,28 @@ TEST(a_damaged_trailer_is_caught) {
   std::vector<uint8_t> packed;
   CHECK_ERR(compress(data, packed, raw_options(1024), nullptr), Err::Ok);
 
-  // The trailer is the last 37 bytes: "ZTIX" | count varint (1 byte) | 32-byte
-  // digest. Flip a digest byte.
+  // The trailer is "ZTIX" | count varint | 32-byte digest | one u64 per block | "ZTOX".
+  // Positions are computed from the format rather than hard-coded: the last version of
+  // this test counted backwards from the end (37, 33, 8) and would have silently stopped
+  // touching the digest when v8 added the offset table.
+  const uint64_t blocks = 5;
+  const size_t trailer_at = packed.size() - trailer_bytes(blocks);
+  const size_t digest_at = trailer_at + 4 + 1;  // "ZTIX", then a one-byte count varint
+
   auto bad_digest = packed;
-  bad_digest.back() ^= 0x01;
+  bad_digest[digest_at + 31] ^= 0x01;
   std::vector<uint8_t> out;
   CHECK_ERR(decompress(bad_digest, out), Err::ManifestMismatch);
 
-  // Now the count: 33 bytes from the end.
+  // Now the count.
   auto bad_count = packed;
-  bad_count[bad_count.size() - 33] = 2;
+  bad_count[trailer_at + 4] = 2;
   CHECK_ERR(decompress(bad_count, out), Err::ManifestMismatch);
+
+  // And the marker that lets a reader find the table from the end.
+  auto bad_tail = packed;
+  bad_tail.back() ^= 0x01;
+  CHECK_ERR(decompress(bad_tail, out), Err::Corrupt);
 }
 
 TEST(a_stream_without_its_trailer_is_rejected) {
@@ -191,6 +202,9 @@ TEST(a_stream_without_its_trailer_is_rejected) {
   std::vector<uint8_t> packed;
   CHECK_ERR(compress(data, packed, raw_options(1024), nullptr), Err::Ok);
 
+  // Everything from inside the offset table onwards is missing, so the blocks decode and
+  // the trailer does not parse — which is the difference between a truncated file and a
+  // complete one, and the reason the tail marker exists.
   std::vector<uint8_t> cut(packed.begin(), packed.end() - 8);
   std::vector<uint8_t> out;
   CHECK_ERR(decompress(cut, out), Err::Truncated);

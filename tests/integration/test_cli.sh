@@ -173,5 +173,52 @@ layers=$(od -An -tu1 -j6 -N1 "$TMP/sheet.chce" | tr -d ' ')
 cmp -s "$TMP/sheet.xml" "$TMP/sheet.out" && ok "spreadsheet XML round-trip is bit-exact" \
   || bad "spreadsheet XML round-trip differs"
 
+# --------------------------------------------------- block offset table (v8)
+# Three self-contained blocks, so one can be decoded without the others. Random data keeps
+# every Layer 0 transform from firing, which is what --block requires.
+head -c 3145728 /dev/urandom > "$TMP/blocks.bin"
+"$BIN" -f --parallel --no-lzma2 -b 1024 -o "$TMP/blocks.chce" "$TMP/blocks.bin"; rc=$?
+expect_ok $rc "compress 3 MiB as three self-contained blocks"
+
+info="$("$BIN" info "$TMP/blocks.chce")"; rc=$?
+expect_ok $rc "info exits 0"
+printf '%s\n' "$info" | grep -q "verified against the manifest digest" \
+  && ok "info reports the block table as verified" \
+  || bad "info did not report a verified block table"
+printf '%s\n' "$info" | grep -Eq '^blocks +3$' \
+  && ok "info prints the block count" || bad "info block count line missing"
+printf '%s\n' "$info" | grep -q "each block decodes on its own" \
+  && ok "info says the blocks are addressable" || bad "info did not report block access"
+
+"$BIN" d --block 1 -f -o "$TMP/blk1.out" "$TMP/blocks.chce"; rc=$?
+expect_ok $rc "decode a single block from its offset"
+dd if="$TMP/blocks.bin" bs=1048576 skip=1 count=1 2>/dev/null > "$TMP/blk1.want"
+cmp -s "$TMP/blk1.want" "$TMP/blk1.out" \
+  && ok "the block decoded on its own is the right slice" || bad "single-block decode differs"
+
+"$BIN" d --from-block 2 -f -o "$TMP/tail.out" "$TMP/blocks.chce"; rc=$?
+expect_ok $rc "decode from block 2 to the end"
+dd if="$TMP/blocks.bin" bs=1048576 skip=2 2>/dev/null > "$TMP/tail.want"
+cmp -s "$TMP/tail.want" "$TMP/tail.out" \
+  && ok "the resumed decode is the right tail" || bad "resumed decode differs"
+
+# An archive-mode stream has an offset table too, but its blocks may reference each
+# other: the CLI must refuse rather than return bytes that look right.
+"$BIN" -f --no-lzma2 -b 1024 -o "$TMP/arch.chce" "$TMP/blocks.bin"; rc=$?
+expect_ok $rc "compress the same data in archive mode"
+"$BIN" d --block 1 -f -o "$TMP/arch.out" "$TMP/arch.chce" 2>"$TMP/arch.err"; rc=$?
+expect_fail $rc "archive-mode --block is refused"
+grep -q "archive mode" "$TMP/arch.err" \
+  && ok "the refusal names the reason" || bad "refusal message: $(cat "$TMP/arch.err")"
+
+"$BIN" d --block 99 -f -o "$TMP/none.out" "$TMP/blocks.chce" >/dev/null 2>&1
+expect_fail $? "a block index past the end is refused"
+
+# A v7 stream is not a v8 stream and must not be read as one.
+head -c 200 /dev/urandom > "$TMP/v7.bin"
+printf 'CHCE\x07' | dd of="$TMP/v7.bin" conv=notrunc 2>/dev/null
+"$BIN" d -f -o "$TMP/v7.out" "$TMP/v7.bin" 2>/dev/null
+expect_fail $? "a stream claiming format v7 is refused"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

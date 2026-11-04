@@ -1,6 +1,7 @@
-> **Superseded for current figures by [`FINDINGS.md`](FINDINGS.md).** This document is the
-> working record — how the number was arrived at and what was corrected along the way. Where the
-> two disagree, `FINDINGS.md` is right.
+> **Superseded.** For current figures, [`FINDINGS.md`](FINDINGS.md); for the current format,
+> `FORMAT.md` and [`FORMAT_V8.md`](FORMAT_V8.md). This document is the working record of v7 — how
+> the number was arrived at and what was corrected along the way. Where the two disagree,
+> `FINDINGS.md` is right.
 
 # Format v7: a third layer byte, and the bit it makes room for
 
