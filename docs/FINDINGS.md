@@ -124,9 +124,9 @@ Measured with `tests/benchmark/index_cost.cpp` on 3.68 MB of concatenated projec
 | | |
 |---|---|
 | reading the whole index | **0.04 ms**, touching **10,414 of 1,377,975 bytes (0.76%)** |
-| decoding the whole stream, walking the headers | 798 ms (best of two, six runs) |
+| decoding the whole stream, walking the headers | **810–817 ms** median |
+| decoding the whole stream from the index, 2 threads | **800–842 ms** median |
 | decoding one block from its offset | **4–11 ms** (two runs on a 2-core box) |
-| decoding the whole stream from the index, 2 threads | 747 ms (same method) |
 
 The table costs `8 × blocks + 4` bytes over a v7 trailer:
 
@@ -149,18 +149,26 @@ trailer with no gap; that the headers found at those offsets re-hash to the stor
 that a decoder which walked the blocks sees the same offsets. A corrupted table is a refusal, never
 a wrong answer.
 
-**The 4–6% on the last two rows is not the table.** Removing a 10 KB header scan from an
-800 ms decode is microseconds, and that is what the arithmetic says it should be. The
-difference is that `decode_blocks_parallel` computes each block's SHA-256 inside the worker
-that decoded it, while `decompress()`'s parallel path still checks them after the join, on
-one thread — 3.7 MB of digest at 140 MB/s is about 26 ms of the 51 ms gap. So the honest
-summary is: **an index-driven decode is not measurably faster than a walk when the stream is
-already in memory**, and the one number that did move is a digest check that could be
-parallelised in the walking path too. That is a Phase 3 item, not a v8 one.
+**The two decode paths cannot be told apart on this machine, and an earlier claim that they
+could was a benchmark artefact.** The first version of `index_cost` timed the walking path
+first and the index path second, so whichever ran first paid for cold pages and first touch of
+the output buffer — and that alone produced a "4–6% win" which was then attributed to the
+digest check. With both paths warmed before either is timed, the two sit at 810–817 ms and
+800–842 ms across repeated invocations, with a **±40 ms spread between runs on two cores**.
+Every difference this benchmark is trying to resolve is 6–30 ms, which is inside that spread.
+
+So the honest summary is arithmetic rather than measurement: the table removes a 10 KB header
+scan from an 800 ms decode, which is microseconds, and **an index-driven decode is not
+measurably faster than a walk when the stream is already in memory**.
+
+The digest check did move into the workers in `decompress()`'s parallel path anyway
+(`decode_blocks_parallel` already did it), because it is strictly less serial work and cannot
+be slower — not because it was measured to help. Measured before and after with the warmed
+benchmark: 809.9 vs 817.3 ms median, which is the noise.
 
 `decompress()` was therefore **not** rewritten to decode from the index. A second decode path
-in the same function, for a difference that belongs to the digest and not the table, is a
-bad trade — `FORMAT_V8.md` records it.
+in the same function, for a difference that cannot be resolved here, is a bad trade —
+`FORMAT_V8.md` records it.
 
 **And a partial decode of a transformed stream is refused, not answered** (`not-self-contained`):
 an archive-mode block may reference an earlier one, and the inverse chain needs the whole stream,
@@ -212,7 +220,8 @@ better. That is a *file* result, not a container one.
 | lrzip/rzip for the srep step | nothing to add | `dedup` is within 0.1% of the ideal |
 | oxipng/optipng before archiving | 3 bytes on a 66%-smaller PNG | the transform stores pixels, not deflate choices |
 | moving the precomp gate after the nested stages | identical output | the gate was never the blocker |
-| decoding from the offset table instead of walking, in memory | 747 vs 798 ms, and none of it is the table | the header scan was 10 KB; the difference is the digest check moving into the workers |
+| decoding from the offset table instead of walking, in memory | 810–817 vs 800–842 ms, inside a ±40 ms spread | the header scan it removes is 10 KB; nothing to measure |
+| moving the block digest into the decode workers | 809.9 vs 817.3 ms median | strictly less serial work, and smaller than this machine's noise |
 | the block offset table as a speed feature | nothing to speed up | it is an addressing feature; §3c |
 
 ## 6. The audit
@@ -258,9 +267,11 @@ internals beyond their contracts, `main.cpp`, the match finder and parser.
 - **Index-driven parallel decode is not a speed win in memory** (section 3c): 4–6%, and the digest
   check accounts for it. The gain the table actually offers is I/O — a reader that seeks — and this
   project's API takes a whole buffer, so that gain is unmeasurable here and untested.
-- **`decompress()` checks block digests after the join, on one thread**, while
-  `decode_blocks_parallel` checks them in the workers. About 26 ms on a 3.7 MB decode here. Small,
-  measured only as a difference between two paths, and not yet done on its own.
+- ~~**`decompress()` checks block digests after the join, on one thread.**~~ **Done** — the check
+  now runs in the worker that decoded the block. Unmeasurable here (±40 ms spread), kept because it
+  cannot be slower.
+- **This machine cannot resolve a few percent.** Two cores, ±40 ms per run on an 800 ms decode.
+  Any Phase 3 claim under ~5% needs a quieter box or many more runs before it means anything.
 - **The 1.7% table cost on a single-block small archive** (section 3c) is unaddressed.
 - ~~A ZIP inside a plain tar is not reached.~~ **DONE, and it was never the tar** — see §3b.
 - ~~`precomp_helps`' 2× rule decides alone.~~ **Stated.** The rule is a predictor; under 2 MiB the

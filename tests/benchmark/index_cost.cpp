@@ -150,6 +150,16 @@ int main(int argc, char** argv) {
     return joined;
   };
 
+  // Warm both paths before timing either. The first decode of the pair pays for the pages of
+  // `packed` and for the first touch of the output buffer, and whichever runs first absorbs
+  // all of it — which is how a 4-6% "win" appeared between two paths whose real difference is
+  // milliseconds. A benchmark that times one thing before another has to pay for both first.
+  {
+    std::vector<uint8_t> warm;
+    (void)decompress(packed, warm);
+    (void)index_parallel(2);
+  }
+
   double best_par = 1e9;
   std::vector<uint8_t> par;
   for (int i = 0; i < 2; ++i) {
@@ -184,6 +194,15 @@ int main(int argc, char** argv) {
               best_index, static_cast<unsigned long long>(idx.bytes_read), packed.size(),
               100.0 * static_cast<double>(idx.bytes_read) /
                   static_cast<double>(packed.size()));
+  // Re-time the walk after the warm-up: the first walk above ran before the pages were hot,
+  // and keeping that number would make the comparison unfair in the other direction.
+  for (int i = 0; i < 2; ++i) {
+    whole.clear();
+    const auto d2 = Clock::now();
+    if (decompress(packed, whole) != Err::Ok) return 1;
+    const auto d3 = Clock::now();
+    walk = std::min(walk, ms(d2, d3));
+  }
   std::printf("decompress (all)       %.1f ms, %zu bytes out\n", walk, whole.size());
   std::printf("decode one block       %.1f ms, %zu bytes out (block %llu of %zu)\n",
               ms(b0, b1), one.size(), static_cast<unsigned long long>(which), idx.size());

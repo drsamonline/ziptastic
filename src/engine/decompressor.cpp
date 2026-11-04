@@ -270,6 +270,14 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     if (total != fh.original_size) return Err::SizeMismatch;
 
     std::vector<std::vector<uint8_t>> parts(blks.size());
+    // Per-block integrity, decided inside the worker that produced the bytes.
+    //
+    // The digest used to run in the join loop below, on one thread, after every block had
+    // been decoded — so the SHA-256 of the whole stream was serial no matter how many
+    // threads decoded it. At 140 MB/s that is about 26 ms of a 3.7 MB decode, and it is
+    // most of the difference between this path and `decode_blocks_parallel`, which checks
+    // its digests in the workers (FINDINGS.md §3c). 0 = not checked, 1 = ok, 2 = mismatch.
+    std::vector<uint8_t> digest_state(blks.size(), 0);
     std::atomic<size_t> next{0};
     auto worker = [&]() {
       for (;;) {
@@ -278,7 +286,10 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
         if (decode_body(blks[i].bh, blks[i].body, parts[i]) != Err::Ok) {
           parts[i].clear();  // signals failure to the join below
           parts[i].shrink_to_fit();
+          continue;
         }
+        digest_state[i] =
+            sha256_equal(sha256(parts[i]), blks[i].bh.sha256) ? uint8_t{1} : uint8_t{2};
       }
     };
     unsigned nt = std::thread::hardware_concurrency();
@@ -293,10 +304,9 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
     for (size_t i = 0; i < blks.size(); ++i) {
       if (parts[i].size() != blks[i].bh.uncompressed_size) return Err::Corrupt;
       // Integrity before the bytes are concatenated: a bad block is named by its
-      // index while the good ones are still separable.
-      if (!sha256_equal(sha256(parts[i]), blks[i].bh.sha256)) {
-        return fail_block(i);
-      }
+      // index while the good ones are still separable. The answer was computed in the
+      // worker; this only reads it.
+      if (digest_state[i] != 1) return fail_block(i);
       dst.insert(dst.end(), parts[i].begin(), parts[i].end());
     }
     blocks = blks.size();

@@ -47,11 +47,11 @@ holding one, and the corpus in `scripts/regression-corpus.sh` now asserts it.
 
 ## The next piece of work: Phase 3, speed
 
-`RELEASE_PLAN.md` §Phase 3. Nothing there is started. The offset table settled one question rather
-than raising it: index-driven parallel decode was measured at 4–6% and **the table contributed none
-of it** — the difference was the block digest moving into the worker threads, which `decompress()`
-does not do. That digest check is the cheapest thing on this list to try: about 26 ms of a 3.7 MB
-decode here, measured only as a difference between two code paths and not yet done on its own.
+`RELEASE_PLAN.md` §Phase 3. Started, barely: the block digest check moved into the decode workers,
+where it is strictly less serial work — and it could not be measured to help, because this machine
+cannot resolve it. **Two cores, ±40 ms per run on an 800 ms decode.** Anything under ~5% needs many
+more runs or a quieter box before it is a claim; the earlier "4–6% for index-driven decode" was a
+benchmark artefact (order bias, now fixed in `index_cost`), and `FINDINGS.md` §3c says so.
 
 The measured levers are still: not running candidates that cannot win (a sample trial per family), a
 block-size sweep (256 KiB is nobody's decision, 4 MiB is the default and nothing has swept it), the
