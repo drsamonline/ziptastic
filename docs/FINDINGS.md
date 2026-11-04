@@ -25,7 +25,8 @@ block** and a `ZTOX` tail marker.
 - **The block offset table** (v8, Phase 3b): every block's position is in the trailer, so a
   block can be reached without walking the stream — 0.76% of the archive read to find any one
   block, and one block decoded in about 1/100th of a full decode. Section 3c.
-- 33 test suites, all passing; 53 CLI assertions. A full audit of `compressor.cpp` and
+- 34 test suites, all passing; 53 CLI assertions; plus `scripts/regression-corpus.sh`,
+  which asserts the property each historical bug broke rather than only the round trip. A full audit of `compressor.cpp` and
   `decompressor.cpp` is recorded in section 6.
 
 ## 2. Layer 0 transforms, with the numbers that are current
@@ -98,10 +99,17 @@ Two things in that table are worth noting:
 
 - **The ZIP carries `layers = 0x40`** — the second container level fired, so precomp reached
   inside the archive and the nested transforms ran on the members. The tar carries `layers = 0`.
-- **A ZIP inside a plain tar is not reached.** `scan_zip` looks for local headers anywhere, but
-  with 512-byte tar headers interleaved the archive inside is not found, so the tar path gets no
-  transform at all — and still lands within 1% of the ZIP result, because the backend does the
-  work. The `book.tar.gz` case works because gzip unpacks first and hands over a clean tar.
+- ~~**A ZIP inside a plain tar is not reached.**~~ **Fixed, and the diagnosis was wrong.** The tar
+  was never the obstacle. `scan_zip` read each member's compressed size from its *local header*,
+  and a ZIP written to a pipe — which every tool produces when it cannot seek — leaves those
+  fields zero and puts the real sizes in a data descriptor after the data. So the member was
+  skipped, and the same file failed whether or not a tar was around it. The scan now reads the
+  central directory, which always carries the real sizes, and a stray local-header signature
+  inside compressed data no longer stops it (`break` → `continue`).
+
+  Measured on a 320,316-byte streamed ZIP of two text members: **320,424 bytes before** (no
+  transform, and larger than the input) and **183,286 after** — −42.8%. The same ZIP inside a
+  327,680-byte tar: **321,197 → 183,454**, −44.0%. Both byte-exact.
 
 ## 3c. Addressable blocks (v8), and what the table costs
 
@@ -254,6 +262,17 @@ internals beyond their contracts, `main.cpp`, the match finder and parser.
   `decode_blocks_parallel` checks them in the workers. About 26 ms on a 3.7 MB decode here. Small,
   measured only as a difference between two paths, and not yet done on its own.
 - **The 1.7% table cost on a single-block small archive** (section 3c) is unaddressed.
+- ~~A ZIP inside a plain tar is not reached.~~ **DONE, and it was never the tar** — see §3b.
+- ~~`precomp_helps`' 2× rule decides alone.~~ **Stated.** The rule is a predictor; under 2 MiB the
+  Tier-0 guard catches a bad decision, above it nothing does, and the code now says exactly that
+  where the line is. Making it measure means a full encode of both streams at any size.
+- ~~The `layers3` free bits need a policy.~~ **DONE** — `FORMAT.md`, "Policy: who may take a free
+  layer bit": four conditions for allocating one, and the four things that force a version bump
+  instead.
+- ~~A regression corpus.~~ **DONE** — `scripts/regression-corpus.sh`, run by `ctest` as
+  `integration.corpus`: the streamed ZIP, the tar holding it, the small PNG (asserting the
+  transform cannot make it bigger) and the near-duplicate tree, each asserting the property that
+  was broken.
 
 ## 8. How to read the rest of this directory
 

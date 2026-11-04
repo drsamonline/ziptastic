@@ -10,6 +10,8 @@
 #include "preflate_wrap.hpp"
 
 #include <cstring>
+#include <string>
+#include <unordered_map>
 
 #include <preflate.h>
 
@@ -83,7 +85,77 @@ bool parse_stream(const uint8_t* data, uint32_t comp_len, Stream& out) {
 //
 // A false positive costs nothing: parse_stream verifies each candidate, and the
 // payload is rebuilt and byte-compared before it is returned.
+// The ZIP central directory, keyed by member name.
+//
+// A local file header may legally carry zero sizes and put the real ones in a data
+// descriptor after the data — that is what a zip written to a pipe looks like, and every
+// tool does it when it cannot seek. Reading only local headers therefore sees
+// `comp_len == 0` and skips the member, which is why a streamed zip got no transform at
+// all while the same content written by a seeking writer got 43%. The central directory
+// always carries the real sizes, so it is the authority and the local header is used only
+// to find where the data starts.
+struct CdEntry {
+  uint32_t comp_len = 0;
+  uint16_t method = 0;
+};
+
+// The end-of-central-directory record is in the last 64 KiB plus its own 22 bytes, or it
+// is not there: its comment field cannot be longer than 64 KiB.
+bool find_eocd(const std::vector<uint8_t>& in, size_t& at) {
+  const size_t n = in.size();
+  if (n < 22) return false;
+  const size_t lowest = n > (64u << 10) + 22 ? n - (64u << 10) - 22 : 0;
+  for (size_t pos = n - 22;; --pos) {
+    if (in[pos] == 'P' && in[pos + 1] == 'K' && in[pos + 2] == 0x05 && in[pos + 3] == 0x06) {
+      at = pos;
+      return true;
+    }
+    if (pos == lowest) return false;
+  }
+}
+
+// Reads every entry's name, method and compressed size. The directory ends exactly where
+// the end record begins, which is what locates it without knowing where the archive
+// itself starts — the point when the zip is a member of something else.
+bool read_central_directory(const std::vector<uint8_t>& in,
+                            std::unordered_map<std::string, CdEntry>& out) {
+  size_t eocd = 0;
+  if (!find_eocd(in, eocd)) return false;
+  const uint16_t entries = rd16(&in[eocd + 10]);
+  const uint32_t cd_size = rd32(&in[eocd + 12]);
+  // 0xFFFF entries means zip64, whose sizes are somewhere else entirely. Leave it to the
+  // local-header path rather than half-parse it.
+  if (entries == 0xFFFFu || cd_size == 0 || cd_size > eocd) return false;
+
+  size_t pos = eocd - cd_size;
+  for (uint16_t i = 0; i < entries; ++i) {
+    if (pos + 46 > in.size() || std::memcmp(&in[pos], "PK\x01\x02", 4) != 0) break;
+    const uint16_t method = rd16(&in[pos + 10]);
+    const uint32_t comp_len = rd32(&in[pos + 20]);
+    const uint16_t name_len = rd16(&in[pos + 28]);
+    const uint16_t extra_len = rd16(&in[pos + 30]);
+    const uint16_t comment_len = rd16(&in[pos + 32]);
+    if (pos + 46 + name_len > in.size()) break;
+    out.emplace(std::string(reinterpret_cast<const char*>(&in[pos + 46]), name_len),
+                CdEntry{comp_len, method});
+    pos += 46u + name_len + extra_len + comment_len;
+  }
+  return !out.empty();
+}
+
+// Finds ZIP local file headers ANYWHERE in the buffer, not only at offset 0.
+//
+// Requiring offset 0 made two whole file classes invisible: an SFX archive is an
+// .exe stub followed by a ZIP, and a `.tar.gz` holding a `.xlsx` inflates to a tar
+// whose member data starts 512 bytes in. Both are containers we can parse, and
+// both were being handed to the backend as opaque bytes.
+//
+// A false positive costs nothing: parse_stream verifies each candidate, and the
+// payload is rebuilt and byte-compared before it is returned.
 std::vector<Stream> scan_zip(const std::vector<uint8_t>& in) {
+  std::unordered_map<std::string, CdEntry> cd;
+  const bool have_cd = read_central_directory(in, cd);
+
   std::vector<Stream> streams;
   size_t pos = 0;
   const size_t n = in.size();
@@ -98,13 +170,32 @@ std::vector<Stream> scan_zip(const std::vector<uint8_t>& in) {
       continue;
     }
     if (streams.size() > 100000u) break;
-    const uint16_t method = rd16(&in[pos + 8]);
-    const uint32_t comp_len = rd32(&in[pos + 18]);
+    const uint16_t local_method = rd16(&in[pos + 8]);
+    const uint32_t local_comp_len = rd32(&in[pos + 18]);
     const uint16_t name_len = rd16(&in[pos + 26]);
     const uint16_t extra_len = rd16(&in[pos + 28]);
     const size_t data_off = pos + 30 + name_len + extra_len;
-    if (data_off + comp_len > n) break;
-    if (method == 8 && comp_len > 0) {
+
+    uint16_t method = local_method;
+    uint32_t comp_len = local_comp_len;
+    if (have_cd && pos + 30 + name_len <= n) {
+      const std::string name(reinterpret_cast<const char*>(&in[pos + 30]), name_len);
+      const auto it = cd.find(name);
+      if (it != cd.end()) {
+        method = it->second.method;
+        comp_len = it->second.comp_len;
+      }
+    }
+
+    // A member whose size is not in its local header, or that runs off the end of the
+    // buffer, means "keep looking" — not "stop". The old `break` here threw away every
+    // later member, including the ones that would have parsed: one stray `PK\x03\x04` in
+    // a tar header or inside compressed data was enough to lose the whole archive.
+    if (comp_len == 0 || data_off > n || comp_len > n - data_off) {
+      ++pos;
+      continue;
+    }
+    if (method == 8) {
       Stream s;
       if (parse_stream(&in[data_off], comp_len, s)) {
         s.offset = static_cast<uint32_t>(data_off);
@@ -115,7 +206,6 @@ std::vector<Stream> scan_zip(const std::vector<uint8_t>& in) {
   }
   return streams;
 }
-
 
 // PDF stores its content streams as DEFLATE inside `stream` ... `endstream`.
 // Finding them is our own code (no licence entanglement): scan for the keyword,
