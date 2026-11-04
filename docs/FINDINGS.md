@@ -222,9 +222,30 @@ share a model. So there is no single best block size: it trades model size again
 freedom to adapt, and the trade moves with how uniform the input is.
 
 4 MiB is within 0.6% of the best on every corpus measured and is the size every other number in this
-document was taken at, so it does not move without a reason that is bigger than 0.6%. **An adaptive
-block size** — split smaller when the first block's chosen mode differs from the second's — is the
-obvious next idea and is not attempted.
+document was taken at, so it does not move without a reason that is bigger than 0.6%.
+
+**An adaptive block size was the obvious next idea, and the evidence does not support building it.**
+The 1 MiB win on `huge.txt` reproduces exactly — 393,003 against 395,411 — and the mechanism is
+partly what it looked like: at 1 MiB the three blocks split two rANS-parsed and one BWT, while the
+single 4 MiB block is BWT throughout, so the selector does get to choose per block.
+
+But that is not the whole story, and the rest of it points the other way:
+
+| configuration | 1 MiB | 4 MiB | gap |
+|---|---|---|---|
+| all candidates | 393,003 | 395,411 | 1 MiB by **0.6%** |
+| `--no-bwt` | 398,349 | 425,154 | 1 MiB by **6.7%** |
+| a second heterogeneous corpus, 1.7 MB | 254,007 | 251,674 | 4 MiB by 1.0% |
+
+With BWT removed the gap *widens* sevenfold, which is not "more freedom for the selector" — it is the
+rANS path itself degrading with block size. And on the second corpus 4 MiB wins outright with every
+block on BWT at both sizes, so there is no diversity to exploit. The effect is small,
+corpus-dependent, and not attributable to one mechanism.
+
+So: a feature that tries 4 MiB, then retries as 4×1 MiB and keeps the smaller, would cost a second
+encode of every block — on a 2.7 MB file, about 6.5 s to 12 s — to win at most 0.6% on the corpora
+where it wins at all, on an engine that already runs at 0.4 MB/s. **Not built, and the reasoning is
+here so it is not rebuilt.**
 
 Speed is not in this table because this machine cannot resolve it (§3c): every size ran at
 0.37–0.45 MB/s on these corpora, which is the spread between runs, not between block sizes.

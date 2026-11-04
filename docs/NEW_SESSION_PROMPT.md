@@ -61,9 +61,9 @@ where the answer is obvious, and no change where it is a tie — which is most o
 cost, and the part that must not be guessed at.
 
 What is left: a per-block time split before any more threads — **blocked**, because the development
-box has one core of throughput and reports two (§0); and an adaptive block size, which is the
-block-size sweep's one loose end (§3d: 4 MiB stays, and 1 MiB beats it by 0.6% on heterogeneous
-content).
+box has one core of throughput and reports two (§0); and an adaptive block size, which §3d now closes as
+**not worth building**: the 0.6% it would chase is corpus-dependent, its mechanism is not one thing
+(removing BWT widens the gap to 6.7%), and the trial costs a second encode of every block.
 
 ## How this project works, and what it keeps relearning
 
