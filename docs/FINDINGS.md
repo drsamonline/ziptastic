@@ -277,6 +277,34 @@ sample says LZMA2 is more than 20% out of reach and the whole-stream run would h
 the archive is up to that much larger than it would have been. `--no-lzma2` is still the flag that
 removes the candidate outright; `-v` reports `lzma2: N offered, M skipped`.
 
+## 3g. The base64 gate: what it costs, and the one part of it that could be cheapened
+
+`base64_pays` decides whether decoding base64 runs is worth it by running the **real pipeline** on
+a 256 KiB sample of each side. Two earlier versions estimated instead, and both were wrong in the
+direction that costs ratio (a JPEG missed by 19.6% because brunsli was not in the model; an XML case
+backwards because the spreadsheet transform was not either). The expensive trial is the price of
+being right.
+
+Measured 2026-11-04, `-9`, on this box:
+
+| file | default | `--no-base64` | gate cost | decision |
+|---|---|---|---|---|
+| 34 KB of base64'd text | 1.08 s | 0.52 s | 2.1× | taken, **8,667 vs 12,346 (−30%)** |
+| 540 KB of base64'd random bytes | 11.91 s | 5.14 s | 2.3× | declined, archive identical |
+
+**A decisive first pass is now taken, and only a decisive one.** A 64 KiB sample through the same
+pipeline, one block per side, decides when the two sides differ by **20%** — three times the ~6% error
+a 64 KiB sample is known to carry here (an earlier gate at that size flipped both XML cases by 5.8%).
+Anything closer goes to the full 256 KiB trial.
+
+- 34 KB base64'd text: **1.76 s → 1.08 s**, same archive, transform still taken.
+- 540 KB base64'd random bytes: no change, because that case is a **tie** — and a tie is exactly what
+  the cheap pass cannot decide and must not guess at.
+
+So the saving is real on the files where the answer is obvious, and the dominant cost — resolving a
+tie — is untouched. That is the honest shape of it: the remaining 2.3× is the price of not guessing,
+and three failed estimates say the price is worth paying.
+
 ## 4. Container payloads: what the nested transforms actually do
 
 A container payload puts its own header in front of the member bytes, so every nested transform
@@ -325,6 +353,7 @@ better. That is a *file* result, not a container one.
 | decoding from the offset table instead of walking, in memory | 810–817 vs 800–842 ms, inside a ±40 ms spread | the header scan it removes is 10 KB; nothing to measure |
 | moving the block digest into the decode workers | 809.9 vs 817.3 ms median | strictly less serial work, and smaller than this machine's noise |
 | the block offset table as a speed feature | nothing to speed up | it is an addressing feature; §3c |
+| a cheap 64 KiB trial for the base64 gate, answering every case | flips both XML cases by 5.8% | only *decisive* answers are taken; a tie still pays for the 256 KiB trial; §3g |
 | turning static Huffman off by default | no ratio change on five corpora, and it loses 0.73% on the seven-symbol file | gated by a sample trial instead; §3e |
 | a 256 KiB trial for the LZMA2 fallback | 1.4 s of a 1.6 MB run, within a third of what it skips | liblzma's setup dominates, not its coding; 64 KiB and a 20% margin; §3f |
 

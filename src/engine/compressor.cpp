@@ -630,8 +630,46 @@ size_t actual_cost(std::span<const uint8_t> s, const CompressOptions& opt) {
 // first version of this gate estimated with the range coder and BWT alone and got
 // both directions wrong — it missed 19.6% on a JPEG (because brunsli, which would
 // actually fire, was not in the model) and accepted a 5.8% loss on JSON.
+// A decisive first pass, or no opinion.
+//
+// A 64 KiB sample of this pipeline carries about 6% of error: an earlier version of this
+// gate used 64 KiB and flipped both XML cases to "take", a 5.8% loss. So a 64 KiB answer is
+// only taken when the two sides differ by three times that — 20% — which no sampling error
+// of 6% can manufacture. Everything closer goes to the full trial below, and that includes
+// the case that dominates the cost: two sides that are a tie, where the expensive pass runs
+// in full only to confirm what the cheap one already suspects.
+int base64_verdict_cheaply(std::span<const uint8_t> packed, std::span<const uint8_t> original,
+                           const CompressOptions& opt) {
+  constexpr size_t kCheapSample = 64 * 1024;
+  constexpr double kDecisive = 1.20;  // 3x the measured error of a sample this size
+  const size_t pn = std::min(packed.size(), kCheapSample);
+  const size_t on = std::min(original.size(), kCheapSample);
+  if (pn < 256 || on < 256) return -1;
+  // One block per side: the block loop is most of what a trial costs, and a single block
+  // still runs the transforms that decide the answer.
+  CompressOptions one = opt;
+  one.block_size = kCheapSample;
+  const double p =
+      static_cast<double>(actual_cost(packed.first(pn), one)) / pn * packed.size();
+  const double o =
+      static_cast<double>(actual_cost(original.first(on), one)) / on * original.size();
+  if (p * kDecisive < o) return 1;   // taking it is a clear win
+  if (o * kDecisive < p) return 0;   // taking it is a clear loss
+  return -1;                         // too close to call at this size
+}
+
 bool base64_pays(std::span<const uint8_t> packed, std::span<const uint8_t> original,
                  const CompressOptions& opt) {
+  // The cheap pass first, for the files where the answer is obvious — and only those.
+  // It is worth having because the expensive trial below costs 2.1-2.2x the whole run: on a
+  // 540 KB file of base64'd random bytes it spends 6.3 s to conclude a tie, and on a 34 KB
+  // file of base64'd text it spends 0.9 s to find a 30% win. The cheap pass settles the
+  // second kind and cannot touch the first, which is the honest shape of the saving.
+  switch (base64_verdict_cheaply(packed, original, opt)) {
+    case 1: return true;
+    case 0: return false;
+    default: break;
+  }
   // 256 KiB, not less. At 64 KiB this trial flipped both XML cases back to
   // "take" — a 5.8% loss — because the margin it has to resolve is only 6% and a
   // small sample cannot resolve it. The cost of the bigger sample is measured and

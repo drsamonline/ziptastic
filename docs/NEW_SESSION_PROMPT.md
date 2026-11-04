@@ -56,10 +56,13 @@ benchmark artefact (order bias, now fixed in `index_cost`), and `FINDINGS.md` §
 **Both expensive candidates are gated now.** Huffman: a 64 KiB trial, no ratio change on six corpora
 (`FINDINGS.md` §3e). The LZMA2 fallback: a 64 KiB trial with a 20% margin, which took a 6.6 s run to
 4.1 s on a mixed tree with no archive change (§3f) — and cost the promise its unconditional form, so
-read §3f before touching it. What is left: the base64 gate's 2.7× cost, and a per-block time split
-before any more threads. **The block-size
-sweep is done** — `FINDINGS.md` §3d: 4 MiB stays, and the one corpus where 1 MiB beats it is the
-heterogeneous one, which makes an adaptive block size the next idea worth trying.
+read §3f before touching it. The base64 gate now has a decisive 64 KiB first pass (§3g): 1.76 s → 1.08 s
+where the answer is obvious, and no change where it is a tie — which is most of its remaining 2.3×
+cost, and the part that must not be guessed at.
+
+What is left: a per-block time split before any more threads, and an adaptive block size — the
+block-size sweep is done (§3d): 4 MiB stays, and the one corpus where 1 MiB beats it is the
+heterogeneous one.
 
 ## How this project works, and what it keeps relearning
 
