@@ -9,7 +9,7 @@ disagree, `FINDINGS.md` wins. The per-item documents are history and several wer
 
 ## Where the project is
 
-**1.0.0 shipped at format v7. Current tree: 1.1.0, format v8, 33/33 suites green, 53 CLI
+**1.0.0 shipped at format v7. Current tree: 1.2.0, format v8, 34/34 suites green, 53 CLI
 assertions green.** A working archiver: `ziptastic c file` writes `file.dr`, `ziptastic d file.dr`
 gives it back byte-exact. On a realistic mixed game-asset tree it is **20–36% smaller than `xz -9e`**;
 at 0.3–0.6 MB/s it is much slower, and that trade is deliberate. It does not win where no format

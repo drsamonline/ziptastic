@@ -110,7 +110,7 @@ supported.
 
 ```
 $ ./build/ziptastic version
-ziptastic 1.1.0 (CHCE format v8)
+ziptastic 1.2.0 (CHCE format v8)
 
 $ head -c 200000 /dev/urandom > t.bin
 $ ./build/ziptastic c -9 t.bin            # writes t.bin.dr
