@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <string>
 #include <thread>
 
 #include "chimera/block.hpp"

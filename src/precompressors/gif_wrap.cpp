@@ -10,6 +10,7 @@
 // sub-block framing, so only the compressed image data is replaced.
 #include "gif_wrap.hpp"
 
+#include <algorithm>
 #include <cstring>
 
 namespace chce {

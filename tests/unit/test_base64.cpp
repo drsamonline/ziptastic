@@ -4,6 +4,7 @@
 // round-trips byte-for-byte, and every layout that cannot be reproduced exactly is
 // declined rather than normalised. MIME wrapping, CRLF, stripped padding and the
 // URL-safe alphabet all have to come back character for character.
+#include <cstring>
 #include <string>
 #include <vector>
 

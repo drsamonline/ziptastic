@@ -1,4 +1,6 @@
 // test_varint.cpp — LEB128 varint and the ByteWriter/ByteReader contracts.
+#include <string>
+
 #include "chimera/format.hpp"
 #include "harness.hpp"
 
