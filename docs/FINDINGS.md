@@ -175,6 +175,37 @@ an archive-mode block may reference an earlier one, and the inverse chain needs 
 so a block's plaintext is only the caller's bytes when the stream was written `--parallel` with no
 Layer 0 transform.
 
+## 3d. Block size, swept at last
+
+`kDefaultBlockSize` has been 4 MiB since the note in `format.hpp` that recorded one corpus
+(dickens) at three sizes. Nothing had swept it since, and `RELEASE_PLAN.md` Phase 3 listed it as an
+open measurement. Swept 2026-11-04 on four real corpora, native block loop (`-9 --no-lzma2`, so the
+whole-stream fallback cannot mask the result), archive size in bytes:
+
+| corpus | 64 KiB | 256 KiB | 1 MiB | 4 MiB | 16 MiB |
+|---|---|---|---|---|---|
+| `tree.tar`, 1.6 MB mixed | 375,442 | 346,417 | 322,462 | **316,900** | 316,900 |
+| `code.txt`, 846 KB | 173,654 | 159,520 | **149,468** | 149,468 | 149,468 |
+| `big.txt`, 1.4 MB vendor code | — | 187,730 | 185,179 | **180,016** | — |
+| `huge.txt`, 2.75 MB mixed sources | — | — | **393,003** | 395,411 | 395,411 |
+
+Cells repeat where the block size exceeds the file: one block either way is the same stream.
+
+**4 MiB stays.** Against 256 KiB it is 4.3–9.3% smaller on the homogeneous corpora, and against
+1 MiB it is between 1.8% smaller and **0.6% larger**. The one corpus where a smaller block wins is
+the heterogeneous one — 2.75 MB of unrelated source files — because the per-block selector can pick a
+different backend for each block, and a 4 MiB block forces one choice across content that does not
+share a model. So there is no single best block size: it trades model size against the selector's
+freedom to adapt, and the trade moves with how uniform the input is.
+
+4 MiB is within 0.6% of the best on every corpus measured and is the size every other number in this
+document was taken at, so it does not move without a reason that is bigger than 0.6%. **An adaptive
+block size** — split smaller when the first block's chosen mode differs from the second's — is the
+obvious next idea and is not attempted.
+
+Speed is not in this table because this machine cannot resolve it (§3c): every size ran at
+0.37–0.45 MB/s on these corpora, which is the spread between runs, not between block sizes.
+
 ## 4. Container payloads: what the nested transforms actually do
 
 A container payload puts its own header in front of the member bytes, so every nested transform

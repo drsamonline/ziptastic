@@ -82,8 +82,10 @@ Measured, in order of expected payoff. The selector profile already says where t
    gated off by default), the LZMA2 fallback is 34% and is a guarantee, and BWT costs 0.6% while
    winning 2.6%. The remaining lever is **not running candidates that cannot win** — a sample
    trial per family, which is what `bcj_helps` and `precomp_helps` already do.
-2. **Block size vs ratio**, measured rather than assumed: 256 KiB is the default and nothing has
-   swept it.
+2. ~~**Block size vs ratio**, measured rather than assumed~~ — **swept, 2026-11-04.** 4 MiB stays:
+   it is 4.3–9.3% smaller than 256 KiB on homogeneous content and within 0.6% of the best on every
+   corpus. `FINDINGS.md` §3d has the table, and the one corpus where 1 MiB wins, which is the
+   heterogeneous one — the selector's freedom to pick a different backend per block.
 3. **The base64 gate's 2.7× cost.** Three cheapenings have already failed; the honest option is a
    cheaper *trial* (fewer blocks, one backend) with the current gate as the fallback when the
    trial is close.

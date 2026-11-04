@@ -53,9 +53,10 @@ cannot resolve it. **Two cores, ±40 ms per run on an 800 ms decode.** Anything 
 more runs or a quieter box before it is a claim; the earlier "4–6% for index-driven decode" was a
 benchmark artefact (order bias, now fixed in `index_cost`), and `FINDINGS.md` §3c says so.
 
-The measured levers are still: not running candidates that cannot win (a sample trial per family), a
-block-size sweep (256 KiB is nobody's decision, 4 MiB is the default and nothing has swept it), the
-base64 gate's 2.7× cost, and a per-block time split before any more threads.
+The measured levers are still: not running candidates that cannot win (a sample trial per family),
+the base64 gate's 2.7× cost, and a per-block time split before any more threads. **The block-size
+sweep is done** — `FINDINGS.md` §3d: 4 MiB stays, and the one corpus where 1 MiB beats it is the
+heterogeneous one, which makes an adaptive block size the next idea worth trying.
 
 ## How this project works, and what it keeps relearning
 

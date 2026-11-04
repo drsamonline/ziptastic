@@ -37,11 +37,17 @@ inline constexpr uint8_t kMagic[4] = {'C', 'H', 'C', 'E'};
 // Older streams are rejected with bad-version rather than guessed at.
 inline constexpr uint8_t kFormatVersion = 8;
 
-// Default block size. The prompt starts at 256 KB; Phase 12 tunes it.
-// 4 MiB. Measured: on dickens, 256 KiB gives 2,743,444 bytes, 1 MiB 2,496,909,
-// 4 MiB 2,355,513 — every backend we have (PPMd, BWT) builds a better model
-// from a larger block, and total time is flat. Memory is the trade: a BWT block
-// needs a few multiples of its size.
+// Default block size. 4 MiB, swept on 2026-11-04 against 64 KiB, 256 KiB, 1 MiB and
+// 16 MiB on four corpora (FINDINGS.md §3d). Every backend we have (PPMd, BWT) builds a
+// better model from a larger block, and total time is flat; against 256 KiB this is
+// 4.3-9.3% smaller on homogeneous content. Memory is the trade: a BWT block needs a few
+// multiples of its size.
+//
+// It is not universally best. On heterogeneous content — 2.75 MB of unrelated source
+// files — 1 MiB was 0.6% smaller, because the per-block selector can then choose a
+// different backend per block instead of one across all of it. 4 MiB is within 0.6% of
+// the best on every corpus measured, so it stays; an adaptive block size is the idea
+// that would capture the difference, and is not attempted.
 inline constexpr size_t kDefaultBlockSize = 4u * 1024u * 1024u;
 
 // Hard ceiling on a single block's uncompressed size. Guards the decoder
