@@ -427,9 +427,38 @@ is now answered: a full search costs 2.5–4× the whole compression, a two-entr
 for zstd and 1.2 s for xz. `.br` is the one that may not pay, because quality 11 costs 2.5 s to
 confirm.
 
-**Not built.** What would have to be true first: a corpus of real `.zst`/`.xz` streams from other
-tools, to check that a two-entry shortlist actually matches most of them — this fixture cannot answer
-that, and a shortlist that misses is a transform that never fires.
+**The corpus, and what it says about the shortlist.** Ten streams of the same 512,000-byte tar from
+different producer shapes — seekable and streaming, levels 3 and 19, long-distance matching, no
+checksum, a custom xz dictionary — tested against the two-entry shortlists:
+
+| stream | shortlist match |
+|---|---|
+| zstd 3, zstd 19 | yes |
+| zstd 19 with long-distance matching | yes |
+| zstd 3 without a checksum | yes |
+| brotli 5, brotli 11 | yes |
+| xz preset 6 | yes |
+| **zstd 3 and 19, written to a pipe** | **MISS** |
+| **xz with a 1 MiB dictionary** | **MISS** |
+
+Three of ten miss, and the misses are informative rather than random:
+
+- **A pipe changes the frame.** A streaming zstd encoder cannot know the content size, so the frame
+  header omits it and the blocks land differently: three bytes shorter, and the shortlist's seekable
+  encode cannot reproduce it. Adding the *streaming* encoder at each level recovers both — so the
+  shortlist entry is a (level, framing) pair, four candidates, not two. This is the streamed-ZIP
+  problem of §3b in a new place: the same file, written by a pipe, and the reader has to know it.
+- **xz needs no shortlist at all.** The dictionary size is in the block header, and reading it out and
+  re-encoding reproduces **both** streams byte-exactly, including the one the shortlist missed. So
+  xz recovery is a header read, not a search — the cheapest of the three by a wide margin.
+
+That reorders the work. `.xz` first (header read, no search, `liblzma` already vendored), `.zst` second
+(four candidates, needs a decoder the tree does not have), `.br` last (quality 11 costs 2.5 s to
+confirm and the header does not carry the quality).
+
+**Not built.** What is still missing is a stream from a *different encoder version* — everything here
+came from the same libraries, and a zstd 1.4 stream may not be reproducible by a zstd 1.5 encoder at
+the same level. That is the remaining unknown, and it needs real-world files, not generated ones.
 
 ## 4. Container payloads: what the nested transforms actually do
 

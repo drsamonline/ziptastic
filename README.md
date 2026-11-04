@@ -75,6 +75,7 @@ decode that stopped. Reading the index touches under 1% of an archive.
 
 | | |
 |---|---|
+| [`CHANGELOG.md`](CHANGELOG.md) | what each release changed, and what it cost |
 | [`docs/FINDINGS.md`](docs/FINDINGS.md) | every measured number, the audit, what was rejected, what is open |
 | [`docs/RELEASE_PLAN.md`](docs/RELEASE_PLAN.md) | 1.0 first, speed after, and why in that order |
 | [`docs/BUILD.md`](docs/BUILD.md) | building it, including the traps |

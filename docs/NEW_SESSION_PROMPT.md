@@ -19,6 +19,10 @@ transform fires — the cooked-ISO and floppy rows in `FINDINGS.md` show it leve
 `bad-version`. That is the project's usual clean break; there are no v7 archives in the wild to
 strand.
 
+A release is four steps: bump `CMakeLists.txt` (the CI greps it, so the grep has to move too), build
+from the tagged tree, run the 34 suites, then tag and publish with `CHANGELOG.md` as the source of the
+notes rather than a fresh reading of `git log`.
+
 Read next, in this order: `docs/RELEASE_PLAN.md` (the order of work and why), `docs/BUILD.md` (the
 recipe, the depfile trap that costs a debugging session, and the pip-only toolchain that works when
 the sandbox has no compiler), `docs/AUDIT_FINDINGS.md` (eight findings, six fixed), `docs/HATCHING.md`

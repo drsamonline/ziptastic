@@ -139,10 +139,19 @@ from a stream whose encoder version and level are unknown, which is `preflate`'s
 
 Order of work if this is picked up: recipe recovery first, because its cost decides whether the
 transform ships at all — **answered 2026-11-04**: a full search over settings costs 2.5–4× the whole
-compression, a two-entry shortlist costs 0.5 s for zstd and 1.2 s for xz. So the design is a short
-ordered list with a decline, not a search; then `.xz` and `.br`, which need no new dependency; `.zst`
-last, because it needs a decoder the tree does not have. What is missing before anyone builds it is a
-corpus of real streams from other tools, to check the shortlist matches them.
+compression, a two-entry shortlist costs 0.5 s for zstd and 1.2 s for xz. A ten-stream corpus from
+different producer shapes then reordered the work again:
+
+1. **`.xz` first.** Its dictionary size is in the block header, so recovery is a *read* and not a
+   search — and reading it reproduced every stream tested byte-exactly, including one a shortlist
+   missed. `liblzma` is already vendored.
+2. **`.zst` second.** Needs a (level, framing) shortlist of four, because a stream written to a pipe
+   omits the content size and no seekable encode can reproduce it. Needs a decoder the tree lacks.
+3. **`.br` last.** Quality 11 costs 2.5 s to confirm and the header does not carry the quality.
+
+Still missing before anyone builds it: a stream from a *different encoder version*. Everything tested
+came from the same libraries, and a zstd 1.4 stream may not be reproducible by a zstd 1.5 encoder at
+the same level. That needs real-world files.
 
 ---
 
