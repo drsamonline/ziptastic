@@ -610,17 +610,65 @@ The three that would have done real damage (4, 6, 7) were invisible to a suite t
 throughout. **Not audited, and not claimed**: the vendored entropy coders, the transforms'
 internals beyond their contracts, `main.cpp`, the match finder and parser.
 
+## 6a. Silesia, at last: the first row anyone else can check
+
+Every number above is on this project's own content, which nobody else can reproduce. The Silesia
+corpus closes that: twelve files, 211,938,580 bytes, the standard set every published table uses.
+Measured 2026-11-07, `-9`, one run per file, both tools built from sources in this tree.
+
+| file | input | ziptastic `-9` | `xz -9e` | gain |
+|---|---|---|---|---|
+| sao | 7,251,944 | 4,415,466 | 4,425,664 | 0.2% |
+| x-ray | 8,474,240 | 3,798,464 | 4,491,264 | 15.4% |
+| ooffice | 6,152,192 | 2,131,573 | 2,427,224 | 12.2% |
+| mozilla | 51,220,480 | 12,217,069 | 13,376,240 | 8.7% |
+| osdb | 10,085,684 | 2,368,404 | 2,844,556 | 16.7% |
+| dickens | 10,192,446 | 2,355,685 | 2,831,212 | 16.8% |
+| mr | 9,970,564 | 2,249,704 | 2,751,892 | 18.2% |
+| samba | 21,606,400 | 3,743,031 | 3,739,524 | **−0.1%** |
+| webster | 41,458,703 | 7,158,274 | 8,368,672 | 14.5% |
+| reymont | 6,627,202 | 1,024,805 | 1,315,592 | 22.1% |
+| xml | 5,345,280 | 374,814 | 434,892 | 13.8% |
+| nci | 33,553,445 | 1,434,131 | 1,449,272 | 1.0% |
+| **total** | **211,938,580** | **43,271,420 (20.42%)** | **48,456,004 (22.86%)** | **10.7%** |
+
+**10.7% smaller than `xz -9e` across the standard corpus**, 651 seconds of compression at 0.33 MB/s.
+Two files are level rather than ahead — `samba` is 0.1% behind and `sao` 0.2% ahead — and those are
+the honest rows: `samba` is source code, where LZMA's long matches and this engine's BWT come out
+even, and `sao` is a star catalogue that is mostly incompressible.
+
+The `xz` column is an `xz -9e` equivalent: LZMA2 at preset 9 with `LZMA_PRESET_EXTREME`, 64 MiB
+dictionary, CRC-64, one stream — built against the liblzma already vendored here, because a baseline
+quoted from someone else's table is a baseline nobody can defend.
+
+### The measurement error that nearly cost a revert
+
+The first pass reported `xz -9e` at 2,007,040 bytes for `x-ray` — 47% better than this engine, on one
+file in twelve, which read as a serious regression in the LZMA2 gate. It was not. `/tmp` on this
+machine is a 64 MB tmpfs, it filled during the run, and that stream was a **truncated write**: the
+last two files wrote zero bytes and `x-ray` stopped at 2,007,040. Regenerating it and **decoding the
+stream to check it** gave 4,491,264, which is what the engine's own fallback encoder produces
+(4,489,807 raw) and what the native path beats.
+
+Two lessons, both cheap and both now habit: check free space before a run that writes hundreds of
+megabytes, and never trust a compressed size until the stream has been decoded back and compared.
+The gate was right; the number was not.
+
 ## 6b. The one measurement this project cannot currently make
 
-Every number in this document is on this project's own content: its docs, a source tree, a synthetic
-asset tree. That is reproducible and honest, and it is **not comparable with anybody else's table**,
-because every published benchmark uses Calgary, Canterbury, Silesia, enwik8 or enwik9 — and the
-project has none of them.
+**Answered, 2026-11-07.** Silesia is measured (§6a) and the corpus is one `git clone` away —
+`github.com/MiloszKrajewski/SilesiaCorpus`, which is reachable from this sandbox where
+`sun.aei.polsl.pl` and `mattmahoney.net` are not.
 
-Getting Silesia (211 MB, twelve files) would let this document carry one row a reader can check
-against PeaZip, lzbench and TurboBench without re-running anything. It is a download and a script, not
-a research programme, and it is the cheapest credibility available. Recorded 2026-11-07 in
-`docs/BENCHMARK_SOURCES_2026-11-07.md`, where the positioning against LTCB is also stated once.
+Still missing are Calgary, Canterbury and enwik8. They matter less: Silesia is the set most tables
+quote per-file, and one row that others can check is worth more than four they cannot.
+
+`scripts/silesia.sh` regenerates §6a: it fetches the corpus, checks all twelve file sizes before
+measuring, refuses to start without 500 MB free, and — the part that matters after the error above —
+**decodes every xz stream back and compares it to the original before reporting its size**. Smoke
+tested on two files (`SILESIA_ONLY=dickens,xml`); the full run is about fifteen minutes of
+compression, which is longer than a single sandbox call, so the table in §6a came from the same steps
+run by hand.
 
 ## 7. What is open
 

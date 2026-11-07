@@ -24,6 +24,10 @@ short version: what changed, and what it cost.
   perfectly intact. Confirmed with a 1.2.0 binary against a stream carrying the `.xz` bit. The format
   version stays v8, because the format did not change; the reader's knowledge did. (`FORMAT.md`)
 
+- **The first benchmark row anyone else can check.** Silesia, 211,938,580 bytes: ziptastic `-9` gives
+  **43,271,420 (20.42%)** against an `xz -9e` equivalent built from the vendored liblzma at
+  **48,456,004 (22.86%)** — 10.7% smaller. `scripts/silesia.sh` regenerates it. (`FINDINGS.md` §6a)
+
 ### Measured, not built
 
 - **bzip2**: a `.tar.bz2` costs 9.7% more through the engine than the tar does, and its level is in
