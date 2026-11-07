@@ -460,6 +460,36 @@ confirm and the header does not carry the quality).
 came from the same libraries, and a zstd 1.4 stream may not be reproducible by a zstd 1.5 encoder at
 the same level. That is the remaining unknown, and it needs real-world files, not generated ones.
 
+### The xz foundation, proved in-tree and across versions (2026-11-07)
+
+`tests/benchmark/xz_probe.cpp` does the whole experiment against the **vendored** liblzma, because
+the answer depends on the encoder that would ship:
+
+1. decode the stream;
+2. read the LZMA2 dictionary size out of the block header with `lzma_block_header_decode`;
+3. re-encode at each preset **with that dictionary size forced**, and compare bytes.
+
+On a 522,240-byte tar:
+
+| stream | dict size read from header | re-encode |
+|---|---|---|
+| preset 0 | 262,144 | **identical** |
+| preset 6 | 8,388,608 | **identical** |
+| preset 9 | 67,108,864 | **identical** |
+
+And the version question is answered better than expected: **the streams were produced by liblzma
+5.4.1 and reproduced by the tree's 5.8.4**, byte for byte, two minor versions apart. That is the
+strongest evidence yet that an xz recipe can be a header read rather than a stored diff.
+
+Two details worth having:
+
+- **Presets 6, 7, 8 and 9 all produced the same bytes** once the dictionary size was forced — they
+  differ from each other in exactly that parameter for this input, and the stream already told us.
+  So the recipe is closer to "dictionary size, plus one bit for `extreme`" than to a preset number.
+- `extreme` does change the bytes (156,380 against 156,328), so the recipe needs that bit.
+
+This does not build the transform; it removes the reason it might not work.
+
 ## 4. Container payloads: what the nested transforms actually do
 
 A container payload puts its own header in front of the member bytes, so every nested transform

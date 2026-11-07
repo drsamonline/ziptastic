@@ -44,6 +44,12 @@ add_executable(parse_stats benchmark/parse_stats.cpp)
 target_link_libraries(parse_stats PRIVATE chce_core)
 target_include_directories(parse_stats PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
+# Whether an .xz stream can be rebuilt byte-exactly from what its own header says, which is the
+# question the Phase 4 xz transform stands on (FINDINGS.md §3h). Needs the vendored liblzma.
+add_executable(xz_probe benchmark/xz_probe.cpp)
+target_link_libraries(xz_probe PRIVATE liblzma)
+target_include_directories(xz_probe PRIVATE ${XZ_DIR}/src/liblzma/api)
+
 # What the v8 offset table costs and what reaching a single block saves.
 add_executable(index_cost benchmark/index_cost.cpp)
 target_link_libraries(index_cost PRIVATE chce_core)

@@ -1,2 +1,9 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Reference-only copies of third-party Windows files, kept verbatim (2026-11-07).
+# `text=auto` above would rewrite their CRLF endings on commit, which would make the
+# "unmodified" in old/README-2026-11-07.md untrue — and a diff that is not a diff is
+# worse than no copy at all.
+old/nanozip/** -text
+old/repackkit/** -text

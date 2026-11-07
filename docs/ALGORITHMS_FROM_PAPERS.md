@@ -193,3 +193,34 @@ was reverted; only the table-id fix remains.
 **For whoever picks this up:** the failure is a desync, not a logic error, so the
 fastest route is to assert that the encoder's and decoder's context choices match
 symbol-by-symbol for a small input, rather than reading the code.
+
+---
+
+## QLFC: a BWT post-coder worth reading (not attempted)
+
+Arrived 2026-11-07 in NanoZip's changelog (`vendor/hcs/old/nanozip/changes.txt`), which records its
+`nz_optimum1`/`nz_optimum2` text compressors as "bwt with dc and qlfc models". QLFC — **quasi-local
+frequency coding** — is a published BWT post-coder, and it is the one idea in that changelog this
+project could adopt without any of NanoZip's code, which is closed.
+
+**What it is.** After the BWT, the byte stream is a sequence of runs. The classic chain is MTF, then
+RLE, then Huffman (bzip2's shape, and what libbsc's entropy stage does in spirit). QLFC instead codes
+each symbol by its **rank in a frequency-sorted list of the symbols near it** — "quasi-local" because
+the list is rebuilt from a local window rather than the whole block. The claim in the literature is
+what matters here: it removes the separate RLE stage by making run-length implicit in the rank, and it
+adapts within a block instead of once per block.
+
+**Why it is worth a look rather than a build.** This engine's BWT stage is libbsc's, and it is the
+backend that wins on structured binary and on the corpora in `FINDINGS.md` §3d. Replacing its entropy
+stage is a change to a *vendored* component — the policy in `FORMAT.md` wants a measured win on real
+content, a gate that can decline, a byte-exact inverse and a test that the transform fired, and none
+of those is available for a swap inside libbsc without forking it.
+
+The cheaper experiment, if anyone wants the number: keep libbsc's BWT and its own stage, and add QLFC
+as an *additional* candidate encoder for the same block, choosing the smaller. That is the shape the
+selector already uses for every other backend, it costs a new mode byte rather than a fork, and it
+would answer the only question that matters — whether QLFC beats what libbsc does on the corpora in
+`FINDINGS.md` — before anything is replaced.
+
+Not attempted. Recorded because it is the one lead from the 2026-11-07 drop that could pay, and
+because a named published algorithm is a different proposition from a competitor's binary.

@@ -144,7 +144,10 @@ different producer shapes then reordered the work again:
 
 1. **`.xz` first.** Its dictionary size is in the block header, so recovery is a *read* and not a
    search — and reading it reproduced every stream tested byte-exactly, including one a shortlist
-   missed. `liblzma` is already vendored.
+   missed. `liblzma` is already vendored. **Proved in-tree 2026-11-07**: `tests/benchmark/xz_probe.cpp`
+   decodes, reads the dictionary size from the header, and re-encodes byte-identically at presets 0, 6
+   and 9 — including streams written by liblzma 5.4.1 and reproduced by the tree's 5.8.4. The recipe
+   is a dictionary size plus one `extreme` bit. `FINDINGS.md` §3h.
 2. **`.zst` second.** Needs a (level, framing) shortlist of four, because a stream written to a pipe
    omits the content size and no seekable encode can reproduce it. Needs a decoder the tree lacks.
 3. **`.br` last.** Quality 11 costs 2.5 s to confirm and the header does not carry the quality.
