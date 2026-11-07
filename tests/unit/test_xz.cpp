@@ -156,4 +156,37 @@ TEST(a_tar_xz_compresses_and_round_trips) {
                 std::to_string(stored.size()));
 }
 
+// What is inside an .xz is as reachable as what is inside a .gz. It was not: the seven nested
+// transform gates read `(precomp || gzip)` and the xz stage was added later, so a `.tar.xz`
+// holding a CSV got no numeric transform at all. Found by reading the gates after the transform
+// shipped, not by a test — hence this one.
+TEST(an_xz_payload_reaches_the_nested_transforms) {
+  // A numeric CSV, which is what the numeric layer exists for, compressed inside an .xz.
+  std::string csv = "id,value,count\n";
+  long a = 1000, b = 500000, c = 0;
+  for (int i = 0; i < 4000; ++i) {
+    a += 3;
+    b += i % 7;
+    c += 1;
+    csv += std::to_string(a) + "," + std::to_string(b) + "," + std::to_string(c) + "\n";
+  }
+  const std::vector<uint8_t> raw(csv.begin(), csv.end());
+  const auto xz = make_xz(raw, 6);
+  CHECK(!xz.empty());
+
+  std::vector<uint8_t> packed, back;
+  CHECK_ERR(compress(xz, packed, precomp_on(), nullptr), Err::Ok);
+  CHECK_ERR(decompress(packed, back), Err::Ok);
+  CHECK_MSG(back == xz, "round trip mismatch");
+
+  ByteReader r(packed);
+  FileHeader fh;
+  CHECK_ERR(read_file_header(r, fh), Err::Ok);
+  CHECK_MSG((fh.layers3 & kLayer3Xz) != 0, "the xz layer bit was not set");
+  // Either bit counts: a nested transform sets the `_nested` variant, and which one fires
+  // depends on the payload, not on the container it arrived in.
+  CHECK_MSG((fh.layers & (kLayerNumeric | kLayerNumericNested)) != 0,
+            "the numeric layer did not fire inside the .xz, so the nested gates are still shut");
+}
+
 TEST_MAIN()

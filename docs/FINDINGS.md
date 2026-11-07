@@ -512,6 +512,20 @@ it needs a dependency the tree does not have: `libbz2` is not vendored (the `bzi
 `vendor/hcs/old` is a different format and is empty). A `.tar.bz2` is also rarer than it was, and
 rarer than `.tar.xz` is now. Recorded so the number exists if it ever comes up.
 
+### The gates the `.xz` stage was not connected to (2026-11-07)
+
+The `.xz` stage sets `precomp_payload` like `precomp` and `gzip` do, but the seven nested-transform
+gates still read `(precomp || gzip)` — they were written before `.xz` existed. So a `.tar.xz` holding
+a CSV, a ZIP, a PNG or a spreadsheet got the container inflated and then **nothing done with what came
+out**, which is the entire reason the recursion stage exists.
+
+Found by reading the gates after shipping, not by a test. There is one now, and it was checked the
+only way that counts: with the gates narrowed back to `(precomp || gzip)` the test fails, and with
+them widened it passes. The mechanism is what the test asserts, because on the fixture tried the
+archive size did not move — 41,786 bytes either way, since the whole-stream LZMA2 fallback wins there
+and masks the difference. A ratio number for this fix needs a fixture where the fallback does not
+win, and that is not a measurement this session made.
+
 ### The `.xz` transform, built (2026-11-07)
 
 `src/precompressors/xz_wrap.cpp`, `kLayer3Xz` in `layers3`, `unit.xz` in the suite. Measured on a

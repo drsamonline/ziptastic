@@ -19,6 +19,9 @@ short version: what changed, and what it cost.
   original stored. On a 522,240-byte tar: 156,904 bytes before, **130,449** after, against 130,435
   for the tar itself. Byte-exact, `layers3` reads `0x02`, and it costs one inflate plus one or two
   trial encodes. (`FINDINGS.md` §3h)
+- **Nested transforms inside an `.xz`.** The `.xz` stage was not connected to the seven nested gates,
+  which still tested for `precomp || gzip`, so a `.tar.xz` holding a CSV or a ZIP was inflated and
+  then left alone. Fixed, with a test that fails without the fix.
 - **`unknown-transform`.** A stream that uses a Layer 0 bit this build does not know now says so.
   Before, it was `bad-flags` — "invalid header flags" — which reads as corruption in a file that is
   perfectly intact. Confirmed with a 1.2.0 binary against a stream carrying the `.xz` bit. The format

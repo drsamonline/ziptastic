@@ -1031,7 +1031,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // chain can reach. Runs BEFORE the nested numeric stage, so decode undoes it
   // after.
   bool precomp_nested = false;
-  if ((precomp || gzip) && opt.precomp && preflate_available() &&
+  if ((precomp || gzip || xz) && opt.precomp && preflate_available() &&
       !precomp_payload.empty()) {
     std::vector<uint8_t> payload;
     if (preflate_unpack(precomp_payload, payload) &&
@@ -1045,7 +1045,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // document whose payload is base64, and until now the nested stage only tried the
   // numeric and XML transforms, so the blob was never decoded.
   bool base64_nested = false;
-  if ((precomp || gzip) && opt.base64 && base64_available() && !precomp_payload.empty()) {
+  if ((precomp || gzip || xz) && opt.base64 && base64_available() && !precomp_payload.empty()) {
     std::vector<uint8_t> nested;
     if (base64_pack(precomp_payload, nested)) {
       std::vector<uint8_t> check;
@@ -1061,7 +1061,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // the blob it wrapped, the blob sits at offset 0 and brunsli can recognise it —
   // which is the difference between 0.7% and 19.5% on that file class.
   bool jpeg_nested = false;
-  if ((precomp || gzip) && opt.jpeg && jpeg_available() && !precomp_payload.empty()) {
+  if ((precomp || gzip || xz) && opt.jpeg && jpeg_available() && !precomp_payload.empty()) {
     std::vector<uint8_t> packed;
     if (jpeg_pack(precomp_payload, packed)) {
       std::vector<uint8_t> check;
@@ -1074,7 +1074,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // BMP one level down. A ZIP of BMPs stores raw pixels inside two DEFLATE layers, and the
   // colour-plane split takes it from 120,878 to 1,206 bytes on the fixture that motivated it.
   bool bmp_nested = false;
-  if ((precomp || gzip) && opt.bmp && bmp_available() && !precomp_payload.empty() &&
+  if ((precomp || gzip || xz) && opt.bmp && bmp_available() && !precomp_payload.empty() &&
       bmp_likely(std::span<const uint8_t>(precomp_payload))) {
     std::vector<uint8_t> payload;
     if (bmp_pack(precomp_payload, payload)) {
@@ -1091,7 +1091,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // hands us the PNG bytes, and without this stage the PNG's own DEFLATE is compressed as
   // if it were opaque — a second compression layer nothing removes. Measured at -79.9%.
   bool png_nested = false;
-  if ((precomp || gzip) && opt.precomp && png_available() && !precomp_payload.empty() &&
+  if ((precomp || gzip || xz) && opt.precomp && png_available() && !precomp_payload.empty() &&
       png_likely(precomp_payload)) {
     std::vector<uint8_t> payload;
     if (png_unpack(precomp_payload, payload)) {
@@ -1106,7 +1106,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   }
 
   bool gif_nested = false;
-  if ((precomp || gzip) && opt.gif && gif_available() && !precomp_payload.empty()) {
+  if ((precomp || gzip || xz) && opt.gif && gif_available() && !precomp_payload.empty()) {
     std::vector<uint8_t> packed;
     if (gif_pack(precomp_payload, packed)) {
       std::vector<uint8_t> check;
@@ -1119,7 +1119,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
 
   bool numeric_nested = false;
   bool xml_numeric_nested = false;
-  if ((precomp || gzip) && opt.numeric && numeric_available() && !precomp_payload.empty()) {
+  if ((precomp || gzip || xz) && opt.numeric && numeric_available() && !precomp_payload.empty()) {
     std::vector<uint8_t> nested;
     // This is the case the whole item exists for: precomp inflated the xlsx and
     // what came out is XML, where the cell values live inside <v> tags.
