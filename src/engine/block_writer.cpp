@@ -59,15 +59,15 @@ Err read_file_header(ByteReader& r, FileHeader& h) {
 
   uint8_t layers = 0;
   if (!r.u8(layers)) return Err::Truncated;
-  if ((layers & static_cast<uint8_t>(~kLayerMask)) != 0) return Err::BadFlags;
+  if ((layers & static_cast<uint8_t>(~kLayerMask)) != 0) return Err::UnknownTransform;
 
   uint8_t layers2 = 0;
   if (!r.u8(layers2)) return Err::Truncated;
-  if ((layers2 & static_cast<uint8_t>(~kLayerMask2)) != 0) return Err::BadFlags;
+  if ((layers2 & static_cast<uint8_t>(~kLayerMask2)) != 0) return Err::UnknownTransform;
 
   uint8_t layers3 = 0;
   if (!r.u8(layers3)) return Err::Truncated;
-  if ((layers3 & static_cast<uint8_t>(~kLayerMask3)) != 0) return Err::BadFlags;
+  if ((layers3 & static_cast<uint8_t>(~kLayerMask3)) != 0) return Err::UnknownTransform;
 
   uint64_t original_size = 0;
   if (!r.varint(original_size)) return Err::BadVarint;

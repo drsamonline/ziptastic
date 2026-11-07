@@ -393,6 +393,13 @@ were filled one bit at a time, each with a different standard of evidence.
 existing mode-byte space, or changing which backend wins. Those are compatible with a reader
 that knows the version it is reading.
 
+**But "compatible with the format" is not "compatible with older readers".** A build that does not
+know a bit refuses the stream, and until 2026-11-07 it refused it as `bad-flags` — "invalid header
+flags" — which reads as corruption in a file that is perfectly intact. Measured, on the `.xz` bit:
+a 1.2.0 binary given a v8 stream with `layers3 = 0x02` fails with that message. The error is now
+`unknown-transform`, whose message says the stream was written by a newer build. The format version
+is still v8, because the *format* did not change; the reader's knowledge did.
+
 ## Version 8: the block offset table
 
 `kFormatVersion` is 8. **The header is unchanged from v7**; only the trailer grew, by one absolute

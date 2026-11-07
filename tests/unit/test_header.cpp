@@ -137,6 +137,44 @@ TEST(file_header_impossible_counts) {
   CHECK_ERR(read_file_header(r2, h), Err::BadBlockSize);
 }
 
+// A stream written by a newer build uses a Layer 0 bit this one does not know. That is not
+// corruption and must not be reported as such: it is the one case where the right answer is
+// "this build is too old", and it has its own error since 2026-11-07.
+TEST(a_layer_bit_from_a_newer_build_is_named) {
+  // Every bit of every layer byte, one at a time. The allocated ones are fine; an unallocated
+  // one is a transform this build has never heard of.
+  for (int bit = 0; bit < 8; ++bit) {
+    ByteWriter w;
+    FileHeader h;
+    h.layers3 = static_cast<uint8_t>(1u << bit);
+    h.original_size = 10;
+    h.block_count = 1;
+    write_file_header(w, h);
+
+    ByteReader r(w.span());
+    FileHeader got;
+    const Err e = read_file_header(r, got);
+    if ((kLayerMask3 & (1u << bit)) != 0) {
+      CHECK_ERR(e, Err::Ok);
+    } else {
+      CHECK_MSG(e == Err::UnknownTransform,
+                "layers3 bit " + std::to_string(bit) + " returned " + err_name(e));
+    }
+  }
+  // And the same for the first two layer bytes, so a future bit in either is named too.
+  {
+    ByteWriter w;
+    FileHeader h;
+    h.layers2 = 0xFF;  // fully allocated in v8
+    h.original_size = 10;
+    h.block_count = 1;
+    write_file_header(w, h);
+    ByteReader r(w.span());
+    FileHeader got;
+    CHECK_ERR(read_file_header(r, got), Err::Ok);
+  }
+}
+
 TEST(block_header_roundtrip) {
   const BlockHeader cases[] = {
       {Mode::Raw, 1, 1},

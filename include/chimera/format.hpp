@@ -239,6 +239,12 @@ enum class Err : int {
   BadMagic,       // first four bytes are not "CHCE"
   BadVersion,     // version byte is not kFormatVersion
   BadFlags,       // flag byte has bits outside kFlagMask
+  // A Layer 0 bit this build does not know. Distinct from BadFlags because the cause is
+  // different and so is the fix: the stream was written by a build with a transform this one
+  // has never heard of, and the only thing wrong with it is that. Reading it as "invalid
+  // header flags" — which is what happened until 2026-11-07 — sends the reader looking for
+  // corruption in a file that is perfectly intact.
+  UnknownTransform,
   ChecksumMismatch,  // the rebuilt bytes do not match the stored CRC-32
   BadMode,        // mode byte is outside the defined set, or unsupported here
   BadVarint,      // varint is truncated or overflows 64 bits
@@ -263,6 +269,7 @@ constexpr const char* err_name(Err e) {
     case Err::BadMagic: return "bad-magic";
     case Err::BadVersion: return "bad-version";
     case Err::BadFlags: return "bad-flags";
+    case Err::UnknownTransform: return "unknown-transform";
     case Err::ChecksumMismatch: return "checksum-mismatch";
     case Err::BadMode: return "bad-mode";
     case Err::BadVarint: return "bad-varint";
@@ -286,6 +293,8 @@ constexpr const char* err_message(Err e) {
     case Err::BadMagic: return "not a CHCE stream (bad magic)";
     case Err::BadVersion: return "unsupported CHCE format version";
     case Err::BadFlags: return "invalid header flags";
+    case Err::UnknownTransform:
+      return "the stream uses a transform this build does not know (written by a newer build?)";
     case Err::ChecksumMismatch: return "checksum mismatch";
     case Err::BadMode: return "invalid or unsupported block mode";
     case Err::BadVarint: return "malformed varint";

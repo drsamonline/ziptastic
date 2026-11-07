@@ -9,6 +9,29 @@ short version: what changed, and what it cost.
 
 ---
 
+## Unreleased
+
+### Added
+
+- **An `.xz` transform.** A `.tar.xz` used to be opaque: the archive came out slightly larger than
+  the stream. It is now inflated and the stream is rebuilt from a recipe read out of its own block
+  header — dictionary size, integrity type, a preset byte, one `extreme` bit — with nothing of the
+  original stored. On a 522,240-byte tar: 156,904 bytes before, **130,449** after, against 130,435
+  for the tar itself. Byte-exact, `layers3` reads `0x02`, and it costs one inflate plus one or two
+  trial encodes. (`FINDINGS.md` §3h)
+- **`unknown-transform`.** A stream that uses a Layer 0 bit this build does not know now says so.
+  Before, it was `bad-flags` — "invalid header flags" — which reads as corruption in a file that is
+  perfectly intact. Confirmed with a 1.2.0 binary against a stream carrying the `.xz` bit. The format
+  version stays v8, because the format did not change; the reader's knowledge did. (`FORMAT.md`)
+
+### Measured, not built
+
+- **bzip2**: a `.tar.bz2` costs 9.7% more through the engine than the tar does, and its level is in
+  its own header, so the recipe would be one byte — but `libbz2` is not vendored and `.tar.bz2` is
+  rarer than `.tar.xz`.
+- **zstd and brotli** stay unbuilt: a shortlist must be a (level, framing) pair because a stream
+  written to a pipe omits its content size, and `.zst` needs a decoder the tree does not have.
+
 ## 1.2.0 — 2026-11-04
 
 **The same archives, less time.** No archive size changed in this release. Format stays **v8**, so
