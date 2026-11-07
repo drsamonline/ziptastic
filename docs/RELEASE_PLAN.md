@@ -131,8 +131,10 @@ healthy: the engine's advantage is already concentrated in a handful of formats.
 
 **Closed on 2026-11-07**: SWF is dropped — Flash is dead and there was nothing to win. PDF is *not* a
 transform opportunity in the shape it was assumed: on a real 99-page scanned document the engine gets
-85.5%, `precomp` correctly declines, and the gap is in **1-bit imagery** — which is a JBIG2 or CCITT
-G4 transform, a different and much larger piece of work than anything in this phase.
+85.5%, `precomp` correctly declines, and the gap looked like **1-bit imagery**, and measuring it killed the idea:
+CCITT G4 is 5-8% *worse* than the Flate those pages already use, and this engine's own
+backends are 40-48% worse on the sparse ones. Only JBIG2 has headroom, and it is a large
+build for a document class the engine does not otherwise see.
 
 **Something asks, and it has been measured: the opaque streams.** `.tar.zst`, `.br` and `.xz` are
 invisible to the engine, and a `.tar.zst` costs **22.7% more through the engine than the tar itself**.

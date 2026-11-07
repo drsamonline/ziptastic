@@ -565,10 +565,29 @@ bytes of Flate-coded bilevel bitmap inside the PDF; the whole document is an ima
 thin text wrapper. `scan_pdf` found nothing worth taking, and it was right: inflating those streams
 hands the backend data that deflate already coded well.
 
-The one number that shows where the win actually is: **1 bit per pixel**. Bilevel scans are what
-JBIG2 and CCITT G4 exist for, and both beat Flate on them by a wide margin. That is a *bilevel image*
-transform, not a PDF transform — a different and much larger piece of work than anything in this
-phase, and one this engine has no decoder for.
+The first reading of that was "1 bit per pixel, so JBIG2 or CCITT G4 will win". **That was wrong, and
+measuring it took one call.** The bitmaps were pulled out of the PDF and coded three ways:
+
+| page | raw bitmap | Flate, as the PDF stores it | CCITT G4 | ziptastic `-9` on the raw bitmap |
+|---|---|---|---|---|
+| 0 (dense) | 1,030,956 | 255,108 | **242,630 (−4.9%)** | 275,300 (+7.9%) |
+| 1 | 1,033,500 | **35,725** | 37,706 (+5.5%) | 52,732 (+47.6%) |
+| 2 | 1,033,500 | **36,720** | 39,550 (+7.7%) | 51,458 (+40.1%) |
+
+**Flate wins on the sparse pages, and it is not close.** These scans are mostly white with sparse
+marks — 35,725 bytes from 1,033,500 is 3.5% of raw — and G4's advantage is 2D correlation across
+dense rows, which there is not much of here. G4 only wins on page 0, the one dense page, and by 4.9%.
+
+And this engine's own backends are **worse than Flate on all three** — BWT, PPMd and the CM stack
+all lose to LZ77 on sparse bilevel, by 8% on the dense page and by 40-48% on the sparse ones. That is
+worth knowing beyond PDF: it is a shape where DEFLATE is simply the better coder.
+
+So there is no cheap win here, and the recommendation to build a bilevel transform was wrong on the
+evidence. The only thing left with real headroom is **JBIG2's context-modelled arithmetic coding**,
+which typically beats G4 by 20-40% on text — and since G4 is already 5-8% behind Flate on these pages,
+that puts a JBIG2-shaped ceiling at maybe 15-30% over what the PDF already spends. Against a full
+JBIG2 encoder, symbol dictionaries included, that is a large build for a document class this engine
+does not otherwise see. Recorded, not started.
 
 Two smaller things worth recording:
 
