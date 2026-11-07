@@ -546,6 +546,39 @@ transform therefore declined every piped stream, which is why the encoder now fe
 128 KiB chunks, matching zstd's default block size. That is what a writer with default buffering
 produces, and with it all three cases above are recovered.
 
+### A real scanned PDF, measured (2026-11-07)
+
+The synthetic PDF above said "PDF is covered". A real one says something different, which is why the
+caveat was written down. The file: `CIA-RDP96-00792R000300330001-8.pdf`, 7,456,578 bytes, **99 pages,
+all scanned, one image per page, none of them digital**.
+
+| measurement | value |
+|---|---|
+| the PDF | 7,456,578 bytes |
+| ziptastic `-9` | **6,373,705 (85.5%)**, 68 s |
+| the same with `--no-precomp` | 6,373,705 — identical |
+| what fired | base64 only (`layers 0x10`); **precomp did not fire** |
+| images | 99, **1 bit per pixel**, 2544×3250, FlateDecode in the PDF |
+
+**The structure is not the problem and the transform is not the answer.** A page's image is 35,725
+bytes of Flate-coded bilevel bitmap inside the PDF; the whole document is an image container with a
+thin text wrapper. `scan_pdf` found nothing worth taking, and it was right: inflating those streams
+hands the backend data that deflate already coded well.
+
+The one number that shows where the win actually is: **1 bit per pixel**. Bilevel scans are what
+JBIG2 and CCITT G4 exist for, and both beat Flate on them by a wide margin. That is a *bilevel image*
+transform, not a PDF transform — a different and much larger piece of work than anything in this
+phase, and one this engine has no decoder for.
+
+Two smaller things worth recording:
+
+- **Our PNG layer makes it worse, not better, on a re-extracted image.** Page 1's image as a PNG
+  (104,660 bytes, which is what an extractor produces) compresses to 53,082 through `-9` — worse
+  than the 35,725 the PDF already stores. That is not a defect: the input had already been
+  re-encoded once, and the comparison is not like for like.
+- **Base64 fired on a binary PDF.** It is verified byte-exact, so it costs nothing but time, and on a
+  file this size that time is measurable. Worth a look before the next speed pass.
+
 ### Two of the four "missing formats" were not missing (2026-11-07)
 
 The tool survey listed four formats with prior evidence and no transform here: MP3, FLAC, PDF and
@@ -564,10 +597,10 @@ built.
 against 226 for the bare content is the container framing plus the precompressed stream — close to
 optimal.
 
-**SWF is covered by accident, and well.** No transform fires on a `CWS`, and none needs to: the file
-is 198 bytes against 216 for its *decoded* body, because the backend compresses the DEFLATE stream
-itself harder than it compresses the text that stream contains. A dedicated SWF transform would have
-to beat that, and on this fixture there is nothing to beat.
+**SWF is dropped.** No transform fires on a `CWS` and none needs to — 198 bytes against 216 for its
+own decoded body, because the backend compresses the DEFLATE stream harder than the text inside it —
+and Flash is dead, so there is no reason to spend anything more on it. Removed from the Phase 4 list
+on 2026-11-07 at the owner's instruction, and kept here only so the measurement is not repeated.
 
 **The caveat, stated because it is large**: both fixtures are synthetic and small. A real PDF has
 many streams and images; a real SWF is megabytes of mixed assets. These numbers say "do not build a

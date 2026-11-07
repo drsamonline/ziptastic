@@ -129,6 +129,11 @@ New Layer 0 transforms need a measured win on *real* content and a free bit. The
 been measured and rejected (`FINDINGS.md` §5) is longer than the list of what remains, and that is
 healthy: the engine's advantage is already concentrated in a handful of formats.
 
+**Closed on 2026-11-07**: SWF is dropped — Flash is dead and there was nothing to win. PDF is *not* a
+transform opportunity in the shape it was assumed: on a real 99-page scanned document the engine gets
+85.5%, `precomp` correctly declines, and the gap is in **1-bit imagery** — which is a JBIG2 or CCITT
+G4 transform, a different and much larger piece of work than anything in this phase.
+
 **Something asks, and it has been measured: the opaque streams.** `.tar.zst`, `.br` and `.xz` are
 invisible to the engine, and a `.tar.zst` costs **22.7% more through the engine than the tar itself**.
 Seeing inside them is worth **−18.5% (zstd), −14.7% (brotli), −16.9% (xz)** on the measured fixture,
