@@ -7,6 +7,18 @@
 Written 2026-11-03, in answer to "can lrzip replace srep" and the oxipng/optipng/
 browser-image-compression suggestions.
 
+## 0. Where this engine does not compete, said once
+
+The Large Text Compression Benchmark and the Hutter Prize rank `compressed enwik9 + a zip of the
+decompressor` on one 1 GB XML file with no time limit. The 2026 frontier there is **S ≈ 95.8 MB, about
+0.77 bits per byte**, and every entry at that level is a transformer-augmented context-mixing model
+(`docs/BENCHMARK_SOURCES_2026-11-07.md` has the table and the licences).
+
+This engine is not in that race and should not be presented as if it were. It is in ZPAQ's race: on
+303 MB of the standard corpora, ZPAQ ultra reaches 19.01% and takes **358 seconds to unpack**, against
+7-Zip ultra at 23.50% and 3.4 seconds. Ratio bought with decompression time is the trade this project
+lives in, and the honest comparison is against tools that make the same one.
+
 ## 1. lrzip / lrzip-next for the srep step — we already do that job, to 0.1% of ideal
 
 `lrzip` is rzip (long-range redundancy reduction) plus LZMA/zpaq. `srep` is long-range

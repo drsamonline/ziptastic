@@ -610,6 +610,18 @@ The three that would have done real damage (4, 6, 7) were invisible to a suite t
 throughout. **Not audited, and not claimed**: the vendored entropy coders, the transforms'
 internals beyond their contracts, `main.cpp`, the match finder and parser.
 
+## 6b. The one measurement this project cannot currently make
+
+Every number in this document is on this project's own content: its docs, a source tree, a synthetic
+asset tree. That is reproducible and honest, and it is **not comparable with anybody else's table**,
+because every published benchmark uses Calgary, Canterbury, Silesia, enwik8 or enwik9 — and the
+project has none of them.
+
+Getting Silesia (211 MB, twelve files) would let this document carry one row a reader can check
+against PeaZip, lzbench and TurboBench without re-running anything. It is a download and a script, not
+a research programme, and it is the cheapest credibility available. Recorded 2026-11-07 in
+`docs/BENCHMARK_SOURCES_2026-11-07.md`, where the positioning against LTCB is also stated once.
+
 ## 7. What is open
 
 - ~~Re-measure PNG and GIF on real content.~~ **DONE** — see the note under the transform table.
