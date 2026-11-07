@@ -7,3 +7,5 @@
 # worse than no copy at all.
 old/nanozip/** -text
 old/repackkit/** -text
+old/freearc/** -text
+old/srep/** -text
