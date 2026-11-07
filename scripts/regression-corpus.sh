@@ -68,7 +68,38 @@ without=$(stat -c%s "$TMP/png_raw.dr")
 "$BIN" -d -f -o "$TMP/png.out" "$TMP/png.dr" 2>/dev/null
 cmp -s "$TMP/ui.png" "$TMP/png.out" && ok "small PNG: byte-exact" || bad "small PNG: round trip differs"
 
-# --- 4. A near-duplicate tree ---------------------------------------------------
+# --- 4. An .xz stream ------------------------------------------------------------
+# Opaque to the engine until 2026-11-07: a .tar.xz cost more through it than the tar did. The
+# transform now inflates it and rebuilds the stream from a recipe read out of its own block
+# header, so the property to assert is that the layer bit is set AND that the archive beats
+# storing the stream.
+emit_inline_xz() {
+  python3 - "$1" <<'PYEOF'
+import lzma, sys
+data = (b"the quick brown fox jumps over the lazy dog. " * 4000)
+open(sys.argv[1], "wb").write(lzma.compress(data, preset=6))
+PYEOF
+}
+if command -v python3 >/dev/null 2>&1; then
+  emit_inline_xz "$TMP/small.tar.xz"
+  "$BIN" -9 -f -o "$TMP/xz.dr" "$TMP/small.tar.xz" 2>/dev/null
+  "$BIN" -9 --no-precomp -f -o "$TMP/xz_raw.dr" "$TMP/small.tar.xz" 2>/dev/null
+  layers3=$(od -An -tu1 -j8 -N1 "$TMP/xz.dr" | tr -d ' ')
+  [ "$(( layers3 & 2 ))" -ne 0 ] \
+    && ok "xz stream: the layer bit is set" \
+    || bad "xz stream: layer bit not set (layers3=$layers3)"
+  xz_size=$(stat -c%s "$TMP/xz.dr"); xz_raw=$(stat -c%s "$TMP/xz_raw.dr")
+  [ "$xz_size" -lt "$xz_raw" ] \
+    && ok "xz stream: $xz_size against $xz_raw opaque" \
+    || bad "xz stream: the transform did not help ($xz_size >= $xz_raw)"
+  "$BIN" -d -f -o "$TMP/xz.out" "$TMP/xz.dr" 2>/dev/null
+  cmp -s "$TMP/small.tar.xz" "$TMP/xz.out" \
+    && ok "xz stream: byte-exact" || bad "xz stream: round trip differs"
+else
+  echo "  (skipped the xz case: no python3 to build the fixture)"
+fi
+
+# --- 5. A near-duplicate tree ---------------------------------------------------
 # The shape a game ships: the same asset a thousand times with a few bytes changed. The
 # match finder and the dedup stage are what handle it, and the archive should be a
 # fraction of the input rather than a copy of it.

@@ -49,7 +49,7 @@ Every row round-trips byte-exactly. Full tables, the audit and the rejected idea
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-ctest --test-dir build        # 34 suites, ~4 minutes
+ctest --test-dir build        # 35 suites, ~4 minutes
 ```
 
 Linux and Windows. macOS is not supported. The long form — vendor-by-vendor builds, the zig
@@ -63,7 +63,8 @@ adaptive), range, static Huffman, BWT (libbsc), PPMd, an LZMA2 fallback that gua
 is never much worse than `xz` — it declines the full run only when a sample says it is more than 20%
 out of reach (`FINDINGS.md` §3f) — and context mixing under `--max-ratio`. Above them sit eighteen Layer 0
 transforms — container inflation (ZIP, gzip, PDF), base64, spreadsheet cells, CSV columns, WAV PCM,
-SQLite pages, CD-sector Reed-Solomon parity, and PNG/JPEG/GIF/BMP one level down inside archives.
+SQLite pages, CD-sector Reed-Solomon parity, PNG/JPEG/GIF/BMP one level down inside archives, and an `.xz` stream rebuilt from a recipe read out
+of its own block header.
 
 Each block carries its own SHA-256, the stream carries a manifest digest, and a `true_size` field
 makes the decoded length an exact check rather than a heuristic. The trailer also carries a

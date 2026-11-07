@@ -30,6 +30,7 @@
 #include "precompressors/ecc_wrap.hpp"
 #include "precompressors/bmp_wrap.hpp"
 #include "precompressors/gzip_wrap.hpp"
+#include "precompressors/xz_wrap.hpp"
 #include "precompressors/jpeg_wrap.hpp"
 #include "plugin_host.hpp"
 #include "precompressors/preflate_wrap.hpp"
@@ -1002,6 +1003,22 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
     }
   }
 
+  // Layer 0c — xz. The same shape as gzip: a container the block loop cannot see into, so it
+  // is inflated and the stream is rebuilt from a recipe read out of its own block header.
+  // Tried only when neither precomp nor gzip fired, because all three are alternatives — a
+  // file is one of them, not several.
+  bool xz = false;
+  if (!precomp && !gzip && opt.precomp && xz_available() && !stage0.empty()) {
+    std::vector<uint8_t> payload;
+    const std::vector<uint8_t> in(stage0.begin(), stage0.end());
+    if (xz_likely(in) && xz_unpack(in, payload) &&
+        precomp_helps(std::span<const uint8_t>(payload), stage0)) {
+      gate_structural = payload.size() >= stage0.size() * 2;
+      precomp_payload = std::move(payload);
+      xz = true;
+    }
+  }
+
   // Layer 0 — recursion. A container inside a container is the common case: a
   // .tar.gz holding an .xlsx, a ZIP holding a CSV, a PDF holding a ZIP. The chain
   // above runs once, so it stops at the first boundary and the transform that
@@ -1123,7 +1140,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
 
   // Every Layer 0 bit the stream carries, built once so the three encode paths
   // cannot disagree about which transforms were applied.
-  const uint8_t layers3 = (bmp_nested ? kLayer3BmpNested : 0);
+  const uint8_t layers3 = (bmp_nested ? kLayer3BmpNested : 0) | (xz ? kLayer3Xz : 0);
   const uint8_t layers2 = (sqlite ? kLayer2Sqlite : 0) |
                           (base64_nested ? kLayer2Base64Nested : 0) |
                           (jpeg_nested ? kLayer2JpegNested : 0) |
@@ -1149,7 +1166,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // applied, otherwise the original. The flag and the data must agree or the
   // decoder will run the inverse transform on bytes that never had it.
   std::span<const uint8_t> data =
-      (precomp || gzip) ? std::span<const uint8_t>(precomp_payload) : stage0;
+      (precomp || gzip || xz) ? std::span<const uint8_t>(precomp_payload) : stage0;
   const bool bcj = opt.bcj && bcj_x86_likely(data) && bcj_helps(data);
   if (bcj) {
     transformed.assign(data.begin(), data.end());

@@ -164,9 +164,14 @@ enum LayerFlags3 : uint8_t {
   // another DEFLATE stream, and the colour-plane split takes the archive from 120,878 to
   // 1,206 bytes on the fixture that motivated it (-99.0%).
   kLayer3BmpNested = 1u << 0,
+  // An .xz stream inflated, with the stream rebuilt from a recipe read out of its own block
+  // header: dictionary size, integrity type, and whether the encoder was in extreme mode.
+  // Measured headroom is 16.9% on a .tar.xz, and the recipe is proven against a different
+  // liblzma version in tests/benchmark/xz_probe.cpp and FINDINGS.md §3h.
+  kLayer3Xz = 1u << 1,
 };
 
-inline constexpr uint8_t kLayerMask3 = kLayer3BmpNested;
+inline constexpr uint8_t kLayerMask3 = kLayer3BmpNested | kLayer3Xz;
 
 inline constexpr uint8_t kLayerMask2 =
     kLayer2Sqlite | kLayer2Base64Nested | kLayer2JpegNested | kLayer2GifNested |

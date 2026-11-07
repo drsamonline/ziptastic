@@ -1,7 +1,7 @@
 # Test suite. Each unit test is its own executable with TEST_MAIN() inside,
 # registered with CTest. Integration tests are shell scripts driving the CLI.
 
-set(CHCE_UNIT_TESTS varint header lzma2 match_finder parser rans range_coder bcj coarse_index huffman bwt zpaq ppmd dedup jpeg gif numeric xml_numeric base64 gzip wav sqlite png ecc bmp defaults containers integrity offsets roundtrip fuzz)
+set(CHCE_UNIT_TESTS varint header lzma2 match_finder parser rans range_coder bcj coarse_index huffman bwt zpaq ppmd dedup jpeg gif numeric xml_numeric base64 gzip xz wav sqlite png ecc bmp defaults containers integrity offsets roundtrip fuzz)
 
 foreach(t ${CHCE_UNIT_TESTS})
   add_executable(test_${t} unit/test_${t}.cpp)
@@ -11,6 +11,11 @@ foreach(t ${CHCE_UNIT_TESTS})
     ${CMAKE_CURRENT_SOURCE_DIR})
   add_test(NAME unit.${t} COMMAND test_${t})
 endforeach()
+
+# test_xz builds its own .xz fixtures with liblzma, so the fixture is the encoder's own output
+# rather than a checked-in binary that would stop testing it.
+target_link_libraries(test_xz PRIVATE liblzma)
+target_include_directories(test_xz PRIVATE ${XZ_DIR}/src/liblzma/api)
 
 if(UNIX)
   target_compile_definitions(test_jpeg PRIVATE

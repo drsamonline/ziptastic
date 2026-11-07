@@ -456,7 +456,8 @@ That reorders the work. `.xz` first (header read, no search, `liblzma` already v
 (four candidates, needs a decoder the tree does not have), `.br` last (quality 11 costs 2.5 s to
 confirm and the header does not carry the quality).
 
-**Not built.** What is still missing is a stream from a *different encoder version* — everything here
+**Partly built** — `.xz` is done, above. What is still missing for `.zst` and `.br` is a stream from a
+*different encoder version* — everything here
 came from the same libraries, and a zstd 1.4 stream may not be reproducible by a zstd 1.5 encoder at
 the same level. That is the remaining unknown, and it needs real-world files, not generated ones.
 
@@ -489,6 +490,33 @@ Two details worth having:
 - `extreme` does change the bytes (156,380 against 156,328), so the recipe needs that bit.
 
 This does not build the transform; it removes the reason it might not work.
+
+### The `.xz` transform, built (2026-11-07)
+
+`src/precompressors/xz_wrap.cpp`, `kLayer3Xz` in `layers3`, `unit.xz` in the suite. Measured on a
+522,240-byte tar of this project's documentation, compressed to 156,796 bytes at preset 6:
+
+| what | bytes |
+|---|---|
+| the tar itself, `-9` | 130,435 |
+| the `.tar.xz` before this transform (opaque, plus framing) | 156,904 |
+| the `.tar.xz` now | **130,449** |
+
+**−16.9%**, and within 14 bytes of simply having the tar — which is what the headroom predicted. The
+round trip is byte-exact, `layers3` reads `0x02`, and the transform costs one inflate plus one or two
+trial encodes: 2.6 s → 3.4 s on this fixture.
+
+Three things the build changed about the recipe, each found by a test rather than by reasoning:
+
+- **The dictionary size alone is not the recipe.** A preset-0 stream uses a different match finder,
+  not just a different dictionary, so it cannot be reproduced by a preset-6 encoder with the size
+  forced. The payload carries a preset byte as well.
+- **Which costs nothing to find**, because the dictionary size narrows the preset to at most two
+  candidates — the presets' default dictionary sizes collide only in pairs (4 MiB is 3 and 4, 8 MiB
+  is 5 and 6). So the recipe is dictionary size, integrity type, preset byte, and one bit for
+  `extreme`; finding it is one or two trial encodes, not a search.
+- **The encoder rebuilds from its own payload and compares before returning it.** A payload that does
+  not round-trip through its own reader is discarded, so a wrong recipe costs ratio and never data.
 
 ## 4. Container payloads: what the nested transforms actually do
 

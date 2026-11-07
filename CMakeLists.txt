@@ -278,6 +278,7 @@ add_library(chce_core STATIC
   src/precompressors/ecc_wrap.cpp
   src/precompressors/bmp_wrap.cpp
   src/precompressors/dedup.cpp
+  src/precompressors/xz_wrap.cpp
   src/dedup/coarse_index.cpp
   src/entropy/token_coder.cpp
   src/codecs/lzma2_fallback.cpp

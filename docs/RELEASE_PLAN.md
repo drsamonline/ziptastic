@@ -142,7 +142,11 @@ transform ships at all — **answered 2026-11-04**: a full search over settings 
 compression, a two-entry shortlist costs 0.5 s for zstd and 1.2 s for xz. A ten-stream corpus from
 different producer shapes then reordered the work again:
 
-1. **`.xz` first.** Its dictionary size is in the block header, so recovery is a *read* and not a
+1. ~~**`.xz` first.**~~ **Done, 2026-11-07.** `xz_wrap.cpp`, `kLayer3Xz`, `unit.xz`: a `.tar.xz` of
+   156,904 bytes now archives to **130,449** against 130,435 for the tar itself, −16.9% on the
+   measured fixture, byte-exact. The recipe is dictionary size, integrity type, a preset byte and an
+   `extreme` bit; finding it is one or two trial encodes. `FINDINGS.md` §3h.
+   Its dictionary size is in the block header, so recovery is a *read* and not a
    search — and reading it reproduced every stream tested byte-exactly, including one a shortlist
    missed. `liblzma` is already vendored. **Proved in-tree 2026-11-07**: `tests/benchmark/xz_probe.cpp`
    decodes, reads the dictionary size from the header, and re-encodes byte-identically at presets 0, 6
