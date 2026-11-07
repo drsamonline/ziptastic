@@ -279,6 +279,7 @@ add_library(chce_core STATIC
   src/precompressors/bmp_wrap.cpp
   src/precompressors/dedup.cpp
   src/precompressors/xz_wrap.cpp
+  src/precompressors/brotli_wrap.cpp
   src/dedup/coarse_index.cpp
   src/entropy/token_coder.cpp
   src/codecs/lzma2_fallback.cpp
@@ -289,7 +290,7 @@ target_include_directories(chce_core
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(chce_core PRIVATE liblzma preflate_shim bsc_vendor zpaq_vendor ppmd_vendor brunsli_vendor Threads::Threads ${CMAKE_DL_LIBS})
+target_link_libraries(chce_core PRIVATE liblzma preflate_shim bsc_vendor zpaq_vendor ppmd_vendor brunsli_vendor brotli_vendor Threads::Threads ${CMAKE_DL_LIBS})
 target_include_directories(chce_core PRIVATE ${XZ_DIR}/src/liblzma/api)
 
 if(MSVC)

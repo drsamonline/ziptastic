@@ -491,6 +491,36 @@ Two details worth having:
 
 This does not build the transform; it removes the reason it might not work.
 
+### The `.br` transform, built (2026-11-07)
+
+Brotli is the second of the three opaque containers, and it is harder than `.xz` in two ways that
+shaped the code:
+
+- **It has no magic number.** There is nothing to recognise, so the only test is "does it decode" —
+  and then "does it rebuild byte for byte", because a decode alone proves nothing about the bytes
+  we were given.
+- **The quality is not in the stream.** The header carries the window size and nothing else. So the
+  producing settings are guessed from a shortlist of six (quality 11 at windows 22 and 24, 11 text,
+  9, 5, 1) and confirmed by re-encoding. A stream from a setting outside that list is declined.
+
+Measured on a 542,720-byte tar of this project's docs:
+
+| stream | bytes | through the engine | after |
+|---|---|---|---|
+| the tar itself | 542,720 | 136,291 | — |
+| `.tar.br` at quality 11 | 159,883 | 159,975 | **136,299 (−14.8%)** |
+| `.tar.br` at quality 9 | 174,949 | 175,041 | **136,299 (−22.1%)** |
+| `.tar.br` at quality 5 | 184,622 | 184,714 | **136,299 (−26.2%)** |
+| `.tar.br` at quality 1 | 216,913 | 217,005 | **136,299 (−37.2%)** |
+
+All four qualities were recovered by the shortlist, `layers3` reads `0x04`, and every one lands
+within 8 bytes of simply having the tar. The lower the quality, the bigger the win — which is the
+point: the engine was paying for someone else's faster encoder with archive size.
+
+`unit.brotli` covers the three ways this can go wrong: a quality outside the shortlist must decline
+rather than guess, random bytes must not be accepted as brotli, and a stream with a tail appended
+must be refused because treating it as bare brotli would drop the tail.
+
 ### bzip2, measured before anything is built (2026-11-07)
 
 A `.bz2` is opaque to this engine for the same reason `.xz` was, and it is the one remaining

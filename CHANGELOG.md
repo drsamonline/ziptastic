@@ -9,6 +9,16 @@ short version: what changed, and what it cost.
 
 ---
 
+## Unreleased
+
+### Added
+
+- **A `.br` transform.** Brotli has no magic number and does not record its quality, so the
+  transform decodes, guesses the producing settings from a shortlist of six, and keeps the guess only
+  if re-encoding reproduces the stream byte for byte. On a 542,720-byte tar: a quality-11 `.tar.br`
+  went from 159,975 bytes through the engine to **136,299** (−14.8%), and a quality-1 one from
+  217,005 to the same 136,299 (−37.2%). `unit.brotli` in the suite; 36 suites now.
+
 ## 1.3.0 — 2026-11-07
 
 ### Added
