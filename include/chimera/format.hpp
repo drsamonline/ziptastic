@@ -173,9 +173,14 @@ enum LayerFlags3 : uint8_t {
   // confirmed by re-encoding. Measured headroom 14.7% on a .tar.br; brotli has no magic number, so
   // the only test is that the stream decodes and rebuilds byte for byte.
   kLayer3Brotli = 1u << 2,
+  // A zstd stream inflated, with the producing level and framing recovered by trial and confirmed
+  // by re-encoding. Framing matters: a stream written to a pipe omits its content size, so no
+  // seekable encode reproduces it. Measured headroom 22.7% on a .tar.zst, the largest of the three.
+  kLayer3Zstd = 1u << 3,
 };
 
-inline constexpr uint8_t kLayerMask3 = kLayer3BmpNested | kLayer3Xz | kLayer3Brotli;
+inline constexpr uint8_t kLayerMask3 =
+    kLayer3BmpNested | kLayer3Xz | kLayer3Brotli | kLayer3Zstd;
 
 inline constexpr uint8_t kLayerMask2 =
     kLayer2Sqlite | kLayer2Base64Nested | kLayer2JpegNested | kLayer2GifNested |

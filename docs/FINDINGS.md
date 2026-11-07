@@ -521,6 +521,31 @@ point: the engine was paying for someone else's faster encoder with archive size
 rather than guess, random bytes must not be accepted as brotli, and a stream with a tail appended
 must be refused because treating it as bare brotli would drop the tail.
 
+### The `.zst` transform, built (2026-11-07)
+
+The last of the three opaque containers, and the only one that needed a dependency: `zstd` was not in
+the tree, so `vendor/hcs/old/zstd` is new — BSD-3-Clause, trimmed to `common/compress/decompress` and
+three headers, 2.1 MB, built with `ZSTD_DISABLE_ASM` because vendoring the hand-written Huffman
+assembly across three toolchains cost more than the few percent it buys.
+
+Measured on a 542,720-byte tar of this project's docs:
+
+| stream | bytes | through the engine | after |
+|---|---|---|---|
+| the tar itself | 542,720 | 136,676 | — |
+| `.tar.zst` at level 3, seekable | 195,983 | 196,091 | **136,683 (−30.3%)** |
+| `.tar.zst` at level 19, seekable | 167,622 | 167,730 | **136,683 (−18.5%)** |
+| `.tar.zst` at level 3, **piped** | 195,980 | 196,088 | **136,683 (−30.3%)** |
+
+`layers3` reads `0x08` in all three and every one lands within 7 bytes of the tar itself.
+
+**The piped case is the one worth reading.** A zstd encoder writing to a non-seekable output omits
+the content size from the frame header, and its block boundaries follow whatever chunking the writer
+used — so a one-shot re-encode at the same level does not reproduce it. The first version of this
+transform therefore declined every piped stream, which is why the encoder now feeds its input in
+128 KiB chunks, matching zstd's default block size. That is what a writer with default buffering
+produces, and with it all three cases above are recovered.
+
 ### bzip2, measured before anything is built (2026-11-07)
 
 A `.bz2` is opaque to this engine for the same reason `.xz` was, and it is the one remaining

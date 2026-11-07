@@ -13,6 +13,13 @@ short version: what changed, and what it cost.
 
 ### Added
 
+- **A `.zst` transform**, the last of the three opaque containers and the largest gap of them. On a
+  542,720-byte tar: a level-3 `.tar.zst` went from 196,091 bytes through the engine to **136,683**
+  (−30.3%) and a level-19 one from 167,730 to the same 136,683 (−18.5%), including the **piped**
+  framing, which needed the encoder to feed its input in 128 KiB chunks to match a writer's block
+  boundaries. Vendors `zstd` (BSD-3-Clause, trimmed, `ZSTD_DISABLE_ASM`). `unit.zstd` in the suite;
+  37 suites now.
+
 - **A `.br` transform.** Brotli has no magic number and does not record its quality, so the
   transform decodes, guesses the producing settings from a shortlist of six, and keeps the guess only
   if re-encoding reproduces the stream byte for byte. On a 542,720-byte tar: a quality-11 `.tar.br`

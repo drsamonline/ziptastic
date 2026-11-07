@@ -1,7 +1,7 @@
 name: ci
 
 # A cold-start build and the full suite, on every push. The vendor-check job proves the sources
-# materialise; this one proves they compile and that the 36 suites pass.
+# materialise; this one proves they compile and that the 37 suites pass.
 #
 # The build is deliberately not parallel-bombed: the vendored brunsli and brotli are large
 # translation units, and a 2-core runner is what this project is developed on, so the CI runner

@@ -201,6 +201,24 @@ find_package(Threads REQUIRED)
 # allowed with C".
 # ---------------------------------------------------------------------------
 set(CONTRIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/hcs/old/precomp-cpp-master/contrib)
+# zstd, trimmed to the library: common, compress, decompress and the three public headers.
+# Vendored 2026-11-07 (BSD-3-Clause) for the .zst transform, which is the last of the opaque
+# containers and the only one whose decoder the tree did not already have.
+file(GLOB ZSTD_SRC
+  ${CMAKE_CURRENT_SOURCE_DIR}/vendor/hcs/old/zstd/common/*.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/vendor/hcs/old/zstd/compress/*.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/vendor/hcs/old/zstd/decompress/*.c)
+# zstd's fast Huffman loops are hand-written assembly that the C path calls into when it is
+# compiled for x86-64. Building that .S here was fighting the toolchain across three platforms, so
+# the C path is forced instead: `ZSTD_DISABLE_ASM`. Decode is slower by a few percent and correct,
+# which is the right trade for a vendored decoder whose job is the recipe, not the last 3%.
+add_library(zstd_vendor STATIC ${ZSTD_SRC})
+target_include_directories(zstd_vendor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/vendor/hcs/old/zstd)
+target_compile_definitions(zstd_vendor PRIVATE ZSTD_DISABLE_ASM)
+if(NOT MSVC)
+  target_compile_options(zstd_vendor PRIVATE -w)
+endif()
+
 file(GLOB BROTLI_SRC ${CONTRIB_DIR}/brotli/c/*/*.c)
 add_library(brotli_vendor STATIC ${BROTLI_SRC})
 target_include_directories(brotli_vendor PUBLIC
@@ -280,6 +298,7 @@ add_library(chce_core STATIC
   src/precompressors/dedup.cpp
   src/precompressors/xz_wrap.cpp
   src/precompressors/brotli_wrap.cpp
+  src/precompressors/zstd_wrap.cpp
   src/dedup/coarse_index.cpp
   src/entropy/token_coder.cpp
   src/codecs/lzma2_fallback.cpp
@@ -290,7 +309,7 @@ target_include_directories(chce_core
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(chce_core PRIVATE liblzma preflate_shim bsc_vendor zpaq_vendor ppmd_vendor brunsli_vendor brotli_vendor Threads::Threads ${CMAKE_DL_LIBS})
+target_link_libraries(chce_core PRIVATE liblzma preflate_shim bsc_vendor zpaq_vendor ppmd_vendor brunsli_vendor brotli_vendor zstd_vendor Threads::Threads ${CMAKE_DL_LIBS})
 target_include_directories(chce_core PRIVATE ${XZ_DIR}/src/liblzma/api)
 
 if(MSVC)
