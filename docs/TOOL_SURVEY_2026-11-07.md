@@ -68,6 +68,11 @@ mkclean mozjpegtran mp3packer mp4file mutool optipng pingo pngout pngquant pngre
 rehuff rehuff_theora shntool sqlite3 strip tidy upx zRecompress
 ```
 
+**bzip2 is on that list and is now measured**: a `.tar.bz2` costs the engine 9.7% more than the tar
+does, and its level is in its own header (`BZh9…`), so the recipe would be one byte — but `libbz2` is
+not vendored and `.tar.bz2` is rarer than `.tar.xz`, so it is recorded and not built
+(`FINDINGS.md` §3h).
+
 Four of these are formats ziptastic already transforms (PNG, JPEG, GIF, BMP). Three are formats it
 does not and that have a known optimiser: **MP3** (`mp3packer`), **FLAC** (`flac`), **PDF**
 (`cpdfsqueeze`, `mutool`), plus **CSS/HTML** (`csstidy`, `tidy`) and **SQLite** (`sqlite3`, which this

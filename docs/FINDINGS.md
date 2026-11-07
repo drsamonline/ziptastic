@@ -491,6 +491,27 @@ Two details worth having:
 
 This does not build the transform; it removes the reason it might not work.
 
+### bzip2, measured before anything is built (2026-11-07)
+
+A `.bz2` is opaque to this engine for the same reason `.xz` was, and it is the one remaining
+container where the recipe question has a trivial answer: **the level is in the file's own header**,
+as the digit in `BZh9…`. Measured on the same 532,480-byte tar:
+
+| what | bytes |
+|---|---|
+| the tar itself, `-9` | 132,541 |
+| the `.tar.bz2` at level 9 today (opaque, plus framing) | 146,804 |
+| headroom if it could see inside | **−9.7%** |
+
+And the recipe would be one byte: re-encoding at the same level reproduces both a level-1 and a
+level-9 stream byte for byte, and at the other level reproduces neither — so the header digit is
+exactly the parameter, and no search is needed at all.
+
+**Not built, and not obviously worth building.** 9.7% is half what `.xz` was worth, and unlike `.xz`
+it needs a dependency the tree does not have: `libbz2` is not vendored (the `bzip3` submodule in
+`vendor/hcs/old` is a different format and is empty). A `.tar.bz2` is also rarer than it was, and
+rarer than `.tar.xz` is now. Recorded so the number exists if it ever comes up.
+
 ### The `.xz` transform, built (2026-11-07)
 
 `src/precompressors/xz_wrap.cpp`, `kLayer3Xz` in `layers3`, `unit.xz` in the suite. Measured on a
