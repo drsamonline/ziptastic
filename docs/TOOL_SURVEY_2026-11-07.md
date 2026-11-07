@@ -73,7 +73,10 @@ does, and its level is in its own header (`BZh9…`), so the recipe would be one
 not vendored and `.tar.bz2` is rarer than `.tar.xz`, so it is recorded and not built
 (`FINDINGS.md` §3h).
 
-Four of these are formats ziptastic already transforms (PNG, JPEG, GIF, BMP). Three are formats it
+Four of these are formats ziptastic already transforms (PNG, JPEG, GIF, BMP), and two more on the
+list turned out to be covered after all: **PDF** is reached by `precomp`, and a **SWF**'s zlib body
+compresses better through the backend than its own decoded content does, so neither needs a transform
+on the evidence measured (`FINDINGS.md` §3h). MP3 and FLAC remain genuinely untested. Three are formats it
 does not and that have a known optimiser: **MP3** (`mp3packer`), **FLAC** (`flac`), **PDF**
 (`cpdfsqueeze`, `mutool`), plus **CSS/HTML** (`csstidy`, `tidy`) and **SQLite** (`sqlite3`, which this
 engine does handle as a page reordering). That is a candidate list with prior evidence behind it,

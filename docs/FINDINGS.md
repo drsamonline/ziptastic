@@ -546,6 +546,36 @@ transform therefore declined every piped stream, which is why the encoder now fe
 128 KiB chunks, matching zstd's default block size. That is what a writer with default buffering
 produces, and with it all three cases above are recovered.
 
+### Two of the four "missing formats" were not missing (2026-11-07)
+
+The tool survey listed four formats with prior evidence and no transform here: MP3, FLAC, PDF and
+SWF. Two of them turned out not to be gaps at all, which is why this was measured before anything was
+built.
+
+| file | bytes | through the engine | what fired |
+|---|---|---|---|
+| a PDF with one FlateDecode stream | 471 | 330 | **precomp** (`flags 0x05`) |
+| the same PDF's decoded content | 90,031 | 226 | — |
+| an uncompressed SWF (`FWS`) | 135,016 | — | not measured, nobody ships these |
+| the same SWF zlib-compressed (`CWS`) | 479 | **198** | no transform |
+| that SWF's decoded body | 135,000 | 216 | — |
+
+**PDF is already covered.** `scan_pdf` reaches the content stream, precomp fires, and 330 bytes
+against 226 for the bare content is the container framing plus the precompressed stream — close to
+optimal.
+
+**SWF is covered by accident, and well.** No transform fires on a `CWS`, and none needs to: the file
+is 198 bytes against 216 for its *decoded* body, because the backend compresses the DEFLATE stream
+itself harder than it compresses the text that stream contains. A dedicated SWF transform would have
+to beat that, and on this fixture there is nothing to beat.
+
+**The caveat, stated because it is large**: both fixtures are synthetic and small. A real PDF has
+many streams and images; a real SWF is megabytes of mixed assets. These numbers say "do not build a
+PDF or SWF transform on the strength of a guess", not "there is no gap". A real corpus of each would
+settle it, and that is a download this session did not do.
+
+**MP3 and FLAC remain unmeasured** — no fixtures here, and both need a real encoder to make one.
+
 ### bzip2, measured before anything is built (2026-11-07)
 
 A `.bz2` is opaque to this engine for the same reason `.xz` was, and it is the one remaining
