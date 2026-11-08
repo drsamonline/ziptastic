@@ -121,6 +121,10 @@ bool gzip_unpack(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload) 
       SpanStream stream(in.data() + data, in.size() - data);
       ok = preflate_decode(inflated, diff, deflate_size, stream, []() {}, 1);
     } catch (...) {
+    // TODO(audit-2026-11-08): swallows every exception and falls back to the native path. That is
+    // correct here — the fallback always produces a valid archive — but nothing counts how often
+    // it happens, so a codec that fails on every input looks identical to one that never fails.
+
       return false;
     }
     if (!ok || deflate_size == 0) return false;
@@ -215,6 +219,10 @@ bool gzip_repack(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out)
     try {
       ok = preflate_reencode(raw, diff, inflated);
     } catch (...) {
+    // TODO(audit-2026-11-08): swallows every exception and falls back to the native path. That is
+    // correct here — the fallback always produces a valid archive — but nothing counts how often
+    // it happens, so a codec that fails on every input looks identical to one that never fails.
+
       return false;
     }
     if (!ok) return false;

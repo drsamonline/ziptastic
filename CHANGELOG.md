@@ -9,6 +9,31 @@ short version: what changed, and what it cost.
 
 ---
 
+## 1.4.1 — 2026-11-08
+
+### Fixed
+
+- **The compressor had no inflate cap of its own.** The three container transforms capped inflation
+  at a flat 4 GiB and the compressor allocated up to it, while the decompressor has always used a
+  relative cap. A 28,971-byte `.zst` inflating to 900 MB took the old build down; it now declines and
+  stores the stream opaquely, peaking at ~524 MB instead of asking for 4 GiB. The cap is
+  `max(input × 4096, 256 MiB)` in all three — the decoder's policy with a floor, so a 6 KB stream
+  inflating to 200 MB (a tar of zeros) still transforms. (`FINDINGS.md` §6c)
+- **Base64 offered itself on a binary scanned PDF.** The detector accepted any single run of 32
+  alphabet bytes, and a PDF dictionary supplies one; on a 7.4 MB scan that produced `layers 0x10` and
+  a wasted trial. It now requires the alphabet to cover at least 1/64 of the file, so a real base64
+  file still fires and a 32-byte accident in 7 MB does not.
+- **A short encode now reports itself.** `brotli_wrap` and `zstd_wrap` relied on the re-encode
+  verifier to notice a stream that never reached FINISH. Both now say so where the cause is known.
+- **`expansion_cap` is saturating rather than wrapping.** It multiplies an attacker-supplied
+  `true_size`; the old wrap rejected by accident, and now it cannot wrap at all.
+
+### Added
+
+- **A marker convention.** `TODO(name-date): what and why`, documented in `BUILD.md`, and the six
+  `catch (...)` blocks that swallow everything are marked with it. There were zero markers in 12,460
+  lines before today, which is why the audit found three things a grep should have.
+
 ## 1.4.0 — 2026-11-08
 
 ### Added

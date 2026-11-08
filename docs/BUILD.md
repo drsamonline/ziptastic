@@ -3,6 +3,16 @@
 Written 2026-11-04. The recipe that actually works, because until now it lived only in a session
 log and cost many hours to reconstruct.
 
+## Markers
+
+`TODO(name-date): what and why` is the convention. Not `FIXME`, not bare `TODO` — the tag says who
+left it and when, and `grep -rn "TODO(" src include` is the whole backlog.
+
+There were zero markers in 12,460 lines before 2026-11-08, and the audit that day produced three
+things a marker would have made findable: two container encoders that treated a short encode as
+failure only implicitly, and six `catch (...)` blocks that swallow everything without counting it.
+The first two are fixed; the third is marked.
+
 ## What you need
 
 - **CMake ≥ 3.25**, **Ninja**, and a **C++20** compiler.
@@ -110,7 +120,7 @@ supported.
 
 ```
 $ ./build/ziptastic version
-ziptastic 1.4.0 (CHCE format v8)
+ziptastic 1.4.1 (CHCE format v8)
 
 $ head -c 200000 /dev/urandom > t.bin
 $ ./build/ziptastic c -9 t.bin            # writes t.bin.dr

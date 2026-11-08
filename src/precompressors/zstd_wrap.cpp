@@ -100,6 +100,9 @@ bool encode(const std::vector<uint8_t>& raw, int level, bool streaming, std::vec
         ZSTD_inBuffer empty{raw.data(), 0, 0};
         r = ZSTD_compressStream2(cs, &ob, &empty, ZSTD_e_end);
       }
+      // `r` is the number of bytes still to flush: anything but zero means the frame never ended.
+      // Reported here rather than left for the verifier to notice as a mismatch.
+      if (!ZSTD_isError(r) && r != 0) ok = false;
       n = ZSTD_isError(r) ? r : ob.pos;
     } else {
       n = ZSTD_compress2(cs, out.data(), out.size(), raw.data(), raw.size());

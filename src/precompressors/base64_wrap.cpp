@@ -153,15 +153,26 @@ bool base64_available() { return true; }
 
 bool base64_likely(std::span<const uint8_t> in) {
   if (in.size() < kMinRun) return false;
+
+  // One run of 32 alphabet bytes is not evidence of base64. A 7.4 MB scanned PDF was measured firing
+  // this transform (layers 0x10) because a PDF dictionary happened to contain such a run, and the
+  // only thing it produced was a wasted trial. What actually marks base64 is that the alphabet
+  // *dominates* the file, so the test is aggregate coverage rather than the longest run.
+  //
+  // The bar is 1/64 of the input: a 100 KB HTML with a 1.6 KB embedded blob still passes, and a
+  // 32-byte accident in a 7 MB file does not.
+  size_t covered = 0;
   size_t run = 0;
   for (size_t i = 0; i < in.size(); ++i) {
     if (b64_value(in[i]) >= 0) {
-      if (++run >= kMinRun) return true;
-    } else if (in[i] != '=') {
-      run = 0;
+      ++run;
+    } else {
+      if (in[i] != '=' && run >= kMinRun) covered += run;
+      if (in[i] != '=') run = 0;
     }
   }
-  return false;
+  if (run >= kMinRun) covered += run;
+  return covered >= kMinRun && covered * 64 >= in.size();
 }
 
 bool base64_pack(std::span<const uint8_t> in, std::vector<uint8_t>& packed) {

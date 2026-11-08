@@ -88,6 +88,7 @@ bool encode(const std::vector<uint8_t>& raw, uint8_t quality, uint8_t mode, uint
   bool ok = BrotliEncoderSetParameter(st, BROTLI_PARAM_QUALITY, quality) == BROTLI_TRUE &&
             BrotliEncoderSetParameter(st, BROTLI_PARAM_MODE, mode) == BROTLI_TRUE &&
             BrotliEncoderSetParameter(st, BROTLI_PARAM_LGWIN, lgwin) == BROTLI_TRUE;
+  bool finished = false;
   if (ok) {
     const uint8_t* next_in = raw.data();
     size_t avail_in = raw.size();
@@ -101,9 +102,17 @@ bool encode(const std::vector<uint8_t>& raw, uint8_t quality, uint8_t mode, uint
         break;
       }
       out.insert(out.end(), buf, next_out);
-      if (BrotliEncoderIsFinished(st) == BROTLI_TRUE) break;
+      if (BrotliEncoderIsFinished(st) == BROTLI_TRUE) {
+        finished = true;
+        break;
+      }
       if (avail_out != 0 && avail_in == 0 && BrotliEncoderHasMoreOutput(st) != BROTLI_TRUE) break;
     }
+    // A stream that never reached FINISH is a failure, not a short answer. The re-encode verifier
+    // would catch it later and decline the transform, so this fails safe either way — but it now
+    // says so here, where the cause is known, instead of leaving a truncated buffer to be diagnosed
+    // by a mismatch three functions away.
+    if (!finished) ok = false;
   }
   BrotliEncoderDestroyInstance(st);
   return ok;

@@ -33,6 +33,10 @@ bool zpaq_compress_block(const std::vector<uint8_t>& block, std::vector<uint8_t>
   try {
     libzpaq::compressBlock(&in, &packed, "5", nullptr, nullptr, false);
   } catch (...) {
+    // TODO(audit-2026-11-08): swallows every exception and falls back to the native path. That is
+    // correct here — the fallback always produces a valid archive — but nothing counts how often
+    // it happens, so a codec that fails on every input looks identical to one that never fails.
+
     return false;
   }
   if (packed.size() == 0) return false;
@@ -54,6 +58,10 @@ bool zpaq_decompress_block(const std::vector<uint8_t>& body, uint32_t out_size,
   try {
     libzpaq::decompress(&in, &unpacked);
   } catch (...) {
+    // TODO(audit-2026-11-08): swallows every exception and falls back to the native path. That is
+    // correct here — the fallback always produces a valid archive — but nothing counts how often
+    // it happens, so a codec that fails on every input looks identical to one that never fails.
+
     return false;
   }
   if (unpacked.size() != out_size) return false;

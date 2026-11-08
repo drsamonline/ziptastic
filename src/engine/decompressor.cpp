@@ -370,7 +370,12 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   // the nested transforms shrink it again. The chain is not monotonic toward the final
   // size — it goes up and comes back down — so intermediates need a ceiling above the
   // final, and only the last comparison can be `==`.
-  const uint64_t expansion_cap = fh.true_size * 4096 + (uint64_t{1} << 20);
+  // `true_size` is attacker-supplied. A plain multiply wraps, which happens to reject rather than
+  // accept — safe by accident. Saturating instead makes it safe by construction: the cap can only
+  // ever become *larger* than the true limit, and the final size comparison is exact anyway.
+  constexpr uint64_t kMaxCap = ~uint64_t{0} - (uint64_t{1} << 20);
+  const uint64_t expansion_cap =
+      fh.true_size > kMaxCap / 4096 ? kMaxCap : fh.true_size * 4096 + (uint64_t{1} << 20);
   auto within_cap = [&](const std::vector<uint8_t>& buf) {
     return static_cast<uint64_t>(buf.size()) <= expansion_cap;
   };

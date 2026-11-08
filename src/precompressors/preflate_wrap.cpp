@@ -64,6 +64,10 @@ bool parse_stream(const uint8_t* data, uint32_t comp_len, Stream& out) {
   try {
     ok = preflate_decode(inflated, diff, raw);
   } catch (...) {
+    // TODO(audit-2026-11-08): swallows every exception and falls back to the native path. That is
+    // correct here — the fallback always produces a valid archive — but nothing counts how often
+    // it happens, so a codec that fails on every input looks identical to one that never fails.
+
     return false;
   }
   if (!ok || inflated.empty()) return false;
@@ -380,6 +384,10 @@ bool preflate_repack(const std::vector<uint8_t>& payload, std::vector<uint8_t>& 
     try {
       ok = preflate_reencode(raw, diff, unpacked);
     } catch (...) {
+    // TODO(audit-2026-11-08): swallows every exception and falls back to the native path. That is
+    // correct here — the fallback always produces a valid archive — but nothing counts how often
+    // it happens, so a codec that fails on every input looks identical to one that never fails.
+
       return false;
     }
     if (!ok || raw.size() != e.comp_len) return false;
