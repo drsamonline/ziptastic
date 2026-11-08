@@ -709,10 +709,18 @@ Two smaller findings from the same run:
 - **MP3 is not opaque.** With no transform at all, `-9` takes 800,956 bytes to **580,980 (−27.5%)** —
   frame headers and Huffman-coded data have structure the backends find. Anything mp3packer-shaped
   would have to beat that, and the usual 5-10% for Huffman re-coding would not.
-- **BCJ false-fires on FLAC.** `flags 0x09` — the x86 branch converter offered itself on an audio
-  file and was accepted, because the payload is verified byte-exact and nothing else objected. It
-  costs time on every `.flac` for no gain. Worth a look: BCJ should probably require an x86-shaped
-  byte histogram before it is allowed to try.
+- **BCJ false-fired on FLAC, and now does not.** `flags 0x09` — the x86 branch converter offered
+  itself on an audio file and was accepted, because the payload is verified byte-exact and nothing
+  else objected. The cause: the detector counted E8/E9 bytes and required 0.3%, and *random* bytes
+  put them at 2/256 = 0.78%. Fixed by adding a byte-entropy test, which is the discriminator that
+  actually separates the classes — measured on real inputs, a stripped x86-64 binary sits at **6.54
+  bits**, text at 5.04, while FLAC and a scanned PDF sit at **7.84-7.99**, an `.xz` stream at 8.00
+  and raw 16-bit PCM at 7.91. The bar is 7.0.
+
+  The measurable effect is small and stated plainly: archive sizes are unchanged on every file
+  tried, and the time saved on two FLAC files was 0.3 s and 0.1 s — inside this box's noise. What
+  changed is that a `.flac` no longer *claims* an x86 filter it never had, and the detector now has
+  a signal that corresponds to real code rather than to a coincidence in the opcode byte.
 
 ### bzip2, measured before anything is built (2026-11-07)
 

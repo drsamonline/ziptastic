@@ -10,6 +10,39 @@ using namespace chce;
 namespace {
 
 // Synthetic x86-ish stream: CALL/JMP opcodes with relative displacements.
+// Real compiled code is *peaky*: a handful of opcodes dominate the histogram. The fixture below is
+// built from the byte sequences a compiler actually emits — prologues, mov/lea, the call opcodes and
+// their displacement tails — because the previous fixture was uniform random bytes with E8/E9 mixed
+// in, which no compiler produces and which the detector must now reject.
+std::vector<uint8_t> code_like(size_t n, uint64_t seed) {
+  static const uint8_t kOps[][4] = {
+      {0x55, 0x48, 0x89, 0xE5},  // push rbp; mov rbp, rsp
+      {0x48, 0x8B, 0x45, 0xF8},  // mov rax, [rbp-8]
+      {0x48, 0x89, 0x45, 0xF0},  // mov [rbp-16], rax
+      {0x48, 0x83, 0xC4, 0x08},  // add rsp, 8
+      {0x0F, 0x1F, 0x44, 0x00},  // nop dword [rax+rax]
+      {0x48, 0x8D, 0x3D, 0x00},  // lea rdi, [rip+0]
+      {0xE8, 0x00, 0x00, 0x00},  // call rel32
+      {0xE9, 0x00, 0x00, 0x00},  // jmp rel32
+      {0x5D, 0xC3, 0xCC, 0x90},  // pop rbp; ret; int3; nop
+      {0x48, 0x85, 0xC0, 0x74},  // test rax, rax; je
+  };
+  chce_test::Rng rng(seed);
+  std::vector<uint8_t> d;
+  d.reserve(n);
+  while (d.size() < n) {
+    const auto& op = kOps[rng.below(sizeof(kOps) / sizeof(kOps[0]))];
+    for (uint8_t b : op) d.push_back(b);
+    if (op[0] == 0xE8 || op[0] == 0xE9) {
+      const uint32_t v = static_cast<uint32_t>(rng.next() % 0xFFFF);
+      d.push_back(static_cast<uint8_t>(v));
+      d.push_back(static_cast<uint8_t>(v >> 8));
+    }
+  }
+  d.resize(n);
+  return d;
+}
+
 std::vector<uint8_t> x86_like(size_t n, uint64_t seed) {
   chce_test::Rng rng(seed);
   std::vector<uint8_t> d;
@@ -72,8 +105,14 @@ TEST(actually_transforms_code) {
 }
 
 TEST(detection) {
-  auto code = x86_like(100000, 5);
+  auto code = code_like(100000, 5);
   CHECK(bcj_x86_likely(code));
+
+  // The old fixture — uniform random bytes with 10% E8/E9 and 00/FF tails injected — is neither
+  // class: its entropy lands between real code and dense data, and no compiler emits it. It is left
+  // here as the invertibility fixture it was written to be, and deliberately *not* asserted either
+  // way, because an assertion about it would be an assertion about an accident. The two cases below
+  // are the ones that correspond to real inputs.
 
   chce_test::Rng rng(9);
   std::vector<uint8_t> text(100000);
@@ -82,6 +121,13 @@ TEST(detection) {
 
   std::vector<uint8_t> tiny(100, 0xE8);
   CHECK_MSG(!bcj_x86_likely(tiny), "a tiny buffer should not be classified");
+
+  // Already-compressed data: high entropy, so no amount of E8/E9 in it should attract the filter.
+  chce_test::Rng rng2(17);
+  std::vector<uint8_t> dense(200000);
+  for (auto& b : dense) b = rng2.byte();
+  for (size_t i = 0; i + 4 < dense.size(); i += 400) dense[i] = 0xE8;  // sprinkle the opcode
+  CHECK_MSG(!bcj_x86_likely(dense), "dense data with sprinkled call opcodes was accepted");
 }
 
 TEST_MAIN()
