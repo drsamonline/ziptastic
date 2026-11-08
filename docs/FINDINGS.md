@@ -1160,6 +1160,47 @@ The next attempt should start by reproducing the library failure in isolation �
 buffer, `decompress` out of it, one process, no CLI — and finding out what the CLI does differently.
 That is a session's work, not an afternoon's.
 
+## 6f. ALP, and the rest of the 2026-11-08 library list (2026-11-08)
+
+The list was mostly libraries already vendored or already measured — lz4, zstd, brotli, zpaq,
+zpaqfranz, 7-Zip-zstd, PeaZip, CompactGUI, awesome-compopt. Three were new enough to be worth a look,
+and one of them was worth measuring.
+
+**ALP (`spiraldb/alp`) is the one that could have mattered**, because this engine has a numeric
+transform for integers and a known-weak story for floats (`NUMERIC_RESIDUAL_EXPERIMENT.md`: XOR and
+Gorilla both lose on smooth data). ALP's idea is different from both: detect that a double is really
+a decimal with `e` digits, store `round(v × 10^e)` as an integer, and let the integer coder do the
+work. Measured on three 200,000-value float64 arrays, 1,600,000 bytes each:
+
+| shape | raw | ALP-style | XOR-with-previous |
+|---|---|---|---|
+| sensor readings, 2 decimal places | 281,956 | **279,466 (−0.9%)** | 390,072 (+38%) |
+| smooth sinusoid | **911,002** | n/a (no decimal fit) | 885,646 (−2.8%) |
+| noisy | **1,494,630** | n/a | 1,509,130 (+1.0%) |
+
+**−0.9% on the exact shape ALP exists for.** The reason is the same one that made the JBIG2 bound
+lose: the backends here already model the byte structure of a float64 — the exponent bytes are nearly
+constant and the mantissa carries the entropy — so a transform that separates them is largely telling
+the coder something it has already worked out. ALP's published 2-4x figures are against *float
+baselines that do no modelling*, not against a BWT/PPMd backend.
+
+XOR earns 2.8% on the smooth shape, which is better than the −0.6% this project measured for XOR in
+`NUMERIC_RESIDUAL_EXPERIMENT.md` — different fixture, same conclusion: real but small, and not worth a
+transform's complexity or its failure modes.
+
+So: no float transform. Recorded rather than built, and the record now covers ALP as well as XOR and
+Gorilla.
+
+**The other two that were new:** `phiresky/sqlite-zstd` compresses SQLite pages with zstd and a
+dictionary; this engine's SQLite transform reorders pages instead, and the two are complementary
+rather than competing — worth a look if the page-reorder ever stops paying. `borgbackup/borg` is a
+system, not a codec: chunking plus dedup, which is the `dedup` transform's job done at file-tree
+scale. Nothing to vendor from either.
+
+**The rest** — `oxiarc`, `draco`, `meshoptimizer`, `cydec`, `bundle`, `DeveMultiCompressor` — are
+3D geometry, an archive library in another language, or wrappers. None is a byte-exact coder that
+would beat what is already here, and none was measured further.
+
 ## 7. What is open
 
 - ~~Re-measure PNG and GIF on real content.~~ **DONE** — see the note under the transform table.
