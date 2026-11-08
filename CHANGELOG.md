@@ -9,7 +9,7 @@ short version: what changed, and what it cost.
 
 ---
 
-## Unreleased
+## 1.4.0 — 2026-11-08
 
 ### Added
 

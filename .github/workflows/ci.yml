@@ -35,7 +35,7 @@ jobs:
         # reason the version lives in one place.
         run: |
           ./build/ziptastic version
-          ./build/ziptastic version | grep -q "1.3.0"
+          ./build/ziptastic version | grep -q "1.4.0"
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
