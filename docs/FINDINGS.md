@@ -1082,6 +1082,45 @@ later is not a new backend but a **cheaper trigger for the CM path** — a predi
 input, whether the 6-25x is worth 5-21% — which belongs in the selector work, not in the entropy
 coder.
 
+## 6e. Can a sample price the CM path? Yes — and that is what makes a gate possible (2026-11-08)
+
+The CM backend wins 5-21% over the BWT path and costs 6-25× the time, and it only runs under
+`--max-ratio`. The obvious next question is whether a cheap sample can predict whether the full run
+is worth it. It was measured on three shapes, comparing a 256 KiB sample's CM gain against the
+whole file's:
+
+| shape | full file: CM vs native | 256 KiB sample predicts | error |
+|---|---|---|---|
+| text, 568,309 | 5.2% | 5.7% | +0.5 pp |
+| csv, 2,046,732 | **34.3%** | 27.2% | −7.1 pp |
+| already-compressed, 400,131 | 0.0% | 0.0% | 0.0 pp |
+
+**The sample is directionally sound, and it errs in the safe direction.** It underestimates the big
+win by 7 points rather than inventing one, and it correctly says "no" on already-compressed data,
+which is the case a gate most needs to get right.
+
+This is the opposite of what happened to the LZMA2 sample gate (`FINDINGS.md` §3f), and the reason is
+structural: LZMA2's advantage is a *dictionary* advantage, and a 64 KiB sample has no dictionary, so
+the estimate was blind to exactly the thing being priced. A CM model has no dictionary — its
+advantage is local adaptation, which a sample exercises the same way the full file does. **A sample
+can price a model; it cannot price a window.**
+
+### What the gate would be, and the decision it needs first
+
+The measurement says a gate is buildable: run the CM over 256 KiB, extrapolate, and spend the full
+time only when the sample shows a real gain. What it does *not* settle is which mode the gate serves,
+and that is a product decision rather than a technical one:
+
+- Under `--max-ratio`, a gate that declines is a **ratio loss** — it contradicts the flag's promise,
+  which is "smallest, whatever it costs". Gating here needs a new mode, not a change to that one.
+- Under the default `-9`, CM never runs at all today. A gate would let it run *opportunistically*,
+  which is a genuine feature: the 21% on binary for 53 seconds is worth having when a user asks for it
+  and not otherwise.
+
+So the item is written up with its measurement and left unbuilt, because building it the wrong way
+changes a documented flag's meaning and building it the right way needs a decision about what `-9`
+promises. Recorded rather than guessed.
+
 ## 7. What is open
 
 - ~~Re-measure PNG and GIF on real content.~~ **DONE** — see the note under the transform table.
