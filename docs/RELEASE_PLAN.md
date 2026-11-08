@@ -129,6 +129,65 @@ New Layer 0 transforms need a measured win on *real* content and a free bit. The
 been measured and rejected (`FINDINGS.md` §5) is longer than the list of what remains, and that is
 healthy: the engine's advantage is already concentrated in a handful of formats.
 
+## Batches, ordered by cost — 2026-11-08
+
+The rule for what goes in which batch: a batch ships together, so everything in it must be
+independently verifiable and independently safe to revert. Small things get combined into one batch
+and one release; nothing large is allowed to hold a batch open.
+
+### Batch A — quick wins, one release (1.4.1), hours not days
+
+Everything here is already measured or already written; none of it needs a new dependency.
+
+1. **Release 1.4.1.** The inflate cap (audit finding) and the BCJ entropy detector are on `main` and
+   unreleased, so the published 1.4.0 still carries the flat 4 GiB cap. Ship it.
+2. **Close the three recorded audit items.** A short `encode` in `brotli_wrap`/`zstd_wrap` should
+   report rather than rely on the re-encode verifier; `expansion_cap` should be computed with an
+   overflow-safe multiply; the six `catch (...)` blocks should at least count what they swallow.
+   All local, all small, all provable with a unit case each.
+3. **Base64 false-fire.** Measured: it fires on a binary scanned PDF (`layers 0x10`) where it can
+   never help. Same shape as the BCJ bug and the same fix — a content test before the trial, not
+   after it.
+4. **A `TODO:` convention.** There is not one marker in 12,460 lines, and the audit produced three
+   things that should have been findable by grep. Add the convention to `BUILD.md` and mark the
+   three.
+
+### Batch B — small and combinable, one release (1.5.0)
+
+5. **The Silesia run, unattended.** `scripts/silesia.sh` has been smoke-tested on two files and never
+   run end to end. Run it once, record the numbers it produces against §6a, and add it to CI as a
+   manual job.
+6. **A `docs/` index.** Fifty-plus files, of which perhaps a dozen are current. One `docs/README.md`
+   marking each as current, historical, or superseded — the cheapest possible fix for the drift that
+   `FINDINGS.md` currently survives on convention alone.
+7. **The QLFC experiment, measured only.** Recorded in `ALGORITHMS_FROM_PAPERS.md` as a cheap
+   experiment: does a QLFC-shaped post-coder beat libbsc's stage on the corpus? Measure it in a
+   benchmark binary; ship nothing unless it wins.
+
+### Batch C — medium, needs something external
+
+8. **Threads.** `--parallel` and `-T` are untested, not disproven. Needs a machine with more than the
+   one core this sandbox delivers. Nothing to write until that machine exists.
+9. **MP3.** Measured at −27.5% with no transform at all, so an mp3packer-shaped transform must beat
+   that; the published 5-10% for Huffman re-coding would not. Cheap to close properly: measure the
+   Huffman-layer headroom on real frames, then decide. Expected outcome: decline, with a number.
+
+### Batch D — large, and not until a batch above pays for it
+
+10. **FLAC.** Closed 2026-11-08: 0 of 8 real-world files reproduce under the libFLAC recipe. Reopens
+    only with a corpus showing modern-encoder files dominate in practice, or a version-independent
+    way to recover the encoder's decisions.
+11. **PDF and bilevel imagery.** Closed: four independent measurements all lost to the Flate already
+    in the file.
+12. **A new backend.** QLFC or anything else at that level is a mode byte, a decoder, an inverse
+    test and a benchmark sweep — a batch of its own, and only if 7 says it wins.
+
+### What is *not* in a batch, on purpose
+
+The 37-archive survey, the 24-link survey and the four closed hypotheses (G4, the forced repack
+chain, the JBIG2 bound, FLAC coverage) are done and recorded. They are not maintenance debt; they are
+the evidence that stops the next session re-opening them.
+
 **`.flac` was going to be next, and it is now closed as unbuildable.** The headroom is real (22-32%)
 and the recipe works — but only for files written by the same libFLAC generation: 0 of 8 real-world
 files from libFLAC 1.0.25-1.3.0 reproduce, even comparing audio frames only. `FINDINGS.md` §3h.
