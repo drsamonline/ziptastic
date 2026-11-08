@@ -1149,16 +1149,41 @@ Two defects were found and fixed on the way, and both are worth remembering:
   those differ, and a stream carrying a `CmZpaq` block without `kFlagMaxRatio` is read differently
   from the way it was written.
 
-**What stopped it**: a library-level test — `compress()` then `decompress()` in one process — returns
-`size-mismatch` on the firing path, while the identical archive round-trips from the CLI. Reordering
-the calls did not fix it, so it is not encoder state leaking between calls. That is an unresolved
-defect in a path that ships, and a flag whose archive cannot be shown to decode from every entry
-point is not a flag to ship. Reverted, with the CLI measurements kept because they are what the next
-attempt starts from.
+**What stopped it** was a library-level test that failed while the CLI passed. Chasing that down
+produced two findings, and the second one is a bug in shipped code that has nothing to do with
+`--cm-auto`.
 
-The next attempt should start by reproducing the library failure in isolation — `compress` into a
-buffer, `decompress` out of it, one process, no CLI — and finding out what the CLI does differently.
-That is a session's work, not an afternoon's.
+**First: the test harness was stale, and I nearly reverted a working feature because of it.** The
+repro linked `build/libchce_core.a` from before the source edit, and that archive compressed
+*everything to a stored block* — 1,000,035 bytes of text came back as 1,000,143. Rebuilt, the same
+repro gave 433. This is the trap `BUILD.md` already documents (depfiles stripped, header and source
+changes do not trigger rebuilds) and it cost an hour and a wrong revert. **Rebuild the library before
+believing a library-level failure.**
+
+**Second, and this is the real find: the whole-stream CM block writes the wrong sizes when a Layer 0
+transform has fired.**
+
+```c
+cfh.original_size = input.size();   // should be data.size()
+cfh.true_size     = input.size();
+```
+
+`data` is the post-transform stream and `input` is what the user handed over. With a transform in play
+those differ, and the archive's header then disagrees with its payload: reading it fails with
+*"declared size does not match payload"*. The LZMA2 fallback next door has always written
+`original_size = data.size()` and `true_size = original_size`, which is why the bug never showed
+there. It is latent in `--max-ratio` today — it needs a case where a transform fires *and* the CM
+block wins, which the corpus tried so far does not produce — and it is fatal in `--cm-auto`, where the
+gate changes which path wins.
+
+Fixed, with the sizes written the way the LZMA2 path writes them. The full suite passes (37), and
+`--max-ratio` still round-trips on every fixture tried. **What is not yet done is a direct test of
+CM-winning-with-a-transform**, because constructing one on demand is its own small problem; that is
+`TODO(audit-2026-11-08)` in the compressor and the first thing the next session should build.
+
+`--cm-auto` itself stays unbuilt for now: the gate's logic is sound and its measurements are above,
+but it needs that test before it can be shown to produce a readable archive in every case, and a flag
+that cannot be shown that is not a flag to ship.
 
 ## 6f. ALP, and the rest of the 2026-11-08 library list (2026-11-08)
 

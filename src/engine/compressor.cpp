@@ -1312,7 +1312,14 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
       cfh.layers = layers;
       cfh.layers2 = layers2;
       cfh.layers3 = layers3;
-      cfh.original_size = input.size();
+      // `data` is the post-transform stream and `input` is what the user handed us: a Layer 0
+      // transform makes those different sizes, and writing input.size() for both produced an archive
+      // whose header disagrees with its payload — "declared size does not match payload" on read.
+      // The LZMA2 fallback next door has always written these the right way round, which is why the
+      // bug never showed there.
+      // TODO(audit-2026-11-08): no test yet constructs a case where a Layer 0 transform fires AND the
+      // CM block wins, which is the only shape that exercises these two lines. Build one.
+      cfh.original_size = data.size();
       cfh.true_size = input.size();
       cfh.block_count = 1;
       cfh.checksum = crc;
