@@ -6,6 +6,10 @@
 #
 #   scripts/silesia.sh [workdir]
 #
+# SILESIA_ONLY=file1,file2 restricts the run, which is how it was validated: the full corpus is about
+# fifteen minutes of compression and `mozilla` alone does not fit in a 300-second sandbox step. Run
+# the whole thing on a machine, or group by SILESIA_ONLY in CI.
+#
 # The corpus is fetched from the GitHub mirror because the canonical host is not reachable from
 # every sandbox; the twelve files and their sizes are checked before anything is measured.
 set -u

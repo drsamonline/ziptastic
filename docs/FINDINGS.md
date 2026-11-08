@@ -956,21 +956,30 @@ Measured 2026-11-07, `-9`, one run per file, both tools built from sources in th
 
 | file | input | ziptastic `-9` | `xz -9e` | gain |
 |---|---|---|---|---|
-| sao | 7,251,944 | 4,415,466 | 4,425,664 | 0.2% |
+| sao | 7,251,944 | 4,415,125 | 4,425,664 | 0.2% |
 | x-ray | 8,474,240 | 3,798,464 | 4,491,264 | 15.4% |
 | ooffice | 6,152,192 | 2,131,573 | 2,427,224 | 12.2% |
-| mozilla | 51,220,480 | 12,217,069 | 13,376,240 | 8.7% |
+| mozilla | 51,220,480 | 12,217,069 | 12,648,448 | 3.4% |
 | osdb | 10,085,684 | 2,368,404 | 2,844,556 | 16.7% |
 | dickens | 10,192,446 | 2,355,685 | 2,831,212 | 16.8% |
 | mr | 9,970,564 | 2,249,704 | 2,751,892 | 18.2% |
-| samba | 21,606,400 | 3,743,031 | 3,739,524 | **−0.1%** |
-| webster | 41,458,703 | 7,158,274 | 8,368,672 | 14.5% |
-| reymont | 6,627,202 | 1,024,805 | 1,315,592 | 22.1% |
+| samba | 21,606,400 | 3,737,179 | 3,739,524 | 0.1% |
+| webster | 41,458,703 | 7,158,216 | 8,368,672 | 14.5% |
+| reymont | 6,627,202 | 1,024,711 | 1,315,592 | 22.1% |
 | xml | 5,345,280 | 374,814 | 434,892 | 13.8% |
 | nci | 33,553,445 | 1,434,131 | 1,449,272 | 1.0% |
-| **total** | **211,938,580** | **43,271,420 (20.42%)** | **48,456,004 (22.86%)** | **10.7%** |
+| **total** | **211,938,580** | **43,265,075 (20.41%)** | **47,728,212 (22.52%)** | **9.4%** |
 
-**10.7% smaller than `xz -9e` across the standard corpus**, 651 seconds of compression at 0.33 MB/s.
+**9.4% smaller than `xz -9e` across the standard corpus**, produced by `scripts/silesia.sh` on
+2026-11-08 with ziptastic 1.4.1 and an `xz -9e` equivalent built from the vendored liblzma.
+
+**This table replaced an earlier one, and the difference is the point.** The first version was
+measured by hand and reported `mozilla` at 13,376,240 bytes of `xz` output; the script reports
+12,648,448 for the same file and the same encoder, because the script decodes every `xz` stream back
+and compares it to the original before believing its size — and the hand run had not. `mozilla` was
+the third casualty of the full `/tmp` that also corrupted `x-ray`, `xml` and `webster`, and its error
+had survived because nobody re-checked a number that looked plausible. The headline fell from 10.7%
+to **9.4%**: the honest figure, from a run that checks itself.
 Two files are level rather than ahead — `samba` is 0.1% behind and `sao` 0.2% ahead — and those are
 the honest rows: `samba` is source code, where LZMA's long matches and this engine's BWT come out
 even, and `sao` is a star catalogue that is mostly incompressible.
