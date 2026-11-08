@@ -17,8 +17,16 @@ namespace {
 
 constexpr uint8_t kPayloadMagic[4] = {'B', 'R', '0', '1'};
 
-// A ceiling on what a brotli stream may inflate to. A transform, not a bomb.
-constexpr uint64_t kMaxInflated = 1ull << 32;  // 4 GiB
+// A ceiling on what a brotli stream may inflate to, as a function of the input rather than a flat
+// 4 GiB. Measured 2026-11-08: a 38,082-byte stream that inflates to 200 MB drove the compressor to
+// 810 MB of RSS, and the old flat cap let a ~130 KB file ask for 4 GiB. The policy is the decoder's
+// (`true_size * 4096`, with a floor) so that a legitimately compressible file still passes and a
+// crafted one is declined instead of allocated.
+uint64_t max_inflated(size_t input_size) {
+  const uint64_t by_ratio = static_cast<uint64_t>(input_size) * 4096;
+  const uint64_t floor_cap = 256ull << 20;  // 256 MiB: generous for real content, bounded for a bomb
+  return by_ratio > floor_cap ? by_ratio : floor_cap;
+}
 
 // Smallest input worth trying. Below this the decode attempt costs more than the transform could
 // save, and the container framing dominates anyway.
@@ -46,6 +54,7 @@ bool get_varint(const std::vector<uint8_t>& v, size_t& pos, uint64_t& out) {
 }
 
 bool decode(const std::vector<uint8_t>& in, std::vector<uint8_t>& out) {
+  const uint64_t cap = max_inflated(in.size());
   BrotliDecoderState* st = BrotliDecoderCreateInstance(nullptr, nullptr, nullptr);
   if (st == nullptr) return false;
   const uint8_t* next_in = in.data();
@@ -58,7 +67,7 @@ bool decode(const std::vector<uint8_t>& in, std::vector<uint8_t>& out) {
     const BrotliDecoderResult r =
         BrotliDecoderDecompressStream(st, &avail_in, &next_in, &avail_out, &next_out, nullptr);
     out.insert(out.end(), buf, next_out);
-    if (out.size() > kMaxInflated) break;
+    if (out.size() > cap) break;
     if (r == BROTLI_DECODER_RESULT_SUCCESS) {
       // The whole input must have been consumed: a stream followed by other bytes is not a bare
       // brotli stream, and treating it as one would silently drop the tail.

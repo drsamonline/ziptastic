@@ -15,7 +15,14 @@ namespace {
 
 constexpr uint8_t kMagic[4] = {0x28, 0xB5, 0x2F, 0xFD};
 constexpr uint8_t kPayloadMagic[4] = {'Z', 'S', '0', '1'};
-constexpr uint64_t kMaxInflated = 1ull << 32;  // 4 GiB: a transform, not a bomb
+// Inflated size is capped relative to the input, not at a flat 4 GiB. Measured 2026-11-08: a
+// 6,419-byte stream inflating to 200 MB took the compressor to 810 MB of RSS, and the flat cap let
+// a ~130 KB file ask for 4 GiB. Same policy as the decoder, with a floor for real content.
+uint64_t max_inflated(size_t input_size) {
+  const uint64_t by_ratio = static_cast<uint64_t>(input_size) * 4096;
+  const uint64_t floor_cap = 256ull << 20;
+  return by_ratio > floor_cap ? by_ratio : floor_cap;
+}
 
 void put_varint(std::vector<uint8_t>& v, uint64_t x) {
   while (x >= 0x80) {
@@ -39,6 +46,7 @@ bool get_varint(const std::vector<uint8_t>& v, size_t& pos, uint64_t& out) {
 }
 
 bool decode(const std::vector<uint8_t>& in, std::vector<uint8_t>& out) {
+  const uint64_t cap = max_inflated(in.size());
   // Concatenated frames are legal zstd — `cat a.zst b.zst` — so the streaming decoder is used with
   // the frame-concatenation flag rather than the one-shot call, which stops at the first frame.
   ZSTD_DStream* ds = ZSTD_createDStream();
@@ -52,7 +60,7 @@ bool decode(const std::vector<uint8_t>& in, std::vector<uint8_t>& out) {
     const size_t r = ZSTD_decompressStream(ds, &ob, &ib);
     if (ZSTD_isError(r)) break;
     out.insert(out.end(), buf, buf + ob.pos);
-    if (out.size() > kMaxInflated) break;
+    if (out.size() > cap) break;
     if (r == 0 && ib.pos == ib.size) {
       ok = true;
       break;

@@ -23,7 +23,13 @@ constexpr uint8_t kPayloadMagic[4] = {'X', 'Z', '0', '1'};
 
 // A ceiling on what an .xz may inflate to. This is a transform, not a bomb: a stream that
 // claims more than this is declined, and the block encoder's own bounds still apply after.
-constexpr uint64_t kMaxInflated = 1ull << 32;  // 4 GiB
+// Capped relative to the input, not at a flat 4 GiB — see the note in zstd_wrap.cpp for the
+// measurement that prompted this. A stream that inflates past the cap is declined, not allocated.
+uint64_t max_inflated(size_t input_size) {
+  const uint64_t by_ratio = static_cast<uint64_t>(input_size) * 4096;
+  const uint64_t floor_cap = 256ull << 20;
+  return by_ratio > floor_cap ? by_ratio : floor_cap;
+}
 
 void put_varint(std::vector<uint8_t>& v, uint64_t x) {
   while (x >= 0x80) {
@@ -47,10 +53,11 @@ bool get_varint(const std::vector<uint8_t>& v, size_t& pos, uint64_t& out) {
 }
 
 bool decode(const std::vector<uint8_t>& in, std::vector<uint8_t>& out) {
+  const uint64_t cap = max_inflated(in.size());
   lzma_stream strm = LZMA_STREAM_INIT;
   // LZMA_CONCATENATED because `cat a.xz b.xz > both.xz` is a valid .xz and a decoder is
   // required to read all of it — the same rule that made gzip a container transform.
-  if (lzma_stream_decoder(&strm, UINT64_MAX, LZMA_CONCATENATED) != LZMA_OK) return false;
+  if (lzma_stream_decoder(&strm, cap, LZMA_CONCATENATED) != LZMA_OK) return false;
   strm.next_in = in.data();
   strm.avail_in = in.size();
   uint8_t buf[1 << 16];
@@ -62,7 +69,7 @@ bool decode(const std::vector<uint8_t>& in, std::vector<uint8_t>& out) {
     ret = lzma_code(&strm, LZMA_FINISH);
     const size_t got = sizeof(buf) - strm.avail_out;
     out.insert(out.end(), buf, buf + got);
-    if (out.size() > kMaxInflated) {
+    if (out.size() > cap) {
       ok = false;
       break;
     }

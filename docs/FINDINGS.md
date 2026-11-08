@@ -1008,6 +1008,40 @@ tested on two files (`SILESIA_ONLY=dickens,xml`); the full run is about fifteen 
 compression, which is longer than a single sandbox call, so the table in §6a came from the same steps
 run by hand.
 
+## 6c. Audit, 2026-11-08: the compressor had no inflate cap of its own
+
+A code audit of the first-party tree (12,460 lines across `src/` and `include/`) found one issue worth
+fixing immediately and several worth recording.
+
+**The bug: the three container transforms capped inflation at a flat 4 GiB, and the compressor
+allocated up to it.** The decompressor has always had a relative cap — `true_size * 4096 + 1 MiB` —
+but the *compress* side had a constant, so a small crafted input could ask the engine for gigabytes
+before any decision was made. Measured with `getrusage(RUSAGE_CHILDREN)`:
+
+| input | old build | new build |
+|---|---|---|
+| 28,971-byte `.zst` inflating to 900 MB | **failed**, no archive written | **declines**, 170-byte opaque archive, 524 MB peak |
+| 6,419-byte `.zst` inflating to 200 MB | 810 MB peak | 809 MB peak — under the floor, allowed |
+| 38,082-byte `.br` inflating to 200 MB | 810 MB peak | 809 MB peak — under the floor, allowed |
+
+The cap is now `max(input × 4096, 256 MiB)` in all three, which is the decoder's policy with a floor
+so that legitimately compressible content still passes: a 6 KB stream inflating to 200 MB is a tar of
+zeros and must work. A stream past the cap is **declined**, not allocated — the file is stored
+opaquely and the archive stays correct. Peak memory on the 900 MB bomb is ~524 MB rather than the
+4 GiB the old constant permitted, and the remainder is `std::vector` doubling rather than the payload.
+
+**Not fixed, recorded:**
+
+- `brotli_wrap.cpp` and `zstd_wrap.cpp` treat a short `encode` as a failure only implicitly — the
+  re-encode verification catches it and declines the transform, so it fails safe, but the failure is
+  silent in the code rather than reported.
+- `decompressor.cpp` computes `expansion_cap = fh.true_size * 4096 + 1 MiB` on an attacker-supplied
+  64-bit value. An overflow wraps the cap small, which rejects rather than accepts — safe by
+  accident rather than by construction.
+- Six `catch (...)` blocks in `cm_zpaq.cpp`, `gzip_wrap.cpp` and `preflate_wrap.cpp` swallow every
+  exception and continue. All are in vendored-adjacent paths where the fallback is a valid archive,
+  so none is a correctness bug, but none reports either.
+
 ## 7. What is open
 
 - ~~Re-measure PNG and GIF on real content.~~ **DONE** — see the note under the transform table.
