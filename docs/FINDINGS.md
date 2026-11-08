@@ -698,7 +698,30 @@ carries the noise — a shape BWT and PPMd handle well. FLAC never sees that.
 
 So a `.flac` transform has more headroom than any container shipped so far, and the recipe question
 is the same shape as the others: vendor libFLAC, inflate to PCM, compress that, and rebuild the stream
-by re-encoding with the recovered settings. **The risk is the producer**: libFLAC's output depends on
+by re-encoding with the recovered settings.
+
+### The recipe works, and it is six bytes (2026-11-08)
+
+That was the question worth answering before writing any of it: **can libFLAC reproduce a stream it
+did not write?** A probe was built against a trimmed vendored libFLAC (29 C files, no Ogg), decoding
+a file to PCM and re-encoding at the same compression level.
+
+On both fixtures, at level 5, the answer was the same and better than expected:
+
+| fixture | original | re-encoded | bytes differing |
+|---|---|---|---|
+| tonal | 2,393,014 | 2,393,014 | **6** |
+| noise-heavy | 2,927,020 | 2,927,020 | **6** |
+
+**The six bytes are the vendor string**, at offsets 70-81: `libFLAC 1.4.3 20230623` in the file
+libsndfile wrote, `libFLAC 1.5.0 20250211` from the vendored 1.5.0. Every audio frame is identical.
+So the encoder's coding decisions are stable across those two versions, and the recipe needs to carry
+the vendor string — and nothing else.
+
+That also names the risk precisely. A `.flac` written by **ffmpeg's own encoder**, or by libFLAC with
+a non-default block size or predictor order, will not reproduce, and will be declined rather than
+guessed at. Coverage is a question for a corpus of real-world files; what is settled is that the
+approach is sound where the producer is libFLAC at a default level. **The risk is the producer**: libFLAC's output depends on
 its version and parameters, so a file written by ffmpeg's own FLAC encoder or by an older libFLAC
 would be declined rather than guessed at. That is the same "producer variant" problem
 `docs/SELECTOR_PROFILE.md` records for the other formats, and the coverage cost is unknown until a
