@@ -1121,6 +1121,45 @@ So the item is written up with its measurement and left unbuilt, because buildin
 changes a documented flag's meaning and building it the right way needs a decision about what `-9`
 promises. Recorded rather than guessed.
 
+### The implementation was attempted and reverted (2026-11-08)
+
+The decision came back as "a new flag", so `--cm-auto` was built: sample 128 KiB from the middle,
+encode it both ways, spend the full CM run only when the sample shows ≥2% gain.
+
+**It works from the CLI and fails from the library, and it was reverted because of the second part.**
+
+What the CLI showed, on four shapes:
+
+| shape | `-9` | `--cm-auto` | `--max-ratio` |
+|---|---|---|---|
+| text, 568,309 | 144,122 | **136,594** (fires, 5.2% sample) | 136,594 |
+| csv, 2,046,732 | 231,226 | **151,915** (fires, 27.3% sample) | 151,915 |
+| already-compressed, 400,131 | 400,239 | 400,239 (declines) | 400,239 |
+| binary, 2,851,800 | — | **909,777** (fires, 7.6% sample) | — |
+
+Every one round-trips byte-exact from the CLI, and the gated archive is byte-identical to the one
+`--max-ratio` produces — the gate changes only whether the time is spent, not the answer.
+
+Two defects were found and fixed on the way, and both are worth remembering:
+
+- **The gate was placed after the Tier-1 LZMA2 fallback**, which returns early when it wins. On the
+  CSV the fallback won at 231,226 and the CM pass worth 151,915 never ran. *A gate that runs after an
+  early return is not a gate.*
+- **The header flag recorded that the user asked for CM, not that CM was used.** With `--cm-auto`
+  those differ, and a stream carrying a `CmZpaq` block without `kFlagMaxRatio` is read differently
+  from the way it was written.
+
+**What stopped it**: a library-level test — `compress()` then `decompress()` in one process — returns
+`size-mismatch` on the firing path, while the identical archive round-trips from the CLI. Reordering
+the calls did not fix it, so it is not encoder state leaking between calls. That is an unresolved
+defect in a path that ships, and a flag whose archive cannot be shown to decode from every entry
+point is not a flag to ship. Reverted, with the CLI measurements kept because they are what the next
+attempt starts from.
+
+The next attempt should start by reproducing the library failure in isolation — `compress` into a
+buffer, `decompress` out of it, one process, no CLI — and finding out what the CLI does differently.
+That is a session's work, not an afternoon's.
+
 ## 7. What is open
 
 - ~~Re-measure PNG and GIF on real content.~~ **DONE** — see the note under the transform table.
