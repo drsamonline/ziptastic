@@ -1051,6 +1051,37 @@ opaquely and the archive stays correct. Peak memory on the 900 MB bomb is ~524 M
   exception and continue. All are in vendored-adjacent paths where the fallback is a valid archive,
   so none is a correctness bug, but none reports either.
 
+## 6d. QLFC: there is no cheap room in it, and the win is already reachable (2026-11-08)
+
+The plan called this "measure the QLFC experiment; ship nothing unless it wins". The measurement says
+something more useful than a yes or no: **libbsc is QLFC**, so "replace libbsc's stage with QLFC"
+is not a change — and the gain the paper promises is in a *different* place from where it looked.
+
+Two shapes, one text (568,309 bytes of this project's docs) and one binary (the 2,851,800-byte
+release), three coders:
+
+| input | bzip2 | ziptastic's BWT path | `--max-ratio` (CM) |
+|---|---|---|---|
+| text, 568,309 | 159,469 | 144,122 (**−9.6%**) | **136,594** (−14.3%) |
+| binary, 2,851,800 | 1,274,346 | 1,152,591 (**−9.6%**) | **909,777** (−28.6%) |
+
+Three things fall out of that:
+
+- **The BWT path is worth exactly 9.6% over plain bzip2 on both shapes**, which is QLFC doing its
+  job against a Huffman-coded BWT. Consistent, and no surprise.
+- **The CM backend already beats the BWT path by 5.2% on text and 21% on binary.** So the thing the
+  paper says would take "weeks not days" — many contexts, logistic mixing, SSE — is *already in this
+  engine* and already winning. The open question was never "can a better model beat QLFC"; it is
+  "why is the CM path only offered at `--max-ratio`".
+- **And it is 6-25x slower.** 10 s against 3 s on text; 53 s against 14 s on the binary. That is the
+  real trade, and it is the one the default already makes correctly.
+
+So the QLFC batch item closes with no code: replacing libbsc's post-coder cannot help, because a
+better post-coder than libbsc's is already available here under a different flag. What is worth doing
+later is not a new backend but a **cheaper trigger for the CM path** — a predictor that decides, per
+input, whether the 6-25x is worth 5-21% — which belongs in the selector work, not in the entropy
+coder.
+
 ## 7. What is open
 
 - ~~Re-measure PNG and GIF on real content.~~ **DONE** — see the note under the transform table.

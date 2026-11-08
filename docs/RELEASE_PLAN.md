@@ -160,7 +160,12 @@ Everything here is already measured or already written; none of it needs a new d
 6. **A `docs/` index.** Fifty-plus files, of which perhaps a dozen are current. One `docs/README.md`
    marking each as current, historical, or superseded — the cheapest possible fix for the drift that
    `FINDINGS.md` currently survives on convention alone.
-7. **The QLFC experiment, measured only.** Recorded in `ALGORITHMS_FROM_PAPERS.md` as a cheap
+7. **The QLFC experiment — done, and it closed itself.** `libbsc` *is* QLFC, so replacing it is not a
+   change; and the better post-coder the paper describes already exists here as the CM backend,
+   winning 5.2% on text and 21% on binary at 6-25x the time. The open question moved to the selector:
+   when is that trade worth taking? (`FINDINGS.md` §6d)
+
+   **Superseded text, kept for the record: the QLFC experiment, measured only.** Recorded in `ALGORITHMS_FROM_PAPERS.md` as a cheap
    experiment: does a QLFC-shaped post-coder beat libbsc's stage on the corpus? Measure it in a
    benchmark binary; ship nothing unless it wins.
 
