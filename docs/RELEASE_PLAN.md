@@ -173,19 +173,30 @@ Everything here is already measured or already written; none of it needs a new d
 
 8. **Threads.** `--parallel` and `-T` are untested, not disproven. Needs a machine with more than the
    one core this sandbox delivers. Nothing to write until that machine exists.
-9. **MP3.** Measured at −27.5% with no transform at all, so an mp3packer-shaped transform must beat
-   that; the published 5-10% for Huffman re-coding would not. Cheap to close properly: measure the
-   Huffman-layer headroom on real frames, then decide. Expected outcome: decline, with a number.
+9. ~~**MP3.**~~ **Dropped by decision, 2026-11-08.** Audio other than WAV is out of scope: the
+   measured headroom is not there (MP3 already gives −27.5% with no transform at all, and Huffman
+   re-coding is worth 5-10%), and the engine has WAV, which is the format a lossless archiver can
+   actually act on. The measurement stays in `FINDINGS.md` §3h as the record of why.
 
 ### Batch D — large, and not until a batch above pays for it
 
-10. **FLAC.** Closed 2026-11-08: 0 of 8 real-world files reproduce under the libFLAC recipe. Reopens
-    only with a corpus showing modern-encoder files dominate in practice, or a version-independent
-    way to recover the encoder's decisions.
-11. **PDF and bilevel imagery.** Closed: four independent measurements all lost to the Flate already
-    in the file.
+10. ~~**FLAC.**~~ **Dropped by decision, 2026-11-08**, on top of the coverage measurement that had
+    already closed it (0 of 8 real-world files reproduce). Audio other than WAV is out of scope.
+    Reopens only if that decision changes *and* a corpus shows modern-encoder files dominate.
+11. ~~**PDF and bilevel imagery.**~~ **Dropped by decision, 2026-11-08**: a PDF is an already-compressed
+    container, and the four measurements that closed it (G4, this engine's backends, a forced repack
+    chain, the JBIG2 bound) all lost to the Flate already in the file. Nothing further to try.
 12. **A new backend.** QLFC or anything else at that level is a mode byte, a decoder, an inverse
     test and a benchmark sweep — a batch of its own, and only if 7 says it wins.
+
+### Scope, decided 2026-11-08
+
+**In:** WAV, and the formats the Layer 0 transforms already cover (PNG, JPEG, GIF, BMP, ZIP, gzip, xz,
+brotli, zstd, bzip2-by-measurement, SQLite, CSV/XML, PDF-as-opaque).
+
+**Out:** audio other than WAV — MP3 and FLAC are dropped, with their measurements kept as the reason —
+and PDF as a *transform* target, because it is already compressed and every route into it measured
+worse than leaving it alone.
 
 ### What is *not* in a batch, on purpose
 
