@@ -129,7 +129,11 @@ New Layer 0 transforms need a measured win on *real* content and a free bit. The
 been measured and rejected (`FINDINGS.md` §5) is longer than the list of what remains, and that is
 healthy: the engine's advantage is already concentrated in a handful of formats.
 
-**Next, and it is the largest gap measured so far: `.flac`.** This engine compresses 16-bit PCM
+**`.flac` was going to be next, and it is now closed as unbuildable.** The headroom is real (22-32%)
+and the recipe works — but only for files written by the same libFLAC generation: 0 of 8 real-world
+files from libFLAC 1.0.25-1.3.0 reproduce, even comparing audio frames only. `FINDINGS.md` §3h.
+
+**Superseded note, kept for the record: `.flac` was the largest gap measured.** This engine compresses 16-bit PCM
 22-32% better than FLAC itself does, so a FLAC transform that inflates to PCM and rebuilds the stream
 by re-encoding has more headroom than `.xz`, `.br` or `.zst` had. It needs libFLAC vendored, and it
 inherits the producer-variant risk: a file written by a different encoder is declined.

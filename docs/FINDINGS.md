@@ -723,6 +723,37 @@ a non-default block size or predictor order, will not reproduce, and will be dec
 guessed at. Coverage is a question for a corpus of real-world files; what is settled is that the
 approach is sound where the producer is libFLAC at a default level.
 
+### The coverage answer, and it is bad (2026-11-08)
+
+Before building the transform, the coverage question: what fraction of real-world `.flac` files does
+the libFLAC recipe actually cover? A corpus of 23 real files was fetched (`mewkiz/flac` test data) and
+every file tried at all nine levels, comparing the **audio frames only** so that a metadata-block
+difference could not masquerade as a mismatch.
+
+| source of the file | vendor string | result |
+|---|---|---|
+| this session's fixtures | `libFLAC 1.4.3 20230623` | **reproduces exactly** (6 metadata bytes) |
+| 8 real files, 20 KB-4 MB | `libFLAC 1.0.25`, `1.1.2`, `1.2.1`, `1.3.0` | **none reproduce at any level** |
+
+**Zero of eight.** Even with metadata excluded and the frames compared directly, the vendored
+libFLAC 1.5.0 does not reproduce what 1.0.25 through 1.3.0 wrote. The reason is that
+`set_compression_level` is a *shorthand that has been redefined between versions* — the LPC order,
+apodization window, and partition-order search behind "level 5" are not the same algorithm in 1.2.1 as
+in 1.5.0, so the encoder makes different decisions on the same PCM.
+
+So the recipe covers **files written by the same encoder generation and nothing else**, which for a
+format whose back catalogue was written over twenty years by many versions and by ffmpeg's separate
+implementation is a thin slice. That changes the recommendation:
+
+**Do not build the `.flac` transform on this recipe.** The 22-32% headroom measured above is real,
+and it is unreachable for most files in the wild — a transform that fires on 1.4.x-and-later output
+and declines on everything else is not worth a vendored encoder, a second metadata path, and the
+maintenance of keeping the vendored version pinned to whatever produced the file.
+
+What would change the answer: a corpus showing that modern files dominate in practice, or a
+version-independent way to recover the encoder's decisions. Neither exists today, and the honest move
+is to record this and leave the transform unbuilt.
+
 **The search is small and it is exact.** Running the probe at every level, one and only one
 reproduces the file:
 
