@@ -129,6 +129,12 @@ New Layer 0 transforms need a measured win on *real* content and a free bit. The
 been measured and rejected (`FINDINGS.md` §5) is longer than the list of what remains, and that is
 healthy: the engine's advantage is already concentrated in a handful of formats.
 
+**Next, and it is the largest gap measured so far: `.flac`.** This engine compresses 16-bit PCM
+22-32% better than FLAC itself does, so a FLAC transform that inflates to PCM and rebuilds the stream
+by re-encoding has more headroom than `.xz`, `.br` or `.zst` had. It needs libFLAC vendored, and it
+inherits the producer-variant risk: a file written by a different encoder is declined.
+(`FINDINGS.md` §3h)
+
 **Closed on 2026-11-07**: SWF is dropped — Flash is dead and there was nothing to win. PDF is *not* a
 transform opportunity in the shape it was assumed: on a real 99-page scanned document the engine gets
 85.5%, `precomp` correctly declines, and the gap looked like **1-bit imagery**, and measuring it killed the idea:

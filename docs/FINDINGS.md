@@ -679,6 +679,41 @@ settle it, and that is a download this session did not do.
 
 **MP3 and FLAC remain unmeasured** — no fixtures here, and both need a real encoder to make one.
 
+### FLAC, measured, and it is the largest gap left (2026-11-08)
+
+The container transforms were worth 16.9% (.xz), 14.8-37% (.br) and 18.5-30.3% (.zst). FLAC looks
+bigger than all of them, on two fixtures built to be as different as possible — 20 s of 44.1 kHz
+stereo, one tonal and one noise-heavy, because a synthetic test that is all tones flatters a BWT
+backend enormously:
+
+| fixture | PCM | FLAC | PCM through `-9` | FLAC through `-9` | headroom |
+|---|---|---|---|---|---|
+| tonal | 3,528,044 | 2,393,014 | **1,615,628** | 2,393,126 | **32.5%** |
+| noise-heavy | 3,528,044 | 2,927,020 | **2,280,032** | 2,927,132 | **22.1%** |
+
+**This engine compresses 16-bit PCM 22-32% better than FLAC does on the same audio.** The reason is
+structural: FLAC models samples with an LPC predictor and Rice codes the residual, while the backends
+here work on the *bytes*, where the high byte of a 16-bit sample is nearly constant and the low byte
+carries the noise — a shape BWT and PPMd handle well. FLAC never sees that.
+
+So a `.flac` transform has more headroom than any container shipped so far, and the recipe question
+is the same shape as the others: vendor libFLAC, inflate to PCM, compress that, and rebuild the stream
+by re-encoding with the recovered settings. **The risk is the producer**: libFLAC's output depends on
+its version and parameters, so a file written by ffmpeg's own FLAC encoder or by an older libFLAC
+would be declined rather than guessed at. That is the same "producer variant" problem
+`docs/SELECTOR_PROFILE.md` records for the other formats, and the coverage cost is unknown until a
+corpus of real-world `.flac` files is tried.
+
+Two smaller findings from the same run:
+
+- **MP3 is not opaque.** With no transform at all, `-9` takes 800,956 bytes to **580,980 (−27.5%)** —
+  frame headers and Huffman-coded data have structure the backends find. Anything mp3packer-shaped
+  would have to beat that, and the usual 5-10% for Huffman re-coding would not.
+- **BCJ false-fires on FLAC.** `flags 0x09` — the x86 branch converter offered itself on an audio
+  file and was accepted, because the payload is verified byte-exact and nothing else objected. It
+  costs time on every `.flac` for no gain. Worth a look: BCJ should probably require an x86-shaped
+  byte histogram before it is allowed to try.
+
 ### bzip2, measured before anything is built (2026-11-07)
 
 A `.bz2` is opaque to this engine for the same reason `.xz` was, and it is the one remaining
