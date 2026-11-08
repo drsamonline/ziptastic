@@ -721,7 +721,46 @@ the vendor string — and nothing else.
 That also names the risk precisely. A `.flac` written by **ffmpeg's own encoder**, or by libFLAC with
 a non-default block size or predictor order, will not reproduce, and will be declined rather than
 guessed at. Coverage is a question for a corpus of real-world files; what is settled is that the
-approach is sound where the producer is libFLAC at a default level. **The risk is the producer**: libFLAC's output depends on
+approach is sound where the producer is libFLAC at a default level.
+
+**The search is small and it is exact.** Running the probe at every level, one and only one
+reproduces the file:
+
+| level | re-encoded | verdict |
+|---|---|---|
+| 3 | 2,410,068 | different |
+| 4 | 2,400,297 | different |
+| **5** | **2,393,014** | **same size, 6 bytes differ from offset 70 — metadata only** |
+| 6 | 2,392,937 | different |
+| 7 | 2,388,224 | different |
+
+So the recipe is a level byte plus the vendor string, and nine trials settle it.
+
+### Why ffmpeg is the coverage question, and not a dependency (2026-11-08)
+
+FFmpeg came up as a candidate toolkit. It is not one, and the reason is categorical: **a byte-exact
+archiver cannot use a lossy transcoder.** FFmpeg decodes and re-encodes audio and video with
+perceptual codecs; what comes out is a different signal that happens to sound the same. There is no
+recipe that turns an H.264 stream into "the original" because the original was never a frame buffer.
+Adding FFmpeg would be a hundred-megabyte dependency that cannot reconstruct a single byte.
+
+It matters for exactly one thing, and that one thing is real: **FFmpeg contains its own FLAC
+encoder**, and it is a completely separate implementation — `libavcodec/flacenc.c`, written by Justin
+Ruggles in 2006, with its own option set (`block_time_ms`, `lpc_type`, `lpc_passes`,
+`prediction_order_method`, `max_partition_order`, `exact_rice_parameters`). None of those map onto
+libFLAC's nine compression levels, so an ffmpeg-produced `.flac` will not reproduce under the recipe
+above.
+
+That is the coverage risk for the `.flac` transform, and it is not a small one: ffmpeg is the most
+common way `.flac` files get made outside the audiophile tools. Three ways forward, in order of
+cheapness: measure a corpus of real-world `.flac` files and find out what fraction the libFLAC recipe
+covers; accept the decline and ship the transform for the files it does cover; or implement the
+ffmpeg encoder path as a second producer, which is a second encoder to vendor and keep byte-stable.
+
+The FFmpegKit retirement is worth one line as a cautionary tale rather than a fact about this
+project: a wrapper around a media stack that lost its maintainer in January 2025, lost its prebuilt
+packages in April 2025, and was archived in July 2026. The lesson for the vendor tree here is the one
+already being followed — 29 C files of libFLAC, not a media framework. **The risk is the producer**: libFLAC's output depends on
 its version and parameters, so a file written by ffmpeg's own FLAC encoder or by an older libFLAC
 would be declined rather than guessed at. That is the same "producer variant" problem
 `docs/SELECTOR_PROFILE.md` records for the other formats, and the coverage cost is unknown until a
