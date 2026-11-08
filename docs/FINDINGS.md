@@ -611,11 +611,34 @@ bytes are cheap.** Dedup earns its place on repeated *content* — the same asse
 on repeated background.
 
 So there is no cheap win here, and the recommendation to build a bilevel transform was wrong on the
-evidence. The only thing left with real headroom is **JBIG2's context-modelled arithmetic coding**,
-which typically beats G4 by 20-40% on text — and since G4 is already 5-8% behind Flate on these pages,
-that puts a JBIG2-shaped ceiling at maybe 15-30% over what the PDF already spends. Against a full
-JBIG2 encoder, symbol dictionaries included, that is a large build for a document class this engine
-does not otherwise see. Recorded, not started.
+evidence.
+
+### And JBIG2 would not win either (2026-11-08)
+
+The last candidate was JBIG2's context-modelled arithmetic coding, on the reasoning that it beats G4
+by 20-40% and so might reach 15-30% under what the PDF spends. That reasoning was wrong too, and it
+did not need a JBIG2 encoder to find out: the entropy of the page under a JBIG2-shaped 2D context
+model is a **bound** on what such a coder can achieve, and it is a bound that can be computed.
+
+An 11-bit template — two previous rows of four pixels each plus three pixels to the left in the
+current row — measured on the same three pages:
+
+| page | Flate in the PDF | model bound | verdict |
+|---|---|---|---|
+| 0 (dense) | 255,108 | 282,361 | **worse by 10.7%** |
+| 1 | 35,725 | 67,829 | **worse by 90%** |
+| 2 | 36,720 | 70,624 | **worse by 92%** |
+
+**Per-pixel modelling loses to run-length coding on sparse pages, and it is not close.** The reason is
+the same one that made dedup useless: 87% of these pages is white, and LZ77 codes a long zero run for
+almost nothing while a context coder still pays a fraction of a bit per pixel — 8.3 million pixels at
+even 0.05 bits is 52 KB, which is more than Flate spends on the entire page.
+
+The one mode not captured by this bound is JBIG2's **symbol dictionary**, which codes each repeated
+glyph shape once and then a page of references. That is the only remaining candidate, it only applies
+to text-dense pages, and page 0 — the one dense page here — is the only place in this document where
+it could possibly pay. Recorded, not started, and not recommended without a corpus of dense scans to
+justify it.
 
 Two smaller things worth recording:
 
