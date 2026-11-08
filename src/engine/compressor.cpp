@@ -1317,8 +1317,10 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
       // whose header disagrees with its payload — "declared size does not match payload" on read.
       // The LZMA2 fallback next door has always written these the right way round, which is why the
       // bug never showed there.
-      // TODO(audit-2026-11-08): no test yet constructs a case where a Layer 0 transform fires AND the
-      // CM block wins, which is the only shape that exercises these two lines. Build one.
+      // TODO(audit-2026-11-08): unit.zpaq builds the shape that reaches these two lines, but putting
+      // the old `original_size = input.size()` back did not make it fail. Prove the test catches the
+      // regression before trusting it — either there is a second header path or the rebuild was
+      // stale, and the depfile-stripped trap makes the second likely.
       cfh.original_size = data.size();
       cfh.true_size = input.size();
       cfh.block_count = 1;

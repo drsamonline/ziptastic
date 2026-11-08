@@ -1176,10 +1176,24 @@ there. It is latent in `--max-ratio` today — it needs a case where a transform
 block wins, which the corpus tried so far does not produce — and it is fatal in `--cm-auto`, where the
 gate changes which path wins.
 
-Fixed, with the sizes written the way the LZMA2 path writes them. The full suite passes (37), and
-`--max-ratio` still round-trips on every fixture tried. **What is not yet done is a direct test of
-CM-winning-with-a-transform**, because constructing one on demand is its own small problem; that is
-`TODO(audit-2026-11-08)` in the compressor and the first thing the next session should build.
+Fixed, with the sizes written the way the LZMA2 path writes them.
+
+**The fixture exists now.** A numeric CSV with a float column, compressed with `--max-ratio --no-bwt`,
+makes the CM block win *and* leaves the numeric layer set — `layers 0x01`, one block, `CM_ZPAQ`,
+`original_size` 715,924 against `true_size` 1,348,793. That is the shape the two lines needed, and
+`unit.zpaq` now builds it and asserts both the block mode and the header fields, because without the
+mode assertion the test passes on the block path where the CM header is never written — which is
+exactly how the first version of it proved nothing.
+
+**What the test does not do is fail when the bug is put back**, and that is worth stating rather than
+glossing: reintroducing `original_size = input.size()` and rebuilding left all three cases green, and
+a standalone probe of the same fixture reported the *correct* sizes with that line in place. Either
+there is a second header path that the fixture reaches, or the edit and the built object were not the
+same code — the depfile-stripped rebuild trap, which bit this session twice. The fix is right by
+construction and by the CLI evidence (the `--cm-auto` archive read as *"declared size does not match
+payload"* before it and reads clean after), but **the regression test is not yet proven to catch the
+regression**, and that is `TODO(audit-2026-11-08)` now — not "write a fixture", which is done, but
+"prove the fixture fails on the old code".
 
 `--cm-auto` itself stays unbuilt for now: the gate's logic is sound and its measurements are above,
 but it needs that test before it can be shown to produce a readable archive in every case, and a flag
