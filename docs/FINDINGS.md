@@ -582,6 +582,34 @@ And this engine's own backends are **worse than Flate on all three** — BWT, PP
 all lose to LZ77 on sparse bilevel, by 8% on the dense page and by 40-48% on the sparse ones. That is
 worth knowing beyond PDF: it is a shape where DEFLATE is simply the better coder.
 
+### Forcing the repack pipeline does not rescue it either (2026-11-08)
+
+The obvious next question is whether the FreeArc-style chain — precomp to inflate, srep to dedup,
+then the engine — does better than the engine declining. It was measured, twenty pages of the same
+scanned PDF, forced rather than gated:
+
+| what | bytes |
+|---|---|
+| the 20 pages as Flate in the PDF | **1,696,978** |
+| the same 20 pages inflated, then `-9` (dedup fired, `flags 0x21`) | 1,832,200 |
+| | **+8.0% worse** |
+
+So the chain loses. `precomp` declining on this file was correct, and forcing it past its own gate
+costs 8% even with `dedup` engaged on 20.6 MB of concatenated bitmaps. That is the same conclusion
+`FINDINGS.md` §3f reached about the LZMA2 gate from the other direction: a transform that is *offered*
+the data and measures itself as not helping is usually right.
+
+**Why the redundancy does not help, which is the useful part.** Consecutive pages of this document are
+**86.9% byte-identical at the same offsets** — 87.8% of page 1's 16-byte blocks appear verbatim in
+page 2. That looks like a dedup goldmine and is not one, because the identical bytes are *white
+space*. A run of 0x00 costs Flate almost nothing and costs a dedup match almost nothing; 1,033,500
+bytes compress to 35,725 (3.5%) precisely because 87% of the page is blank. The expensive part is the
+13% that is ink, and that is where every coder is already working.
+
+That is the general lesson worth keeping: **cross-page similarity is not headroom when the shared
+bytes are cheap.** Dedup earns its place on repeated *content* — the same asset, the same binary — not
+on repeated background.
+
 So there is no cheap win here, and the recommendation to build a bilevel transform was wrong on the
 evidence. The only thing left with real headroom is **JBIG2's context-modelled arithmetic coding**,
 which typically beats G4 by 20-40% on text — and since G4 is already 5-8% behind Flate on these pages,
