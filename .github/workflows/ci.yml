@@ -31,6 +31,10 @@ jobs:
         run: cmake --build build -j 2
 
       - name: Version string
+  # The README quotes FINDINGS.md for the headline claim; a hand-copied table is
+      # how a published number drifts from the measurement behind it.
+      - name: The README claim table matches FINDINGS.md
+        run: python3 scripts/check-claims.py
         # Fails the build if the CLI and CMake disagree about the version, which is the whole
         # reason the version lives in one place.
         run: |
