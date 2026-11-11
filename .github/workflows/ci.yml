@@ -30,16 +30,23 @@ jobs:
       - name: Build
         run: cmake --build build -j 2
 
-      - name: Version string
-  # The README quotes FINDINGS.md for the headline claim; a hand-copied table is
-      # how a published number drifts from the measurement behind it.
       - name: The README claim table matches FINDINGS.md
+        # The README quotes FINDINGS.md for the headline claim; a hand-copied table is
+        # how a published number drifts from the measurement behind it.
         run: python3 scripts/check-claims.py
+
+      - name: Version string
         # Fails the build if the CLI and CMake disagree about the version, which is the whole
-        # reason the version lives in one place.
+        # reason the version lives in one place. The expected value is read out of CMakeLists
+        # instead of being written here, so a version bump is one edit and not two — the
+        # hard-coded "1.4.1" this step used to carry would have failed the 1.4.2 release.
         run: |
-          ./build/ziptastic version
-          ./build/ziptastic version | grep -q "1.4.1"
+          want="$(sed -n 's/^  VERSION \([0-9][0-9.]*\).*/\1/p' CMakeLists.txt | head -1)"
+          got="$(./build/ziptastic version)"
+          echo "CMakeLists: ${want:-<none>}"
+          echo "CLI:        $got"
+          test -n "$want"
+          echo "$got" | grep -q "$want"
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
