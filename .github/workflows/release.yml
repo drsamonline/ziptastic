@@ -40,6 +40,16 @@ jobs:
     # and RHEL 9+, and it is written down in BUILD.md.
     container: debian:bullseye
     steps:
+      # debian:bullseye ships no git, and actions/checkout needs it before it can
+      # fetch submodules — without it the action falls back to the REST API and
+      # refuses `submodules: recursive` outright.
+      - name: Install git, which the image does not have
+        shell: bash
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends git ca-certificates
+          git --version
+
       - name: Check out with submodules
         uses: actions/checkout@v4
         with:
