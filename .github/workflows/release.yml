@@ -87,8 +87,16 @@ jobs:
       - name: Package
         id: pkg
         run: |
+          set -euo pipefail
           version="${{ steps.v.outputs.version }}"
           name="ziptastic-${version}-linux-x86_64"
+          # Linked -static-libstdc++ and never stripped: 4.9 MB against 2.9 MB for
+          # the hand-built 1.4.1. Symbols are of no use to anyone downloading a
+          # release, and `version` below proves the binary still runs after the cut.
+          before=$(stat -c%s build/ziptastic)
+          strip --strip-all build/ziptastic
+          after=$(stat -c%s build/ziptastic)
+          echo "stripped: $before -> $after bytes"
           cp build/ziptastic "$name"
           chmod +x "$name"
           sha256sum "$name" > SHA256SUMS
