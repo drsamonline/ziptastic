@@ -1,0 +1,108 @@
+name: release
+
+# Builds the release asset and, on a tag, publishes it.
+#
+# Until this existed the project had no release workflow at all: PROJECT_OVERVIEW
+# says tagging "triggers the release workflow", and v1.4.1's asset was built and
+# uploaded by hand. That is why heavenzip's bin/ stayed empty for a week after a
+# release that did happen — sync-binaries had nothing to fetch, and nothing said
+# so.
+#
+# Two paths:
+#
+#   push a tag v1.4.2   -> build, test, publish ziptastic-1.4.2-linux-x86_64 and
+#                          SHA256SUMS on that release
+#   workflow_dispatch   -> build and test only, upload the asset as a workflow
+#                          artifact. Use this to prove the recipe without
+#                          publishing anything.
+#
+# The version in CMakeLists.txt must match the tag. A release whose binary
+# reports a version nobody can find in the source is how a project ends up
+# unable to answer "what is in 1.4.2".
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake ninja-build g++
+
+      - name: Read the version out of CMakeLists
+        id: v
+        run: |
+          version="$(sed -n 's/^  VERSION \([0-9][0-9.]*\).*/\1/p' CMakeLists.txt | head -1)"
+          test -n "$version" || { echo "::error::no VERSION line in CMakeLists.txt"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "building $version"
+
+      - name: The tag and the source must agree
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="${GITHUB_REF#refs/tags/v}"
+          if [ "$tag" != "${{ steps.v.outputs.version }}" ]; then
+            echo "::error::tag v$tag does not match CMakeLists VERSION ${{ steps.v.outputs.version }} — bump the source, then tag"
+            exit 1
+          fi
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j 2
+
+      - name: Test
+        # A release that skips the suite is a release nobody tested. The suite is
+        # ~4 minutes and this job has nothing else to do.
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package
+        id: pkg
+        run: |
+          version="${{ steps.v.outputs.version }}"
+          name="ziptastic-${version}-linux-x86_64"
+          cp build/ziptastic "$name"
+          chmod +x "$name"
+          sha256sum "$name" > SHA256SUMS
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          cat SHA256SUMS
+          ./"$name" version
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          ASSET: ${{ steps.pkg.outputs.name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # A tag can arrive with a release already drafted or created by hand;
+            # replace the assets rather than failing on the conflict.
+            gh release upload "$TAG" "$ASSET" SHA256SUMS --clobber
+          else
+            gh release create "$TAG" "$ASSET" SHA256SUMS \
+              --title "$TAG" \
+              --generate-notes
+          fi
+
+      - name: Keep the asset when nothing was published
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pkg.outputs.name }}
+          path: |
+            ${{ steps.pkg.outputs.name }}
+            SHA256SUMS
+          if-no-files-found: error
