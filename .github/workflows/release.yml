@@ -35,10 +35,10 @@ jobs:
     # is Ubuntu 24.04: a binary built there requires GLIBC_2.38 and
     # GLIBCXX_3.4.32, which excludes Debian 12 (2.36), Ubuntu 22.04 (2.35) and
     # every RHEL 9 (2.34). The hand-built 1.4.1 needed GLIBC_2.17 and ran
-    # everywhere. This builds against glibc 2.28 instead — Debian 10, Ubuntu
-    # 20.04 and later — with the C++ runtime linked in, so the floor is one
-    # number and it is written down in BUILD.md.
-    container: quay.io/pypa/manylinux_2_28_x86_64
+    # everywhere. This builds on Debian 11 (glibc 2.31) with the C++ runtime
+    # linked in, so the floor is one number, it covers Debian 11+, Ubuntu 20.04+
+    # and RHEL 9+, and it is written down in BUILD.md.
+    container: debian:bullseye
     steps:
       - name: Check out with submodules
         uses: actions/checkout@v4
@@ -46,8 +46,10 @@ jobs:
           submodules: recursive
 
       - name: Install build tools
+        shell: bash
         run: |
-          python3 -m pip install --quiet cmake ninja
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends cmake ninja-build g++ ca-certificates git
           cmake --version | head -1
           g++ --version | head -1
 
@@ -104,9 +106,9 @@ jobs:
           echo "glibc floor: ${floor:-none}"
           echo "libstdc++:   $(objdump -T "$bin" | grep -oE 'GLIBCXX_[0-9.]+' | sort -uV | tail -1 || echo 'linked statically')"
           case "${floor:-0}" in
-            2.1[0-9]|2.2[0-8]|0) ;;
+            2.1[0-9]|2.2[0-9]|2.3[01]|0) ;;
             *)
-              echo "::error::$bin requires glibc $floor; the release floor is 2.28. Build in the manylinux_2_28 container."
+              echo "::error::$bin requires glibc $floor; the release floor is 2.31. Build in the debian:bullseye container."
               exit 1 ;;
           esac
 
