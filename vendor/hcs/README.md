@@ -1,5 +1,7 @@
 # Holistic Compression Sources (HCS)
 
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
+
 Canonical, offline, vendored source vault for the **CHCE** engine
 (Chimera Hybrid Compression Engine) and all CHIMERA-family projects
 (`heavenzip`, `ziptastic`, `compfactory`).
@@ -17,7 +19,7 @@ from the pinned tree.
 2. **Single source of truth.** No submodules, no nested `.git` directories.
    All sources are vendored flat.
 3. **License-audited.** Every source is listed with its license in
-   `SOURCES.md` and full text in `LICENSES/`.
+   `SOURCES` and full text in `LICENSES/`.
 
 ---
 
@@ -223,7 +225,7 @@ Plus these orthogonal transforms that operate **before** the entropy tier:
 ## Bumping a Source
 
 1. `cd old/<source>` and check out the desired revision.
-2. Update the `pin` in `SOURCES.md`.
+2. Update the `pin` in `SOURCES`.
 3. Copy the license text into `LICENSES/<source>-<license>.txt`.
 4. Regenerate any integration tests in `ziptastic` that consume this source.
 5. Open a PR titled `bump: <source> → <new-sha>`.
@@ -234,7 +236,7 @@ Plus these orthogonal transforms that operate **before** the entropy tier:
 
 1. `git clone --depth=1 <url> old/<id>` **inside this repo**.
 2. `rm -rf old/<id>/.git` — **critical, do not skip**.
-3. Add a row to `SOURCES.md`.
+3. Add a row to `SOURCES`.
 4. Add the license text to `LICENSES/`.
 5. Add a row to the appropriate section of this README.
 6. Commit: `add: <id> (<role>)`.
@@ -249,3 +251,65 @@ mistake when vendoring):
 ```bash
 find old -name .git -type d
 # should print nothing
+
+## Vendored sources and submodules
+
+Most of `old/` is plain vendored source. 23 entries are **git submodules** — they
+pin one commit of an upstream repository rather than copying its history, so the
+mirror stays a mirror and HCS never claims authorship of code it did not write.
+
+```bash
+git clone --recurse-submodules https://github.com/drsamonline/HCS
+# or, in an existing clone:
+git submodule update --init --recursive
+```
+
+**Verify at any time:**
+
+```bash
+./scripts/check-vendor.sh          # exit 0 = every source present and mapped
+python3 tools/check-sources.py     # exit 0 = every directory recorded, every id resolves
+```
+
+The second one exists because the first never reads `SOURCES`. A directory can
+materialise and still have no recorded upstream, licence or integration, and an
+id can point at a directory name the vault does not use (`xz` for `xz-master`).
+`tools/check-sources.py` reads both sides and says which rows and which
+directories disagree. It runs in CI, advisory until the findings it currently
+reports are settled.
+
+### Why the guard exists
+
+Until this was fixed, `old/` carried those 23 gitlinks with **no `.gitmodules`
+file at all**. That state is unrecoverable: git records a commit SHA for each
+submodule but has nowhere to fetch it from, so `git submodule update --init`
+could not work, and every clone — HCS, and every repo that vendors a copy of it —
+silently got 23 empty directories. Nothing failed until a build or a benchmark
+reached for one of them, and then it looked like a missing source rather than a
+broken mirror.
+
+The repair was to add the URL mapping that was always missing (the recorded pins
+were all valid — 20 resolve by ref, and the remaining 3 fetch fine by SHA). The
+guard is the part that makes it not happen again: `scripts/check-vendor.sh` fails
+if any directory under `old/` is empty, if a gitlink has no `.gitmodules` entry,
+or if a `.gitmodules` entry points at a directory that does not exist. CI runs it
+on every push with `submodules: recursive`, so a mirror that cannot materialise
+goes red instead of going quiet.
+
+## Support
+
+<img src="docs/assets/support-portrait.jpg" width="72" height="72" alt="Dr. Sohil Momin" align="left" style="border-radius:50%;margin-right:1rem">
+
+Free, offline, accountless — and staying that way. If it earned its keep:
+
+| | |
+|---|---|
+| UPI (India) | `drsohilboi@ybl` — payee Dr. Sohil Momin, open amount, or scan [the QR](docs/assets/upi-qr.svg) |
+| GitHub Sponsors | [github.com/sponsors/drsamonline](https://github.com/sponsors/drsamonline) |
+| Ko-fi | [ko-fi.com/matneo](https://ko-fi.com/matneo) |
+| PayPal | [paypal.me/drsohilmomin](https://paypal.me/drsohilmomin?locale.x=en_GB&country.x=IN) |
+| My books | [Amazon author store](https://www.amazon.com/stores/author/B08ZT331LY/allbooks?ccs_id=aed72b9f-71d9-41dc-adee-e9368a317acc) |
+| More apps | [drsamonline.github.io](https://drsamonline.github.io/) |
+| Email | [sohilmomin2000@gmail.com](mailto:sohilmomin2000@gmail.com) |
+
+Nothing is gated behind it: no accounts, no tracking, no network requests.

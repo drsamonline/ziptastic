@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HCS — the vendored source vault for CHCE</title>
+<meta name="description" content="Every third-party compressor, preprocessor, recompressor and entropy-coder reference the CHCE engine uses, vendored flat and offline. 55 sources across 14 categories.">
+<meta name="theme-color" content="#f7f6f2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12140f" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="HCS — the vendored source vault">
+<meta property="og:description" content="Offline only, one source of truth, licence-audited. A clone is the whole source tree.">
+<style>
+  /* An archive register: paper, ruled columns, one green ink. The subject is a
+     catalogue of pinned sources, so the page is set like one. */
+  :root {
+    --paper: #f7f6f2; --card: #ffffff; --ink: #14161a; --mut: #5c6470;
+    --line: #e2ddd2; --accent: #2f6b4f; --warn: #9a5b12; --code: #f1efe8;
+    --serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+    --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper: #12140f; --card: #191c16; --ink: #e9ece2; --mut: #9aa392;
+            --line: #2a2f26; --accent: #7fc4a0; --warn: #e0a163; --code: #1e221b; }
+  }
+  :root[data-theme="light"] { --paper: #f7f6f2; --card: #fff; --ink: #14161a; --mut: #5c6470;
+    --line: #e2ddd2; --accent: #2f6b4f; --warn: #9a5b12; --code: #f1efe8; }
+  :root[data-theme="dark"] { --paper: #12140f; --card: #191c16; --ink: #e9ece2; --mut: #9aa392;
+    --line: #2a2f26; --accent: #7fc4a0; --warn: #e0a163; --code: #1e221b; }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--serif);
+         font-size: 17px; line-height: 1.66; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 28px; }
+  a { color: var(--accent); text-underline-offset: 3px; }
+  code { font-family: var(--mono); font-size: .85em; background: var(--code);
+          border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; }
+
+  .bar { position: sticky; top: 0; z-index: 30; border-bottom: 1px solid var(--line);
+         background: color-mix(in srgb, var(--paper) 92%, transparent); backdrop-filter: blur(8px); }
+  .bar .wrap { display: flex; align-items: center; gap: 12px; height: 58px; }
+  .mark { width: 24px; height: 24px; }
+  .brand { font-size: 16px; font-weight: 600; letter-spacing: .01em; }
+  .bar nav { margin-left: auto; display: flex; gap: 18px; font-size: 14px; font-family: var(--mono); }
+  .bar nav a { color: var(--mut); text-decoration: none; }
+  .bar nav a:hover { color: var(--ink); }
+  @media (max-width: 780px) { .bar nav { display: none; } }
+  .toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+    background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px 5px 9px;
+    color: var(--mut); font: inherit; font-size: 12px; font-family: var(--mono); line-height: 1; }
+  .toggle:hover { color: var(--ink); border-color: var(--accent); }
+  .toggle svg { width: 13px; height: 13px; }
+  .bar nav + .toggle { margin-left: 0; }
+
+  .hero { padding: 66px 0 0; }
+  .kicker { font-family: var(--mono); font-size: 11px; letter-spacing: .16em; text-transform: uppercase;
+             color: var(--accent); }
+  h1 { font-size: clamp(34px, 5.6vw, 58px); line-height: 1.04; letter-spacing: -.03em; margin: 14px 0 0;
+        font-weight: 600; max-width: 20ch; }
+  h1 em { font-style: normal; color: var(--accent); }
+  .lead { font-size: 18.5px; color: var(--mut); max-width: 58ch; margin: 18px 0 0; }
+  .lead b { color: var(--ink); font-weight: 600; }
+  .cta { display: flex; flex-wrap: wrap; gap: 10px; margin: 24px 0 0; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 19px; border-radius: 3px;
+          font-family: var(--mono); font-size: 13px; text-decoration: none;
+          background: var(--accent); color: #fff; border: 1px solid var(--accent); }
+  :root[data-theme="dark"] .btn { color: #0d1a13; }
+  .btn:hover { filter: brightness(1.08); }
+  .btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+  .btn.ghost:hover { border-color: var(--accent); color: var(--accent); filter: none; }
+
+  /* the status strip tells the truth about the vault, not the aspiration */
+  .status { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line);
+             border: 1px solid var(--line); margin: 40px 0 0; }
+  .status div { background: var(--card); padding: 15px 16px; }
+  .status b { display: block; font-family: var(--mono); font-size: 21px; color: var(--ink); }
+  .status b.todo { color: var(--warn); }
+  .status span { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+                  color: var(--mut); }
+  @media (max-width: 700px) { .status { grid-template-columns: repeat(2, 1fr); } }
+
+  section { padding: 54px 0 0; }
+  h2 { font-family: var(--mono); font-size: 11px; letter-spacing: .16em; text-transform: uppercase;
+       color: var(--mut); margin: 0 0 18px; font-weight: 400; display: flex; align-items: center; gap: 12px; }
+  h2::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 15.5px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  th { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+       color: var(--mut); font-weight: 400; }
+  td.n { font-family: var(--mono); text-align: right; color: var(--accent); width: 90px; }
+  tr:last-child td { border-bottom: 0; }
+
+  .rules td:first-child { width: 30%; font-weight: 600; }
+  .rules td:last-child { color: var(--mut); }
+
+  pre { margin: 0; background: var(--code); border: 1px solid var(--line); border-left: 2px solid var(--accent);
+        border-radius: 0 4px 4px 0; padding: 16px 18px; overflow-x: auto;
+        font-family: var(--mono); font-size: 12.5px; line-height: 1.85; }
+  pre .c { color: var(--mut); }
+
+  .warn { border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 8%, transparent);
+           padding: 16px 18px; border-radius: 0 4px 4px 0; }
+  .warn p { margin: 0; font-size: 15.5px; }
+  .warn p + p { margin-top: 6px; color: var(--mut); font-size: 14.5px; }
+
+  .support { border-top: 1px solid var(--line); margin-top: 56px; padding: 32px 0 0; }
+  .support-in { display: grid; grid-template-columns: 86px 1fr; gap: 18px; }
+  .support-in img.portrait { width: 86px; height: 86px; border-radius: 4px; border: 1px solid var(--line); }
+  .support p { margin: 0 0 12px; color: var(--mut); font-size: 14.5px; max-width: 62ch; }
+  .handles { display: flex; flex-wrap: wrap; gap: 6px; }
+  .handles a, .handles span { font-family: var(--mono); font-size: 11px; text-decoration: none;
+    border: 1px solid var(--line); border-radius: 4px; padding: 5px 9px; color: var(--ink); background: var(--card); }
+  .handles a:hover { border-color: var(--accent); color: var(--accent); }
+  .qr { width: 86px; height: 86px; border: 1px solid var(--line); background: #fff; border-radius: 4px; margin-top: 10px; }
+  @media (max-width: 620px) { .support-in { grid-template-columns: 1fr; } }
+
+  footer { border-top: 1px solid var(--line); margin-top: 38px; padding: 18px 0 50px;
+           font-family: var(--mono); font-size: 11.5px; color: var(--mut); }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  footer a { color: var(--mut); } footer a:hover { color: var(--accent); }
+  .stamp { margin-left: auto; }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <div class="wrap">
+    <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
+      <!-- the mark: stacked spines, a vault of sources -->
+      <rect x="3" y="4" width="3.6" height="16" rx="1" fill="var(--accent)"/>
+      <rect x="8" y="6" width="3.6" height="14" rx="1" fill="var(--accent)" opacity=".7"/>
+      <rect x="13" y="3" width="3.6" height="17" rx="1" fill="var(--accent)" opacity=".45"/>
+      <rect x="18" y="8" width="3" height="12" rx="1" fill="var(--accent)" opacity=".3"/>
+    </svg>
+    <span class="brand">HCS</span>
+    <nav>
+      <a href="#register">The register</a>
+      <a href="#rules">Constraints</a>
+      <a href="#consumed">How it is consumed</a>
+    </nav>
+    <button class="toggle" id="theme" type="button" aria-label="Switch colour theme">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3l1.7 1.7M17 17l1.7 1.7M18.7 5.3 17 7M7 17l-1.7 1.7"/>
+      </svg>
+      <span id="theme-label">Dark</span>
+    </button>
+  </div>
+</div>
+
+<div class="wrap">
+  <header class="hero">
+    <p class="kicker">holistic compression sources · vendored · offline</p>
+    <h1>The source vault behind <em>CHCE</em>.</h1>
+    <p class="lead">Every third-party compressor, preprocessor, recompressor and entropy-coder
+    reference the engine uses, <b>vendored flat in one tree</b>. A clone is the whole source tree —
+    no submodules, no registry, no network at build time.</p>
+    <div class="cta">
+      <a class="btn" href="https://github.com/drsamonline/HCS">Source</a>
+      <a class="btn ghost" href="https://github.com/drsamonline/HCS/blob/main/SOURCES">The source list</a>
+    </div>
+
+    <div class="status">
+      <div><b>55</b><span>sources</span></div>
+      <div><b>14</b><span>categories</span></div>
+      <div><b class="todo">0</b><span>pinned so far</span></div>
+      <div><b class="todo">13</b><span>licences to verify</span></div>
+    </div>
+  </header>
+
+  <section>
+    <h2>What this is for</h2>
+    <p style="margin:0;max-width:64ch;color:var(--mut)">A compression engine that fetches its
+    dependencies at build time cannot be audited, cannot be built offline, and cannot promise that
+    the bytes it produced last year are the bytes it produces today. Every source here is vendored
+    at a revision that was tested — and the register below is the machine-readable list consumers
+    read, not documentation that drifts from it.</p>
+  </section>
+
+  <section id="register">
+    <h2>The register — 55 sources, 14 categories</h2>
+    <table>
+      <thead><tr><th>Category</th><th style="text-align:right">Sources</th></tr></thead>
+      <tbody>
+      <tr><td>Entropy / Final-Stage</td><td class="n">6</td></tr>
+      <tr><td>LZ / Match Finder</td><td class="n">7</td></tr>
+      <tr><td>Context-Mixing</td><td class="n">5</td></tr>
+      <tr><td>BWT</td><td class="n">2</td></tr>
+      <tr><td>Numeric / Structured</td><td class="n">2</td></tr>
+      <tr><td>Fast / Asymmetric</td><td class="n">7</td></tr>
+      <tr><td>Preprocessors</td><td class="n">3</td></tr>
+      <tr><td>Recompressors</td><td class="n">8</td></tr>
+      <tr><td>Fast Deflate</td><td class="n">2</td></tr>
+      <tr><td>Executable Packers</td><td class="n">2</td></tr>
+      <tr><td>Embedded</td><td class="n">2</td></tr>
+      <tr><td>Discovery / Reference Lists</td><td class="n">2</td></tr>
+      <tr><td>Additional / Experimental</td><td class="n">5</td></tr>
+      <tr><td>Pending Additions (queued for next commit)</td><td class="n">2</td></tr>
+      </tbody>
+    </table>
+    <p style="margin:14px 0 0;font-family:var(--mono);font-size:11.5px;color:var(--mut)">
+    read from <code>SOURCES</code> in the repository</p>
+  </section>
+
+  <section id="rules">
+    <h2>The constraints</h2>
+    <table class="rules">
+      <thead><tr><th>Rule</th><th>What it forbids</th></tr></thead>
+      <tbody>
+        <tr><td>Offline only</td><td>No neural networks, no model files, no GPU runtimes. Context-mixing
+          compressors such as zpaq and paq8px are pure algorithms — not AI, and fully offline.</td></tr>
+        <tr><td>Single source of truth</td><td>No submodules and no nested <code>.git</code> directories.
+          All sources are vendored flat.</td></tr>
+        <tr><td>Licence-audited</td><td>Nothing enters without its licence recorded in the register and
+          its full text kept beside it.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Where the vault stands</h2>
+    <div class="warn">
+      <p><b>0 of 55 sources are pinned, and 13 licences are still
+      marked <code>verify</code>.</b> The register carries a <code>pin</code> column and every row
+      reads <code>TBD</code> until the first build records a commit.</p>
+      <p>That matters because the whole argument for vendoring is reproducibility: until a row has a
+      pin, a consumer building from it is trusting <code>main</code>, which is the thing this vault
+      exists to avoid. It is stated here rather than left for a consumer to discover.</p>
+    </div>
+  </section>
+
+  <section id="consumed">
+    <h2>How it is consumed</h2>
+    <p style="margin:0 0 14px;max-width:62ch;color:var(--mut)">Not as a dependency manager would do
+    it. Consumers pull the vault with <code>git subtree</code> into their own <code>vendor/</code>
+    and build from the pinned tree — so a consumer's build is reproducible without a network and
+    without trusting a registry.</p>
+    <pre><span class="c"># one tree, vendored into the consumer</span>
+git subtree add --prefix vendor/hcs \
+  https://github.com/drsamonline/HCS main --squash</pre>
+  </section>
+
+  <section class="support" id="support">
+    <h2>Support the work</h2>
+    <div class="support-in">
+      <div>
+        <img class="portrait" src="assets/support-portrait.jpg" alt="Dr Sohil Momin">
+        <img class="qr" src="assets/upi-qr.svg" alt="UPI payment QR — open amount">
+      </div>
+      <div>
+        <h3 style="margin:0 0 6px;font-size:16px">Free to use, and it stays free</h3>
+        <p>Everything here is free, offline and accountless. If it earned its keep, there are a few
+        ways to say so — pick whichever is easiest where you are.</p>
+        <div class="handles">
+          <span>UPI · drsohilboi@ybl</span>
+          <a href="https://ko-fi.com/matneo" rel="noopener noreferrer">Ko-fi</a>
+          <a href="https://paypal.me/drsohilmomin?locale.x=en_GB&amp;country.x=IN" rel="noopener noreferrer">PayPal</a>
+          <a href="https://www.amazon.com/stores/author/B08ZT331LY/allbooks?ccs_id=aed72b9f-71d9-41dc-adee-e9368a317acc" rel="noopener noreferrer">Books</a>
+          <a href="https://drsamonline.github.io/" rel="noopener noreferrer">All projects</a>
+          <a href="mailto:sohilmomin2000@gmail.com">Email</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      <span>HCS · © 2026 Dr Sohil Momin · part of the Forge estate</span>
+      <a href="https://github.com/drsamonline/HCS">GitHub</a>
+      <span class="stamp">design 2026-11-06</span>
+    </div>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const root = document.documentElement, btn = document.getElementById('theme');
+  const label = document.getElementById('theme-label'), KEY = 'hcs-theme';
+  const paint = (mode) => {
+    const dark = mode === 'dark' || (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+    root.setAttribute('data-theme', dark ? 'dark' : 'light');
+    label.textContent = dark ? 'Dark' : 'Light';
+  };
+  const stored = localStorage.getItem(KEY);
+  paint(stored || 'system');
+  if (!stored) root.removeAttribute('data-theme');
+  btn.addEventListener('click', () => {
+    const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    localStorage.setItem(KEY, next); paint(next);
+  });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (!localStorage.getItem(KEY)) paint('system');
+  });
+})();
+</script>
+</body>
+</html>

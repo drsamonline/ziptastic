@@ -28,7 +28,7 @@ Columns:
 
 | id | url | pin | license | integration |
 |---|---|---|---|---|
-| srep | https://github.com/essencesh/srep | TBD | Public-Domain | copy-src |
+| srep | https://github.com/essencesh/srep | TBD | all-rights-reserved | reference |
 | zstd | https://github.com/facebook/zstd | TBD | BSD-3-Clause | link |
 | lz4 | https://github.com/lz4/lz4 | TBD | BSD-2-Clause | link |
 | lzham | https://github.com/richgel999/lzham_codec | TBD | MIT | link |
@@ -146,3 +146,38 @@ Clone them with:
 git clone --depth=1 https://github.com/fusiyuan2010/CSC.git old/csc
 git clone --depth=1 https://github.com/nemequ/lzo.git        old/lzo
 rm -rf old/csc/.git old/lzo/.git
+
+---
+
+## Submodule entries
+
+23 rows above are `git submodule` entries, pinned by the commit SHA recorded in
+the tree and mapped to their upstream URL in `.gitmodules`. Materialise them with
+`git submodule update --init --recursive`, and verify with
+`./scripts/check-vendor.sh`.
+
+`pin` is `TBD` in the table because the authoritative pin is the gitlink SHA in
+the tree, not a value maintained by hand here. To read a pin:
+
+```bash
+git ls-tree HEAD old/ | awk '$1=="160000"{print $4, $3}'
+```
+
+---
+
+## Licence corrections
+
+| id | was | is | why |
+|---|---|---|---|
+| `srep` | `Public-Domain` / `copy-src` | `all-rights-reserved` / `reference` | The source header in `old/srep-main/Compression/SREP/srep.cpp` reads "Copyright (C) 2009-2014 Bulat Ziganshin. **All rights reserved.** Mail Bulat.Ziganshin@gmail.com ... if you want to buy a commercial license for the source code." There is no LICENSE or COPYING file in the tree. The same notice appears on the copy embedded in `old/freearc-main/clibs/Compression/SREP/srep.cpp`. |
+
+This is the only wrong row found in a spot-check of the sources ziptastic is
+likely to use. Checked and confirmed correct: `7z` PPMd (`Ppmd7.c`: "Igor Pavlov :
+Public domain"), `preflate` (Apache-2.0), `brotli` (MIT), `zstd` (BSD-3),
+`lz4` (BSD-2), `libbsc` (Apache-2.0). Note that `zpaq` is public domain but
+bundles libdivsufsort (MIT) inside `libzpaq.cpp`, so its row is "PD + MIT".
+
+**Consequence for consumers:** SREP is a design reference only. Its block-hash
+long-range matching is a published technique and can be implemented
+independently, but the code itself may not be copied into a closed-source
+binary, and `copy-src` was wrong.
