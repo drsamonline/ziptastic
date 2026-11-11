@@ -141,11 +141,14 @@ block table    verified against the manifest digest, 108 bytes read of 118284
 `verified` is doing work: `info` reads every block header at the position the table names and
 re-hashes them into the manifest before printing anything.
 
-**The release binary's floor.** A release is built inside `debian:bullseye` with
-`-static-libstdc++ -static-libgcc`, so the published asset needs **glibc 2.31** —
-Debian 11, Ubuntu 20.04, RHEL 9 and later. Building on
+**The release binary's floor.** A release is built on `ubuntu-22.04` with
+`-static-libstdc++ -static-libgcc`, so the published asset needs **glibc 2.35** —
+Debian 12, Ubuntu 22.04 and later. Building on
 `ubuntu-latest` instead produces a binary that requires glibc 2.38 and libstdc++
 `GLIBCXX_3.4.32`, which excludes Debian 12, Ubuntu 22.04 and every RHEL 9; v1.4.2 was
 published that way before this was noticed. The release workflow now reads the floor back
-out of the finished binary with `objdump` and refuses to publish above 2.31.
+out of the finished binary with `objdump` and refuses to publish above 2.35. Container
+builds (debian:bullseye, glibc 2.31) were tried and abandoned: bullseye's apt repositories
+have moved to the archive, so the image can no longer install git, and without git there
+are no submodules.
 
