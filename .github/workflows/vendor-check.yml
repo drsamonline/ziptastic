@@ -12,6 +12,12 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  schedule:
+    # Drift is not caused by anything in this repository, so nothing here will
+    # notice it. A weekly run is the only way the gate fires when the vault
+    # moves and no one has pushed.
+    - cron: '17 4 * * 1'
+
 
 jobs:
   vendor:
@@ -27,6 +33,14 @@ jobs:
         # preserved when the file is written by tooling, and a missing +x would
         # fail the guard for the wrong reason.
         run: bash scripts/check-vendor.sh
+
+      - name: The vendored copy must be the vault's current copy
+        # Only on main and on demand: a PR that has nothing to do with vendoring
+        # should not fail because HCS moved. Every merge to main is deliberate,
+        # so main is the right place to refuse a stale vault — and the weekly
+        # schedule catches the case where nobody merges at all.
+        if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+        run: bash scripts/check-vendor-current.sh
 
       - name: Report what is present
         if: always()

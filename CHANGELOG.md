@@ -9,6 +9,55 @@ short version: what changed, and what it cost.
 
 ---
 
+## 1.4.2 — 2026-11-12
+
+### Fixed
+
+- **The whole-stream CM block wrote the wrong sizes when a Layer 0 transform fired.** The block header
+  took `original_size` and `true_size` from the input the user handed over instead of the
+  post-transform stream, so with a transform in play the header disagreed with the payload and reading
+  the archive failed with *declared size does not match payload*. The LZMA2 fallback next door has
+  always written `data.size()`, which is why the bug never showed there. Latent in `--max-ratio` (it
+  needs a case where a transform fires *and* the CM block wins, which no corpus produced) and fatal
+  in `--cm-auto`, where the gate changes which path wins. 37 suites pass; `--max-ratio` still
+  round-trips on every fixture tried.
+
+### Added
+
+- **A release workflow.** `PROJECT_OVERVIEW.md` said tagging "triggers the release workflow"; there was
+  none, and 1.4.1's binary was built and uploaded by hand — which is why `heavenzip`'s `bin/` sat
+  empty for a week after a release that did happen. A tag now builds, runs the suite, packages
+  `ziptastic-<version>-linux-x86_64` with `SHA256SUMS` and publishes it, refusing a tag that
+  disagrees with `CMakeLists.txt`. `workflow_dispatch` does the same build and keeps the asset as an
+  artifact, publishing nothing.
+- **A vendor-currency gate.** `check-vendor.sh` proved the pins materialise; nothing noticed the vault
+  moving. `scripts/check-vendor-current.sh` compares `vendor/hcs/SOURCES` with HCS `main` and runs on
+  every merge to main, on demand, and weekly on a schedule.
+- **`docs/README.md`**, an index marking which of the sixty-odd documents are current, historical or
+  superseded, and the Silesia run recorded in `FINDINGS.md` §6a — the first row anyone else can check.
+
+### Changed
+
+- **Scope closed, with the measurements kept as the reason.** Audio other than WAV is out (MP3 and
+  FLAC dropped), and PDF is out as a transform target: four measurements, including a forced repack
+  chain and the JBIG2 bound, all lost to the Flate already in the file. QLFC closed itself — `libbsc`
+  *is* QLFC, and the better post-coder the paper describes already exists here as the CM backend.
+  ALP buys 0.9% on the shape it exists for, so there is no float transform.
+- **`vendor/hcs` pulled forward** to HCS 1.0.0: `SOURCES` 148 → 183 lines, carrying the licence
+  corrections and the submodule-mapping record.
+- **CI repaired.** The workflow had a step with no `run:` and a step with two `run:` keys, so GitHub
+  rejected it and every push from 9 November ran zero jobs while the commit page showed green ticks.
+  The claim-table check and the suite ran for the first time since.
+
+### Not done
+
+- **`--cm-auto` stays unbuilt.** It was implemented, measured from the CLI, and reverted on a
+  library-level failure that turned out to be a stale `libchce_core.a` — the depfile trap in
+  `BUILD.md`. It needs the CM-wins-with-a-transform fixture that the fix above also wants; marked
+  `TODO(audit-2026-11-08)` in the compressor.
+
+---
+
 ## 1.4.1 — 2026-11-08
 
 ### Fixed
