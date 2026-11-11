@@ -1,0 +1,104 @@
+# Vendored upstream sources.
+#
+# These are submodules so the mirror stays a mirror: HCS does not claim
+# authorship of the code under old/, it pins a commit of each upstream.
+#
+# History: until this file existed, old/ carried 23 gitlinks with NO URL
+# mapping, which is unrecoverable - git recorded a commit SHA for each
+# submodule but had nowhere to fetch it from, so `git submodule update
+# --init` could never work and every clone saw 23 empty directories.
+#
+# Materialise them with:  git submodule update --init --recursive
+# Verify with:            ./scripts/check-vendor.sh
+
+[submodule "old/aqueous"]
+	path = old/aqueous
+	url = https://github.com/lifthrasiir/aqueous
+
+[submodule "old/awesome-compopt"]
+	path = old/awesome-compopt
+	url = https://github.com/MartinEesmaa/awesome-compopt
+
+[submodule "old/awesome-cpp"]
+	path = old/awesome-cpp
+	url = https://github.com/hstsethi/awesome-cpp
+
+[submodule "old/brieflz"]
+	path = old/brieflz
+	url = https://github.com/jibsen/brieflz
+
+[submodule "old/bzip3"]
+	path = old/bzip3
+	url = https://github.com/kspalaiologos/bzip3
+
+[submodule "old/density"]
+	path = old/density
+	url = https://github.com/centaurean/density
+
+[submodule "old/fse"]
+	path = old/fse
+	url = https://github.com/Cyan4973/FiniteStateEntropy
+
+[submodule "old/heatshrink"]
+	path = old/heatshrink
+	url = https://github.com/atomicobject/heatshrink
+
+[submodule "old/lizard"]
+	path = old/lizard
+	url = https://github.com/inikep/lizard
+
+[submodule "old/lzham"]
+	path = old/lzham
+	url = https://github.com/richgel999/lzham_codec
+
+[submodule "old/omnizip-zpaq"]
+	path = old/omnizip-zpaq
+	url = https://github.com/omnizip/omnizip-rs
+
+[submodule "old/paq8px"]
+	path = old/paq8px
+	url = https://github.com/hxim/paq8px
+
+[submodule "old/pcodec"]
+	path = old/pcodec
+	url = https://github.com/mayhemheroes/quantile-compression
+
+[submodule "old/rhefo"]
+	path = old/rhefo
+	url = https://github.com/T-3B/rhefo
+
+[submodule "old/ryg_rans"]
+	path = old/ryg_rans
+	url = https://github.com/rygorous/ryg_rans
+
+[submodule "old/shoco"]
+	path = old/shoco
+	url = https://github.com/Ed-von-Schleck/shoco
+
+[submodule "old/smaz"]
+	path = old/smaz
+	url = https://github.com/antirez/smaz
+
+[submodule "old/snappy"]
+	path = old/snappy
+	url = https://github.com/google/snappy
+
+[submodule "old/tamp"]
+	path = old/tamp
+	url = https://github.com/BrianPugh/tamp
+
+[submodule "old/upx"]
+	path = old/upx
+	url = https://github.com/upx/upx
+
+[submodule "old/zelf"]
+	path = old/zelf
+	url = https://github.com/seb3773/zelf
+
+[submodule "old/zpaqfranz"]
+	path = old/zpaqfranz
+	url = https://github.com/fcorbelli/zpaqfranz
+
+[submodule "old/zxc"]
+	path = old/zxc
+	url = https://github.com/hellobertrand/zxc
