@@ -5,6 +5,8 @@
 [![Build](docs/assets/badge-build.svg)](docs/BUILD.md)
 [![Live](docs/assets/badge-live.svg)](https://drsamonline.github.io/ziptastic/)
 
+
+![Screenshot](docs/shot.png)
 **One self-contained binary that compresses a game asset tree 20–36% smaller than `xz -9`, and
 tells you when it cannot.** No external processes, no network, no model files.
 
