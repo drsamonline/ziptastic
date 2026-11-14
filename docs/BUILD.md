@@ -135,6 +135,28 @@ produces a binary with your own toolchain's floor, which is usually newer and is
 locally-built binary can fail on an older machine that the release works on. See the
 glibc gate in `.github/workflows/release.yml`.
 
+### Why the floor is 2.34 and not 2.17
+
+1.4.1 was hand-built against glibc 2.17 (CentOS 7). 2.34 covers Debian 12, Ubuntu 22.04,
+Ubuntu 24.04 and RHEL 9 — every distribution anyone is currently installing. Going back to
+2.17 means cross-compiling, and the only toolchain that does it here is `zig`:
+
+```
+$ pip install ziglang
+$ cmake -DCMAKE_C_COMPILER=.../zig-cc-2.17 -DCMAKE_CXX_COMPILER=.../zig-cxx-2.17
+-- The C compiler identification is Clang 22.1.8
+-- Configuring done (108.6s)      # compiler feature tests, once
+```
+
+It works, and it is expensive: the vendored tree is compiled from scratch by a second
+toolchain (327 targets, roughly four times the GCC build's wall time), so a release becomes
+a twenty-minute job that depends on a Python package that ships its own compiler. That is a
+dependency the project does not otherwise have.
+
+**Decision:** 2.34 is the floor. What would change it: a user on CentOS 7 or Ubuntu 20.04
+who cannot upgrade. If that happens, the recipe above is the one to follow, and the glibc
+gate in `release.yml` will hold the new floor to whatever the build actually produces.
+
 The offset table has its own smoke test, and it is the one to run after touching the trailer:
 
 ```
