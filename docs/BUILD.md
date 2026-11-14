@@ -120,7 +120,7 @@ supported.
 
 ```
 $ ./build/ziptastic version
-ziptastic 1.4.1 (CHCE format v8)
+ziptastic 1.4.2 (CHCE format v8)
 
 $ head -c 200000 /dev/urandom > t.bin
 $ ./build/ziptastic c -9 t.bin            # writes t.bin.dr
@@ -128,6 +128,12 @@ $ ./build/ziptastic d t.bin.dr            # writes t.bin, byte-identical
 ```
 
 If `ctest` is green and that round trip is byte-exact, you have a working build.
+
+The published asset is built on `ubuntu-22.04` in the release workflow, which gives it a
+**glibc 2.34** floor — Debian 12, Ubuntu 22.04 and RHEL 9 all run it. Building locally
+produces a binary with your own toolchain's floor, which is usually newer and is why a
+locally-built binary can fail on an older machine that the release works on. See the
+glibc gate in `.github/workflows/release.yml`.
 
 The offset table has its own smoke test, and it is the one to run after touching the trailer:
 
