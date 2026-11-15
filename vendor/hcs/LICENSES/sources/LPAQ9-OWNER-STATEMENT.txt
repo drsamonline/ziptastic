@@ -1,0 +1,10 @@
+The vendored copy is `lpaq9m.zpaq`, a binary archive containing no source
+and no licence notice, and `SOURCES` records only a zip URL this vault does
+not mirror. The licence is recorded on the maintainer's statement of
+15 November 2026 that LPAQ carries the same licence as paq8, which
+`SOURCES` records as GPL-2.0.
+
+This file is a record of where the claim comes from, not the licence text.
+The text is `LICENSES/GPL-2.0-only.txt`, and it applies if the statement is
+right. If the upstream archive is ever fetched and its readme read, replace
+this file with what it says.

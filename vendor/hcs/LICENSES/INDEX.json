@@ -79,6 +79,12 @@
    "sha256": "59746d6285ffa44bfc7ecada352aa5d6a20dc8eab418a60ce091cc739012c135",
    "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT-0.txt"
   },
+  "SSPL-1.0": {
+   "file": "SSPL-1.0.txt",
+   "bytes": 30609,
+   "sha256": "3fac2f3a7404f72330ae38e3a1d2632ede9ad3fbdb0d471d04c33f2c1d0e94ca",
+   "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/SSPL-1.0.txt"
+  },
   "Zlib": {
    "file": "Zlib.txt",
    "bytes": 838,
@@ -361,11 +367,11 @@
   {
    "id": "freearc-c",
    "url": "https://github.com/seb3773/freearc-c",
-   "declared": "verify",
-   "spdx": [],
-   "flags": [
-    "verify"
+   "declared": "GPL-2.0",
+   "spdx": [
+    "GPL-2.0-only"
    ],
+   "flags": [],
    "vendored_dir": "freearc-c-main",
    "status": "collected from vendored tree",
    "evidence": [
@@ -495,23 +501,32 @@
   {
    "id": "LPAQ9",
    "url": "http://mattmahoney.net/dc/lpaq9.zip",
-   "declared": "Public-Domain",
-   "spdx": [],
-   "flags": [
-    "public-domain"
+   "declared": "GPL-2.0",
+   "spdx": [
+    "GPL-2.0-only"
    ],
+   "flags": [],
    "vendored_dir": "LPAQ9",
-   "status": "no vendored licence file; not a GitHub URL, not fetched",
-   "evidence": []
+   "status": "recorded from the maintainer's statement; no text in the vault",
+   "evidence": [
+    {
+     "file": "sources/LPAQ9-OWNER-STATEMENT.txt",
+     "origin": "maintainer statement, 15 Nov 2026",
+     "bytes": 573,
+     "sha256": "40c317967c6ee7000c3e1faeba2f4a01503dacae78e4a5c6953e65220a16d0da",
+     "note": "no licence text in the vault; recorded as GPL-2.0"
+    }
+   ]
   },
   {
    "id": "omnizip-zpaq",
    "url": "https://github.com/omnizip/omnizip-rs",
-   "declared": "verify",
-   "spdx": [],
-   "flags": [
-    "verify"
+   "declared": "MIT+Apache-2.0",
+   "spdx": [
+    "Apache-2.0",
+    "MIT"
    ],
+   "flags": [],
    "vendored_dir": "omnizip-zpaq",
    "status": "collected from vendored tree",
    "evidence": [
@@ -638,11 +653,11 @@
   {
    "id": "zxc",
    "url": "https://github.com/hellobertrand/zxc",
-   "declared": "verify",
-   "spdx": [],
-   "flags": [
-    "verify"
+   "declared": "BSD-3-Clause",
+   "spdx": [
+    "BSD-3-Clause"
    ],
+   "flags": [],
    "vendored_dir": "zxc",
    "status": "collected from vendored tree",
    "evidence": [
@@ -801,11 +816,11 @@
   {
    "id": "parmar",
    "url": "https://github.com/shallowbyte/parmar",
-   "declared": "verify",
-   "spdx": [],
-   "flags": [
-    "verify"
+   "declared": "Apache-2.0",
+   "spdx": [
+    "Apache-2.0"
    ],
+   "flags": [],
    "vendored_dir": "parmar-main",
    "status": "collected from vendored tree",
    "evidence": [
@@ -1145,11 +1160,11 @@
   {
    "id": "rhefo",
    "url": "https://github.com/T-3B/rhefo",
-   "declared": "verify",
-   "spdx": [],
-   "flags": [
-    "verify"
+   "declared": "SSPL-1.0",
+   "spdx": [
+    "SSPL-1.0"
    ],
+   "flags": [],
    "vendored_dir": "rhefo",
    "status": "collected from vendored tree",
    "evidence": [
@@ -1331,11 +1346,11 @@
   {
    "id": "zelf",
    "url": "https://github.com/seb3773/zelf",
-   "declared": "verify",
-   "spdx": [],
-   "flags": [
-    "verify"
+   "declared": "GPL-3.0",
+   "spdx": [
+    "GPL-3.0-only"
    ],
+   "flags": [],
    "vendored_dir": "zelf",
    "status": "collected from vendored tree",
    "evidence": [
@@ -1556,25 +1571,6 @@
      "bytes": 1745,
      "sha256": "289eab7ad6b737d2f1aa6fdcd45885ff1e8e0af1ef6df8075836dc7015bf4638",
      "note": "copyright/licence header from a vendored source file"
-    }
-   ]
-  },
-  {
-   "id": "csc",
-   "url": "https://github.com/fusiyuan2010/CSC",
-   "declared": "verify",
-   "spdx": [],
-   "flags": [
-    "verify"
-   ],
-   "vendored_dir": null,
-   "status": "collected from upstream HEAD",
-   "evidence": [
-    {
-     "file": "sources/csc-LICENSE",
-     "origin": "https://raw.githubusercontent.com/fusiyuan2010/CSC/HEAD/LICENSE",
-     "bytes": 1211,
-     "sha256": "60d2c28d19d2bdf7bbaa59829e7a595234265e8111a01ccb74d25d6c4d2d013a"
     }
    ]
   }

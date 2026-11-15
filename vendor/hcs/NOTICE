@@ -20,7 +20,7 @@ govern it.
 |---|---|
 | sources in `old/` | 52 |
 | of those, pinned as git submodules | 23 |
-| licence texts collected | 52 of 53 rows |
+| licence texts collected | 52 of 52 |
 | unresolved | `LPAQ9` |
 
 The licence of each source is recorded in `SOURCES` (the `license` column), and
@@ -42,6 +42,11 @@ per row.
 
 ## Two things a consumer must not assume
 
+- **One source is SSPL, which is not open source.** `rhefo` is under the Server
+  Side Public License v1 (`LICENSES/sources/rhefo-LICENSE.txt`). It is not
+  OSI-approved, and its §13 obliges anyone who offers it *as a service* to release
+  the source of their own service. Mirroring it here grants nothing; a consumer
+  that deploys it needs to read that text.
 - **Copyleft sources are present.** `paq8px`, `upx`, `advancecomp`, `packJPG`,
   `lzo` and others under `old/` are GPL or LGPL. Mirroring them here
   grants nothing: a product that links them inherits those terms, which is why
@@ -52,14 +57,18 @@ per row.
   (`LICENSES/sources/srep-HEADER.txt`). It is in the vault for reference and for
   a user who already has it. It is not redistributable in any form.
 
-## One row is unresolved
+## One licence rests on a statement, not a text
 
-`LPAQ9` has no licence evidence in this vault. The vendored copy is
+`LPAQ9` is recorded as **GPL-2.0**, on the maintainer's statement of 15 November
+2026 that LPAQ carries the same licence as `paq8`, which `SOURCES` records as
+GPL-2.0. That is a fact about provenance, not a licence text: the vendored copy is
 `lpaq9m.zpaq`, a binary archive containing no source and no notice, and `SOURCES`
-records only a zip URL this repository does not mirror. Its recorded verdict
-(`Public-Domain`) is therefore **unverified** — treat it as unknown until someone
-fetches the upstream archive and reads its readme. `tools/check-licences.py`
-prints it on every run.
+records only a zip URL this vault does not mirror.
+
+`LICENSES/sources/LPAQ9-OWNER-STATEMENT.txt` records exactly that, and says what
+would replace it — fetching the upstream archive and reading its readme. Until
+then, treat the GPL-2.0 verdict as recorded rather than evidenced, which is a
+weaker thing and is labelled as such.
 
 ## Keeping this file true
 
