@@ -1,0 +1,1582 @@
+{
+ "generated_from": "HCS/SOURCES and HCS/old (vendored trees)",
+ "spdx_texts": {
+  "0BSD": {
+   "file": "0BSD.txt",
+   "bytes": 643,
+   "sha256": "e3f18c71e10d673590eb9856c1d79dd3b4b0d65404efb5e8584dbede7edd608b",
+   "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/0BSD.txt"
+  },
+  "Apache-2.0": {
+   "file": "Apache-2.0.txt",
+   "bytes": 10280,
+   "sha256": "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff",
+   "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/Apache-2.0.txt"
+  },
+  "BSD-2-Clause": {
+   "file": "BSD-2-Clause.txt",
+   "bytes": 1267,
+   "sha256": "f32fb3b417a194167cfad068223fc975ba96c5960513a10f66a3c28720aec1df",
+   "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/BSD-2-Clause.txt"
+  },
+  "BSD-3-Clause": {
+   "file": "BSD-3-Clause.txt",
+   "bytes": 1460,
+   "sha256": "5a93d5831e1297ab10fe643e1a631e83be392896da14ee2951285a79012df69d",
+   "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/BSD-3-Clause.txt"
+  },
+  "GPL-2.0-only": {
+   "file": "GPL-2.0-only.txt",
+   "bytes": 17337,
+   "sha256": "aaf135472f81c5b4a0dca9367e5bb5e9750032b5bebe5442b36e4c0a47430df3",
+   "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/GPL-2.0-only.txt"
+  },
+  "GPL-2.0-or-later": {
+   "file": "GPL-2.0-or-later.txt",
+   "bytes": 17337,
+   "sha256": "aaf135472f81c5b4a0dca9367e5bb5e9750032b5bebe5442b36e4c0a47430df3",
+   "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/GPL-2.0-or-later.txt"
+  },
+  "GPL-3.0-only": {
+   "file": "GPL-3.0-only.txt",
+   "bytes": 34674,
+   "sha256": "fb981668c18a279e285fc4d83fba1e836cc84dd4daa73c9697d3cfd2d8aca6e0",
+   "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/GPL-3.0-only.txt"
+  },
+  "GPL-3.0-or-later": {
+   "file": "GPL-3.0-or-later.txt",
+   "bytes": 34674,
+   "sha256": "fb981668c18a279e285fc4d83fba1e836cc84dd4daa73c9697d3cfd2d8aca6e0",
+   "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/GPL-3.0-or-later.txt"
+  },
+  "ISC": {
+   "file": "ISC.txt",
+   "bytes": 737,
+   "sha256": "521c6f0ed8e64736684f89843d16a4df6b4b7449acbcfc6ca6630a3037ca8c53",
+   "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/ISC.txt"
+  },
+  "LGPL-2.1-only": {
+   "file": "LGPL-2.1-only.txt",
+   "bytes": 26001,
+   "sha256": "5749785c8bdefafcb5d798270ed0a967036fe2ca63dcedade1627565dfef81d2",
+   "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/LGPL-2.1-only.txt"
+  },
+  "LGPL-3.0-only": {
+   "file": "LGPL-3.0-only.txt",
+   "bytes": 42098,
+   "sha256": "996af0513df21f7496288951c41428a03c174e9e4a9d63665c57d670f845ccb1",
+   "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/LGPL-3.0-only.txt"
+  },
+  "MIT": {
+   "file": "MIT.txt",
+   "bytes": 1078,
+   "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+   "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+  },
+  "MIT-0": {
+   "file": "MIT-0.txt",
+   "bytes": 915,
+   "sha256": "59746d6285ffa44bfc7ecada352aa5d6a20dc8eab418a60ce091cc739012c135",
+   "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT-0.txt"
+  },
+  "Zlib": {
+   "file": "Zlib.txt",
+   "bytes": 838,
+   "sha256": "bfb1112d49db5b1daecdfef24bd7e2f3ea0bafb33aa67aa0ab51e2bf8407c03d",
+   "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/Zlib.txt"
+  }
+ },
+ "sources": [
+  {
+   "id": "xz",
+   "url": "https://github.com/tukaani-project/xz",
+   "declared": "0BSD+LGPL-2.1",
+   "spdx": [
+    "0BSD",
+    "LGPL-2.1-only"
+   ],
+   "flags": [],
+   "vendored_dir": "xz-master",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/xz-COPYING",
+     "origin": "old/xz-master/COPYING",
+     "bytes": 3119,
+     "sha256": "616a3ad264ce29b8f1cb97e53037b139d406899ca8d1f799651e17bfa09830b8"
+    },
+    {
+     "file": "sources/xz-COPYING.0BSD",
+     "origin": "old/xz-master/COPYING.0BSD",
+     "bytes": 607,
+     "sha256": "0b01625d853911cd0e2e088dcfb743261034a091bb379246cb25a14cc4c74bf1"
+    },
+    {
+     "file": "sources/xz-COPYING.GPLv2",
+     "origin": "old/xz-master/COPYING.GPLv2",
+     "bytes": 17984,
+     "sha256": "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6"
+    },
+    {
+     "file": "sources/xz-COPYING.GPLv3",
+     "origin": "old/xz-master/COPYING.GPLv3",
+     "bytes": 35149,
+     "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    {
+     "file": "sources/xz-COPYING.LGPLv2.1",
+     "origin": "old/xz-master/COPYING.LGPLv2.1",
+     "bytes": 26419,
+     "sha256": "20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95"
+    },
+    {
+     "file": "sources/xz-license-check.sh",
+     "origin": "old/xz-master/build-aux/license-check.sh",
+     "bytes": 5127,
+     "sha256": "2b3fa1d23cb2ab084f3d919908159473cc0e1eed059d106e2a2857c0ec8af98a"
+    }
+   ]
+  },
+  {
+   "id": "lzma",
+   "url": "https://www.7-zip.org/sdk.html",
+   "declared": "Public-Domain",
+   "spdx": [],
+   "flags": [
+    "public-domain"
+   ],
+   "vendored_dir": "lzma",
+   "status": "collected from a source-file header",
+   "evidence": [
+    {
+     "file": "sources/lzma-HEADER.txt",
+     "origin": "old/lzma/C/LzmaDec.c",
+     "bytes": 62,
+     "sha256": "d406d669914643608fb6dff6d9dac198a3833c7581d9025a57fd4af2f7fd6681",
+     "note": "copyright/licence header from a vendored source file"
+    }
+   ]
+  },
+  {
+   "id": "7z",
+   "url": "https://www.7-zip.org/",
+   "declared": "Public-Domain",
+   "spdx": [],
+   "flags": [
+    "public-domain"
+   ],
+   "vendored_dir": "7z",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/7z-License.txt",
+     "origin": "old/7z/DOC/License.txt",
+     "bytes": 6190,
+     "sha256": "dac8389b6bc39339537bc351772106afe7951cb242cdf03e855b67c3a683deb1"
+    },
+    {
+     "file": "sources/7z-copying.txt",
+     "origin": "old/7z/DOC/copying.txt",
+     "bytes": 26530,
+     "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
+    }
+   ]
+  },
+  {
+   "id": "brotli",
+   "url": "https://github.com/google/brotli",
+   "declared": "MIT",
+   "spdx": [
+    "MIT"
+   ],
+   "flags": [],
+   "vendored_dir": "brotli-master",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/brotli-LICENSE",
+     "origin": "old/brotli-master/LICENSE",
+     "bytes": 1084,
+     "sha256": "3d180008e36922a4e8daec11c34c7af264fed5962d07924aea928c38e8663c94"
+    }
+   ]
+  },
+  {
+   "id": "fse",
+   "url": "https://github.com/Cyan4973/FiniteStateEntropy",
+   "declared": "BSD-3-Clause",
+   "spdx": [
+    "BSD-3-Clause"
+   ],
+   "flags": [],
+   "vendored_dir": "fse",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/fse-LICENSE",
+     "origin": "old/fse/LICENSE",
+     "bytes": 1293,
+     "sha256": "c676df0814357087a875943355095d0eaf24e28c4ef6c0523a2c2c1b23712f66"
+    },
+    {
+     "file": "sources/fse-COPYING",
+     "origin": "old/fse/programs/COPYING",
+     "bytes": 18092,
+     "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    }
+   ]
+  },
+  {
+   "id": "ryg_rans",
+   "url": "https://github.com/rygorous/ryg_rans",
+   "declared": "Public-Domain",
+   "spdx": [],
+   "flags": [
+    "public-domain"
+   ],
+   "vendored_dir": "ryg_rans",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/ryg_rans-LICENSE",
+     "origin": "old/ryg_rans/LICENSE",
+     "bytes": 260,
+     "sha256": "9e1bc872f9f32b860104f4332d0490c0d6f4d5404d26482eedec067fc9b19f15"
+    }
+   ]
+  },
+  {
+   "id": "srep",
+   "url": "https://github.com/essencesh/srep",
+   "declared": "all-rights-reserved",
+   "spdx": [],
+   "flags": [
+    "all-rights-reserved"
+   ],
+   "vendored_dir": "srep-main",
+   "status": "collected from a source-file header",
+   "evidence": [
+    {
+     "file": "sources/srep-HEADER.txt",
+     "origin": "old/srep-main/Compression/SREP/srep.cpp",
+     "bytes": 182,
+     "sha256": "e13a299337a9a41eed6e254555c18a60e67636ac6d5171fc800d6f3df2834085",
+     "note": "copyright/licence header from a vendored source file"
+    }
+   ]
+  },
+  {
+   "id": "zstd",
+   "url": "https://github.com/facebook/zstd",
+   "declared": "BSD-3-Clause",
+   "spdx": [
+    "BSD-3-Clause"
+   ],
+   "flags": [],
+   "vendored_dir": "zstd-dev",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/zstd-COPYING",
+     "origin": "old/zstd-dev/COPYING",
+     "bytes": 18091,
+     "sha256": "f9c375a1be4a41f7b70301dd83c91cb89e41567478859b77eef375a52d782505"
+    },
+    {
+     "file": "sources/zstd-LICENSE",
+     "origin": "old/zstd-dev/LICENSE",
+     "bytes": 1549,
+     "sha256": "7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8"
+    }
+   ]
+  },
+  {
+   "id": "lz4",
+   "url": "https://github.com/lz4/lz4",
+   "declared": "BSD-2-Clause",
+   "spdx": [
+    "BSD-2-Clause"
+   ],
+   "flags": [],
+   "vendored_dir": "lz4-dev",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/lz4-LICENSE",
+     "origin": "old/lz4-dev/LICENSE",
+     "bytes": 646,
+     "sha256": "4bc9c403f6b679cc076dee210e0e21c27b4e8f6d3fb43d85364c76657bfaaac5"
+    },
+    {
+     "file": "sources/lz4-LICENSE-2",
+     "origin": "old/lz4-dev/contrib/djgpp/LICENSE",
+     "bytes": 1292,
+     "sha256": "d011d1e02cb32b71c1ce2922ab41a2e2ad30f4ecf8de22c078d53618205abc05"
+    },
+    {
+     "file": "sources/lz4-COPYING",
+     "origin": "old/lz4-dev/examples/COPYING",
+     "bytes": 14901,
+     "sha256": "609b910ef05c9c855ecc1da155a36ed0f57514eac452cf93446530b5ea4b3bc3"
+    },
+    {
+     "file": "sources/lz4-LICENSE-3",
+     "origin": "old/lz4-dev/lib/LICENSE",
+     "bytes": 1311,
+     "sha256": "8b58c446121a109ccf32edc094bba3010a3d85e4ee3702950db55e4d3e87736c"
+    },
+    {
+     "file": "sources/lz4-COPYING-2",
+     "origin": "old/lz4-dev/programs/COPYING",
+     "bytes": 14901,
+     "sha256": "609b910ef05c9c855ecc1da155a36ed0f57514eac452cf93446530b5ea4b3bc3"
+    },
+    {
+     "file": "sources/lz4-COPYING-3",
+     "origin": "old/lz4-dev/tests/data/COPYING",
+     "bytes": 14901,
+     "sha256": "609b910ef05c9c855ecc1da155a36ed0f57514eac452cf93446530b5ea4b3bc3"
+    }
+   ]
+  },
+  {
+   "id": "lzham",
+   "url": "https://github.com/richgel999/lzham_codec",
+   "declared": "MIT",
+   "spdx": [
+    "MIT"
+   ],
+   "flags": [],
+   "vendored_dir": "lzham",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/lzham-LICENSE",
+     "origin": "old/lzham/LICENSE",
+     "bytes": 3195,
+     "sha256": "a3e05f02cf0d4915dab3718e47cfd6fc7ba9ebce588e07eb5bd2be2861383f4c"
+    }
+   ]
+  },
+  {
+   "id": "freearc-c",
+   "url": "https://github.com/seb3773/freearc-c",
+   "declared": "verify",
+   "spdx": [],
+   "flags": [
+    "verify"
+   ],
+   "vendored_dir": "freearc-c-main",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/freearc-c-LICENSE",
+     "origin": "old/freearc-c-main/LICENSE",
+     "bytes": 18092,
+     "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    }
+   ]
+  },
+  {
+   "id": "freearc-main",
+   "url": "https://github.com/Bulat-Ziganshin/FA",
+   "declared": "mixed",
+   "spdx": [],
+   "flags": [
+    "mixed"
+   ],
+   "vendored_dir": "freearc-main",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/freearc-main-LICENSE",
+     "origin": "old/freearc-main/clibs/Compression/_TABI/LICENSE",
+     "bytes": 1472,
+     "sha256": "e0d048e8918b535dcb9fdd76a2dc7f7557a70dc684b0bc894df6d1c5c68d9fe1"
+    }
+   ]
+  },
+  {
+   "id": "FA-master",
+   "url": "https://github.com/Bulat-Ziganshin/FA",
+   "declared": "mixed",
+   "spdx": [],
+   "flags": [
+    "mixed"
+   ],
+   "vendored_dir": "FA-master",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/FA-master-UNLICENSE.txt",
+     "origin": "old/FA-master/ProtoBuf/UNLICENSE.txt",
+     "bytes": 1211,
+     "sha256": "6b0382b16279f26ff69014300541967a356a666eb0b91b422f6862f6b7dad17e"
+    }
+   ]
+  },
+  {
+   "id": "zpaq",
+   "url": "https://github.com/zpaq/zpaq",
+   "declared": "Public-Domain",
+   "spdx": [],
+   "flags": [
+    "public-domain"
+   ],
+   "vendored_dir": "zpaq-master",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/zpaq-COPYING",
+     "origin": "old/zpaq-master/COPYING",
+     "bytes": 2684,
+     "sha256": "14b306c5484f0825179e905c23eed6c3d53b4704263202875a4f84ea0c2d659f"
+    }
+   ]
+  },
+  {
+   "id": "zpaqfranz",
+   "url": "https://github.com/fcorbelli/zpaqfranz",
+   "declared": "PD+GPL",
+   "spdx": [],
+   "flags": [
+    "gpl",
+    "public-domain"
+   ],
+   "vendored_dir": "zpaqfranz",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/zpaqfranz-COPYING",
+     "origin": "old/zpaqfranz/COPYING",
+     "bytes": 12045,
+     "sha256": "6f280c45be25e276f6b279af0d4dbe5961e136b4b1ae332e0b722e8b696f582d"
+    },
+    {
+     "file": "sources/zpaqfranz-LICENSE",
+     "origin": "old/zpaqfranz/LICENSE",
+     "bytes": 1078,
+     "sha256": "64b55afe4282d4f11ae0d4fabbff9a6fde73c95c166f9ef35e9f92a2de7fff60"
+    },
+    {
+     "file": "sources/zpaqfranz-LICENSE-2",
+     "origin": "old/zpaqfranz/ZSFX/LICENSE",
+     "bytes": 1079,
+     "sha256": "ca24489e30cb71ea54127dbad467d1f2fe1bf4a352d60f2814b2261be1879439"
+    },
+    {
+     "file": "sources/zpaqfranz-LICENSE-3",
+     "origin": "old/zpaqfranz/man/LICENSE",
+     "bytes": 1209,
+     "sha256": "156c074f004f56e8c7e0b4f415bcf6099952a38afcba402b42e1bdc2ecd3c362"
+    }
+   ]
+  },
+  {
+   "id": "paq8px",
+   "url": "https://github.com/hxim/paq8px",
+   "declared": "GPL-2.0",
+   "spdx": [
+    "GPL-2.0-only"
+   ],
+   "flags": [],
+   "vendored_dir": "paq8px",
+   "status": "collected from the source's README licence section",
+   "evidence": [
+    {
+     "file": "sources/paq8px-README-licence.txt",
+     "origin": "old/paq8px/README.md",
+     "bytes": 701,
+     "sha256": "0ad419204c338e975c2d336231e786dfa3060a4cd962fba690346822a80a583f",
+     "note": "licence section quoted from the source's own README"
+    }
+   ]
+  },
+  {
+   "id": "LPAQ9",
+   "url": "http://mattmahoney.net/dc/lpaq9.zip",
+   "declared": "Public-Domain",
+   "spdx": [],
+   "flags": [
+    "public-domain"
+   ],
+   "vendored_dir": "LPAQ9",
+   "status": "no vendored licence file; not a GitHub URL, not fetched",
+   "evidence": []
+  },
+  {
+   "id": "omnizip-zpaq",
+   "url": "https://github.com/omnizip/omnizip-rs",
+   "declared": "verify",
+   "spdx": [],
+   "flags": [
+    "verify"
+   ],
+   "vendored_dir": "omnizip-zpaq",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/omnizip-zpaq-LICENSE-APACHE",
+     "origin": "old/omnizip-zpaq/LICENSE-APACHE",
+     "bytes": 11358,
+     "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+     "file": "sources/omnizip-zpaq-LICENSE-MIT",
+     "origin": "old/omnizip-zpaq/LICENSE-MIT",
+     "bytes": 1080,
+     "sha256": "c8029f661ad5b537d71e61141cf3199e4f58dafbe6e2830e1df176e4fe03242d"
+    },
+    {
+     "file": "sources/omnizip-zpaq-LICENSE-NOTICE.md",
+     "origin": "old/omnizip-zpaq/LICENSE-NOTICE.md",
+     "bytes": 862,
+     "sha256": "32e1892228eb64eada138dd40476a8896dd59753407d690ca8441dca565c8cd7"
+    }
+   ]
+  },
+  {
+   "id": "libbsc",
+   "url": "https://github.com/IlyaGrebnov/libbsc",
+   "declared": "Apache-2.0",
+   "spdx": [
+    "Apache-2.0"
+   ],
+   "flags": [],
+   "vendored_dir": "libbsc-master",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/libbsc-LICENSE",
+     "origin": "old/libbsc-master/LICENSE",
+     "bytes": 11358,
+     "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+     "file": "sources/libbsc-LICENSE-2",
+     "origin": "old/libbsc-master/libbsc/bwt/libcubwt/LICENSE",
+     "bytes": 11357,
+     "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+     "file": "sources/libbsc-LICENSE-3",
+     "origin": "old/libbsc-master/libbsc/bwt/libsais/LICENSE",
+     "bytes": 12243,
+     "sha256": "e4abf9cd071e2e784ff04751fdf566ec4f1fe339bbef8bdcf6f56133f609a516"
+    }
+   ]
+  },
+  {
+   "id": "bzip3",
+   "url": "https://github.com/kspalaiologos/bzip3",
+   "declared": "Apache-2.0",
+   "spdx": [
+    "Apache-2.0"
+   ],
+   "flags": [],
+   "vendored_dir": "bzip3",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/bzip3-LICENSE",
+     "origin": "old/bzip3/LICENSE",
+     "bytes": 7652,
+     "sha256": "e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118"
+    }
+   ]
+  },
+  {
+   "id": "pcodec",
+   "url": "https://github.com/mayhemheroes/quantile-compression",
+   "declared": "Apache-2.0",
+   "spdx": [
+    "Apache-2.0"
+   ],
+   "flags": [],
+   "vendored_dir": "pcodec",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/pcodec-LICENSE",
+     "origin": "old/pcodec/LICENSE",
+     "bytes": 11357,
+     "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    }
+   ]
+  },
+  {
+   "id": "bitshuffle",
+   "url": "https://github.com/kiyo-masui/bitshuffle",
+   "declared": "MIT",
+   "spdx": [
+    "MIT"
+   ],
+   "flags": [],
+   "vendored_dir": "bitshuffle-master",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/bitshuffle-LICENSE",
+     "origin": "old/bitshuffle-master/LICENSE",
+     "bytes": 1148,
+     "sha256": "ef357c2061cf67db298f9f1565572ee229ad9263582a9f9d0ebff5094f5d10ac"
+    },
+    {
+     "file": "sources/bitshuffle-LICENSE-2",
+     "origin": "old/bitshuffle-master/lz4/LICENSE",
+     "bytes": 1311,
+     "sha256": "8b58c446121a109ccf32edc094bba3010a3d85e4ee3702950db55e4d3e87736c"
+    },
+    {
+     "file": "sources/bitshuffle-LICENSE.txt",
+     "origin": "old/bitshuffle-master/lzf/LICENSE.txt",
+     "bytes": 1566,
+     "sha256": "2731a47c80c4ba5c3fedf00598a9b2359011bca745fdf854615bcbd53f38748a"
+    }
+   ]
+  },
+  {
+   "id": "zxc",
+   "url": "https://github.com/hellobertrand/zxc",
+   "declared": "verify",
+   "spdx": [],
+   "flags": [
+    "verify"
+   ],
+   "vendored_dir": "zxc",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/zxc-LICENSE",
+     "origin": "old/zxc/LICENSE",
+     "bytes": 3283,
+     "sha256": "603b153fc44bd45dc552b75705645ff6142e354c8c41b6e08cb42c87dd659a56"
+    }
+   ]
+  },
+  {
+   "id": "density",
+   "url": "https://github.com/centaurean/density",
+   "declared": "BSD-2-Clause",
+   "spdx": [
+    "BSD-2-Clause"
+   ],
+   "flags": [],
+   "vendored_dir": "density",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/density-LICENSE-APACHE",
+     "origin": "old/density/LICENSE-APACHE",
+     "bytes": 9722,
+     "sha256": "95bd3988beee069fa2848f648dab43cc6e0b2add2ad6bcb17360caf749802bcc"
+    },
+    {
+     "file": "sources/density-LICENSE-MIT",
+     "origin": "old/density/LICENSE-MIT",
+     "bytes": 1022,
+     "sha256": "30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652"
+    }
+   ]
+  },
+  {
+   "id": "lizard",
+   "url": "https://github.com/inikep/lizard",
+   "declared": "BSD-2-Clause",
+   "spdx": [
+    "BSD-2-Clause"
+   ],
+   "flags": [],
+   "vendored_dir": "lizard",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/lizard-LICENSE",
+     "origin": "old/lizard/LICENSE",
+     "bytes": 679,
+     "sha256": "4aac680aba1a7b80cf697deffa6da885d46a49e68c4b389f01b5ee38f4b34eb7"
+    },
+    {
+     "file": "sources/lizard-LICENSE-2",
+     "origin": "old/lizard/contrib/djgpp/LICENSE",
+     "bytes": 1292,
+     "sha256": "d011d1e02cb32b71c1ce2922ab41a2e2ad30f4ecf8de22c078d53618205abc05"
+    },
+    {
+     "file": "sources/lizard-LICENSE-3",
+     "origin": "old/lizard/lib/LICENSE",
+     "bytes": 1380,
+     "sha256": "1d02f9cab7515614726c9c2957bcb8965762e6f529929b4dde07745d6ffee916"
+    },
+    {
+     "file": "sources/lizard-COPYING",
+     "origin": "old/lizard/programs/COPYING",
+     "bytes": 18092,
+     "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    },
+    {
+     "file": "sources/lizard-COPYING-2",
+     "origin": "old/lizard/tests/COPYING",
+     "bytes": 18092,
+     "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    }
+   ]
+  },
+  {
+   "id": "brieflz",
+   "url": "https://github.com/jibsen/brieflz",
+   "declared": "zlib",
+   "spdx": [
+    "Zlib"
+   ],
+   "flags": [],
+   "vendored_dir": "brieflz",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/brieflz-LICENSE",
+     "origin": "old/brieflz/LICENSE",
+     "bytes": 903,
+     "sha256": "bd61f0a00df385bfe730f648e5f99dab50c459be7e15ca3e1433bde1eb1c9f22"
+    }
+   ]
+  },
+  {
+   "id": "snappy",
+   "url": "https://github.com/google/snappy",
+   "declared": "BSD-3-Clause",
+   "spdx": [
+    "BSD-3-Clause"
+   ],
+   "flags": [],
+   "vendored_dir": "snappy",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/snappy-COPYING",
+     "origin": "old/snappy/COPYING",
+     "bytes": 2645,
+     "sha256": "55172044f7e241207117448a4d9d6ba1d0925c8ad66b5d4c08c70adfa9cc3de6"
+    },
+    {
+     "file": "sources/snappy-COPYING.notestdata",
+     "origin": "old/snappy/COPYING.notestdata",
+     "bytes": 1475,
+     "sha256": "5221a36a801b981fbdfda7b87db64cff231a3b88223a066c325411b539df796f"
+    },
+    {
+     "file": "sources/snappy-LICENSE",
+     "origin": "old/snappy/third_party/benchmark/LICENSE",
+     "bytes": 11358,
+     "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+     "file": "sources/snappy-LICENSE-2",
+     "origin": "old/snappy/third_party/googletest/LICENSE",
+     "bytes": 1475,
+     "sha256": "9702de7e4117a8e2b20dafab11ffda58c198aede066406496bef670d40a22138"
+    }
+   ]
+  },
+  {
+   "id": "lzo",
+   "url": "https://github.com/nemequ/lzo",
+   "declared": "GPL+commercial",
+   "spdx": [],
+   "flags": [
+    "commercial",
+    "gpl"
+   ],
+   "vendored_dir": "lzo-master",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/lzo-COPYING",
+     "origin": "old/lzo-master/COPYING",
+     "bytes": 18092,
+     "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    }
+   ]
+  },
+  {
+   "id": "parmar",
+   "url": "https://github.com/shallowbyte/parmar",
+   "declared": "verify",
+   "spdx": [],
+   "flags": [
+    "verify"
+   ],
+   "vendored_dir": "parmar-main",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/parmar-LICENSE",
+     "origin": "old/parmar-main/LICENSE",
+     "bytes": 11343,
+     "sha256": "36f18885a3d495188121317e618a01e378e34273b450f9161cd2fa79ff67c04c"
+    }
+   ]
+  },
+  {
+   "id": "shoco",
+   "url": "https://github.com/Ed-von-Schleck/shoco",
+   "declared": "MIT",
+   "spdx": [
+    "MIT"
+   ],
+   "flags": [],
+   "vendored_dir": "shoco",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/shoco-LICENSE",
+     "origin": "old/shoco/LICENSE",
+     "bytes": 1119,
+     "sha256": "df0e245217214312fd5767396cc6c1e5a7c20de51c82f320b0744a10dbbb9c0c"
+    }
+   ]
+  },
+  {
+   "id": "smaz",
+   "url": "https://github.com/antirez/smaz",
+   "declared": "BSD-3-Clause",
+   "spdx": [
+    "BSD-3-Clause"
+   ],
+   "flags": [],
+   "vendored_dir": "smaz",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/smaz-COPYING",
+     "origin": "old/smaz/COPYING",
+     "bytes": 1486,
+     "sha256": "f52a27aad15af88cdcfb915774e71ab6a4be9f671dc547fa5938e0a0a295014b"
+    }
+   ]
+  },
+  {
+   "id": "preflate",
+   "url": "https://github.com/deus-libri/preflate",
+   "declared": "Apache-2.0",
+   "spdx": [
+    "Apache-2.0"
+   ],
+   "flags": [],
+   "vendored_dir": "preflate-master",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/preflate-LICENSE",
+     "origin": "old/preflate-master/LICENSE",
+     "bytes": 11357,
+     "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    }
+   ]
+  },
+  {
+   "id": "preflate-rs",
+   "url": "https://github.com/microsoft/preflate-rs",
+   "declared": "Apache-2.0",
+   "spdx": [
+    "Apache-2.0"
+   ],
+   "flags": [],
+   "vendored_dir": "preflate-rs-main",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/preflate-rs-LICENSE",
+     "origin": "old/preflate-rs-main/LICENSE",
+     "bytes": 11358,
+     "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    }
+   ]
+  },
+  {
+   "id": "precomp-cpp",
+   "url": "https://github.com/schnaader/precomp-cpp",
+   "declared": "Apache-2.0",
+   "spdx": [
+    "Apache-2.0"
+   ],
+   "flags": [],
+   "vendored_dir": "precomp-cpp-master",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/precomp-cpp-LICENSE",
+     "origin": "old/precomp-cpp-master/LICENSE",
+     "bytes": 11316,
+     "sha256": "750e0e7e84f4d10238ae77d80408b227ce2c4a321a16cd8ac8ada6ed1d36008f"
+    },
+    {
+     "file": "sources/precomp-cpp-LICENSE-2",
+     "origin": "old/precomp-cpp-master/contrib/brotli/LICENSE",
+     "bytes": 1084,
+     "sha256": "3d180008e36922a4e8daec11c34c7af264fed5962d07924aea928c38e8663c94"
+    },
+    {
+     "file": "sources/precomp-cpp-LICENSE-3",
+     "origin": "old/precomp-cpp-master/contrib/brunsli/LICENSE",
+     "bytes": 1054,
+     "sha256": "b4e611efee1cc5b4ad1f347098f2d7c72c6a1f20ab69dc12e303ba2e203250fa"
+    },
+    {
+     "file": "sources/precomp-cpp-LICENSE-4",
+     "origin": "old/precomp-cpp-master/contrib/bzip2/LICENSE",
+     "bytes": 1901,
+     "sha256": "4919cfb14a73cd64fcef67b107613970cf1659a09aa675dba31314f373bc7204"
+    },
+    {
+     "file": "sources/precomp-cpp-LICENSE-5",
+     "origin": "old/precomp-cpp-master/contrib/mingw_std_threads/LICENSE",
+     "bytes": 1296,
+     "sha256": "86c148320eb0acc26607ed347e0fde9f49a236d0ec5291d36dc6a7e0e1d26b9f"
+    },
+    {
+     "file": "sources/precomp-cpp-LICENSE-6",
+     "origin": "old/precomp-cpp-master/contrib/preflate/LICENSE",
+     "bytes": 11357,
+     "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    }
+   ]
+  },
+  {
+   "id": "packJPG",
+   "url": "https://github.com/YadeWira/packJPG",
+   "declared": "LGPL-3.0",
+   "spdx": [
+    "LGPL-3.0-only"
+   ],
+   "flags": [],
+   "vendored_dir": "packJPG-master",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/packJPG-LICENSE",
+     "origin": "old/packJPG-master/LICENSE",
+     "bytes": 7633,
+     "sha256": "810d289d74278d72684d26cdc2ac5cbb0f01f2d18212f391c6c4467399a7add5"
+    }
+   ]
+  },
+  {
+   "id": "aqueous",
+   "url": "https://github.com/lifthrasiir/aqueous",
+   "declared": "MIT-0",
+   "spdx": [
+    "MIT-0"
+   ],
+   "flags": [],
+   "vendored_dir": "aqueous",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/aqueous-LICENSE.txt",
+     "origin": "old/aqueous/LICENSE.txt",
+     "bytes": 1311,
+     "sha256": "08232df32d55c08eaa42dacffbbd70bd41995d00e297bdd7478f5e60139c9347"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.7zip.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.7zip.txt",
+     "bytes": 32987,
+     "sha256": "ae18da52adec08ae15104b79d39da5d497335377b30f5eaa758a0a37f415fab0"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.advancecomp-7z.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.advancecomp-7z.txt",
+     "bytes": 27115,
+     "sha256": "5479deab85890120db8763fd31335a208f87b52538a50dbe1645a438e916354e"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.cryptopp.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.cryptopp.txt",
+     "bytes": 4081,
+     "sha256": "7720d05e6033022c6538e17ce9fa54ec001d4ec40eb5d0e8a0f4863fd0b34c4c"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.ect.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.ect.txt",
+     "bytes": 14986,
+     "sha256": "17cc6a73cb58833a2d68bb1d80fc563a977ecbd713678bfb9918f26ad6dbcb82"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.fflate.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.fflate.txt",
+     "bytes": 1113,
+     "sha256": "0c4454fd31a292e87ff1eff02ca20ee41ac865e89dd41634f1831925de0160ac"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.go.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.go.txt",
+     "bytes": 1590,
+     "sha256": "f69c5c1f92e43c0c511220018f87faf142413a280049caeb9a2fed5579f33d40"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.gzip.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.gzip.txt",
+     "bytes": 35230,
+     "sha256": "1aff1236731dc908fa29a4bed7e190d402feddfe51de48aaa8347e35636b4a3c"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.infozip.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.infozip.txt",
+     "bytes": 3494,
+     "sha256": "ef299be5719990b618600fd5d2bed5ab45e04f3129d9e59606299f74ddb46c73"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.isa-l.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.isa-l.txt",
+     "bytes": 1655,
+     "sha256": "0d67b87584dc0e80d483201d3d4105c768c53a7de3ed63389cb13031266ac84c"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.klauspost-compress.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.klauspost-compress.txt",
+     "bytes": 16840,
+     "sha256": "2c26e4955361839a435001433c072821f1a3ffee3e4a7415238f2598e8327cff"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.libdeflate.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.libdeflate.txt",
+     "bytes": 1126,
+     "sha256": "7e1628366d8b3f1b8b8b4dd3ce2fce8eea7e85c835031cc031f52680da70bf36"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.libslz.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.libslz.txt",
+     "bytes": 1479,
+     "sha256": "708a0eb051c6c17527c80e6ad3bad717cc0c314c41b2582de39f02e8e21866d8"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.lodepng.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.lodepng.txt",
+     "bytes": 924,
+     "sha256": "bd5b8dd8b895aed26909b80d1e2d5afdc6dd8a0bf63ca2114b90b78b8e4ccf89"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.miniz.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.miniz.txt",
+     "bytes": 1223,
+     "sha256": "d00e9c562621705ac852114d6f1ecc54766bf9f980a6ebb00f594e4566ae1493"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.pako.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.pako.txt",
+     "bytes": 1153,
+     "sha256": "c13285a48a99de2463e18b881056f845ea93c0299bb483b95fc26a8af54aff0d"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.sdefl.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.sdefl.txt",
+     "bytes": 2766,
+     "sha256": "be09c751d38d02a16c0e864f1fe46ff5a417edee9e58c2b0b3fe4c9c2ccd1224"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.stb.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.stb.txt",
+     "bytes": 2566,
+     "sha256": "fcb7491dbe7676809feb44ef1195f3ab873793ec7e89e58857b46aa7b77cbc68"
+    },
+    {
+     "file": "sources/aqueous-LICENSE-2.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.txt",
+     "bytes": 1458,
+     "sha256": "1ad740e6022f57b7e9a0c0802f8ea44eedf6ce489bab7f0db50f1151c545f27e"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.uzip.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.uzip.txt",
+     "bytes": 1102,
+     "sha256": "85aa01cb0bf13a3bf8f544503a54fbe423ca4e4b85d52ee4fc2817e97a19babe"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.uzlib.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.uzlib.txt",
+     "bytes": 2794,
+     "sha256": "848f5831f9e0740d1762a0beba3d56e92cc35e51aa7a009a4dac63b6571d4126"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.wabt.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.wabt.txt",
+     "bytes": 11439,
+     "sha256": "1e2f9bb4dcd735cdf186243308bc5841313b4d975ac2bbc59241291bd262d039"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.zlib-chromium.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.zlib-chromium.txt",
+     "bytes": 2758,
+     "sha256": "e6344b7406e9f7c8316bd515acca48e491bfcfb05f31f56de6a17d3d20da995c"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.zlib-cloudflare.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.zlib-cloudflare.txt",
+     "bytes": 1098,
+     "sha256": "44ed2c14c9b3c0843c68206f9f7bfe6ffa3ef05fb243a78e27512a000214e25c"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.zlib-ng.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.zlib-ng.txt",
+     "bytes": 942,
+     "sha256": "c02ae2643c43356cdcd8a9c595006fb23c5e0dc7340a293a2ed281e97e0ee811"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.zlib.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.zlib.txt",
+     "bytes": 1068,
+     "sha256": "6b72e51b0000a6b1ed3f1426d09b381523101795900c4ec8d85c9a1a266ceec8"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.zlibjs.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.zlibjs.txt",
+     "bytes": 1267,
+     "sha256": "5a93eec7db54d2b7c7c4680ada8e633d36270f290eadaa6e264aa6e4e2107878"
+    },
+    {
+     "file": "sources/aqueous-LICENSE.zopfli.txt",
+     "origin": "old/aqueous/flate-zoo/LICENSE.zopfli.txt",
+     "bytes": 11383,
+     "sha256": "88e9f93da8b80bd69fd1b3aa095488905ca2385f10b810c6fe7f2ce9f11d055d"
+    }
+   ]
+  },
+  {
+   "id": "rhefo",
+   "url": "https://github.com/T-3B/rhefo",
+   "declared": "verify",
+   "spdx": [],
+   "flags": [
+    "verify"
+   ],
+   "vendored_dir": "rhefo",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/rhefo-LICENSE.txt",
+     "origin": "old/rhefo/LICENSE.txt",
+     "bytes": 30608,
+     "sha256": "09d99ca61eb07873d5334077acba22c33e7f7d0a9fa08c92734e0ac8430d6e27"
+    }
+   ]
+  },
+  {
+   "id": "zopfli",
+   "url": "https://github.com/google/zopfli",
+   "declared": "Apache-2.0",
+   "spdx": [
+    "Apache-2.0"
+   ],
+   "flags": [],
+   "vendored_dir": "zopfli-master",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/zopfli-COPYING",
+     "origin": "old/zopfli-master/COPYING",
+     "bytes": 11341,
+     "sha256": "018b1cb87efdf7a04c2fcc13d57ed63f62149113fb207b27ea13430d64f13513"
+    },
+    {
+     "file": "sources/zopfli-LICENSE",
+     "origin": "old/zopfli-master/rust/LICENSE",
+     "bytes": 11341,
+     "sha256": "018b1cb87efdf7a04c2fcc13d57ed63f62149113fb207b27ea13430d64f13513"
+    }
+   ]
+  },
+  {
+   "id": "advancecomp",
+   "url": "https://github.com/amadvance/advancecomp",
+   "declared": "GPL-3.0",
+   "spdx": [
+    "GPL-3.0-only"
+   ],
+   "flags": [],
+   "vendored_dir": "advancecomp-master",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/advancecomp-COPYING",
+     "origin": "old/advancecomp-master/COPYING",
+     "bytes": 35147,
+     "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+    },
+    {
+     "file": "sources/advancecomp-copying.txt",
+     "origin": "old/advancecomp-master/doc/copying.txt",
+     "bytes": 35147,
+     "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+    },
+    {
+     "file": "sources/advancecomp-COPYING-2",
+     "origin": "old/advancecomp-master/libdeflate/COPYING",
+     "bytes": 1052,
+     "sha256": "5d246dd2537307b80fed9ba5fdddf5d0fe7a8f023393a071182b9daed56b40fe"
+    },
+    {
+     "file": "sources/advancecomp-COPYING-3",
+     "origin": "old/advancecomp-master/zopfli/COPYING",
+     "bytes": 11341,
+     "sha256": "018b1cb87efdf7a04c2fcc13d57ed63f62149113fb207b27ea13430d64f13513"
+    }
+   ]
+  },
+  {
+   "id": "zlib-ng",
+   "url": "https://github.com/zlib-ng/zlib-ng",
+   "declared": "zlib",
+   "spdx": [
+    "Zlib"
+   ],
+   "flags": [],
+   "vendored_dir": "zlib-ng-develop",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/zlib-ng-LICENSE.md",
+     "origin": "old/zlib-ng-develop/LICENSE.md",
+     "bytes": 867,
+     "sha256": "6c9f0d975b41afaa34d22f55bb8986ce69e5cb7ad327cb2b28820cd425edf5ee"
+    }
+   ]
+  },
+  {
+   "id": "libdeflate",
+   "url": "https://github.com/ebiggers/libdeflate",
+   "declared": "MIT",
+   "spdx": [
+    "MIT"
+   ],
+   "flags": [],
+   "vendored_dir": "libdeflate-master",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/libdeflate-COPYING",
+     "origin": "old/libdeflate-master/COPYING",
+     "bytes": 1078,
+     "sha256": "4ad69099cb4374836fd27583d9991e2838cd86b6e4666ab26b2d32582c91e73a"
+    }
+   ]
+  },
+  {
+   "id": "upx",
+   "url": "https://github.com/upx/upx",
+   "declared": "GPL-2.0",
+   "spdx": [
+    "GPL-2.0-only"
+   ],
+   "flags": [],
+   "vendored_dir": "upx",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/upx-COPYING",
+     "origin": "old/upx/COPYING",
+     "bytes": 18092,
+     "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    },
+    {
+     "file": "sources/upx-LICENSE",
+     "origin": "old/upx/LICENSE",
+     "bytes": 5448,
+     "sha256": "905d4a66d5324e154d976bbf88829d4d9263815a2b97cc40954f06d4a23c28eb"
+    },
+    {
+     "file": "sources/upx-COPYING-2",
+     "origin": "old/upx/vendor/bzip2/COPYING",
+     "bytes": 1895,
+     "sha256": "452871c08826ffb38b1a77960f23ef9c4b8b457887c3a6b691b7d42e882426e3"
+    },
+    {
+     "file": "sources/upx-LICENSE.txt",
+     "origin": "old/upx/vendor/doctest/LICENSE.txt",
+     "bytes": 1086,
+     "sha256": "0fe0b331fa1513dcce8604ff1fa925f32d1cea17d8aeb1c2471fad40d291adc5"
+    },
+    {
+     "file": "sources/upx-LICENSE-2.txt",
+     "origin": "old/upx/vendor/lzma-sdk/LICENSE.txt",
+     "bytes": 186,
+     "sha256": "546d61821ef504fdec684a341f22b52a29664c34f74a6eef773425da99ab2992"
+    },
+    {
+     "file": "sources/upx-COPYING-3",
+     "origin": "old/upx/vendor/ucl/COPYING",
+     "bytes": 18089,
+     "sha256": "c8d9ddbae4613dae85ce3e88f665ced245126887792ec2b91478754254f8f487"
+    },
+    {
+     "file": "sources/upx-COPYING-4",
+     "origin": "old/upx/vendor/valgrind/COPYING",
+     "bytes": 18092,
+     "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    },
+    {
+     "file": "sources/upx-LICENSE-2",
+     "origin": "old/upx/vendor/zlib/LICENSE",
+     "bytes": 1002,
+     "sha256": "0f854f426019c475697e17f1b0fa638270f6e700bc756d9bfe50d17268bd3281"
+    },
+    {
+     "file": "sources/upx-LICENSE-3",
+     "origin": "old/upx/vendor/zstd/LICENSE",
+     "bytes": 1549,
+     "sha256": "7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8"
+    }
+   ]
+  },
+  {
+   "id": "zelf",
+   "url": "https://github.com/seb3773/zelf",
+   "declared": "verify",
+   "spdx": [],
+   "flags": [
+    "verify"
+   ],
+   "vendored_dir": "zelf",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/zelf-LICENSE",
+     "origin": "old/zelf/LICENSE",
+     "bytes": 35613,
+     "sha256": "fbc4fc1c4232802c2b6cf1e8c5e8b6540543a1a3ca666eab87455b2437dd2786"
+    }
+   ]
+  },
+  {
+   "id": "tamp",
+   "url": "https://github.com/BrianPugh/tamp",
+   "declared": "MIT",
+   "spdx": [
+    "MIT"
+   ],
+   "flags": [],
+   "vendored_dir": "tamp",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/tamp-LICENSE-APACHE",
+     "origin": "old/tamp/LICENSE-APACHE",
+     "bytes": 11357,
+     "sha256": "f14b20048c12393cb9920065c47fadc030210b0f9cab9849ce0a68a063ededc5"
+    },
+    {
+     "file": "sources/tamp-LICENSE-MIT",
+     "origin": "old/tamp/LICENSE-MIT",
+     "bytes": 1067,
+     "sha256": "06f0daaa2118afe32749658c3acfaced37caf8bf2a69e0e75fc452434cb7cc99"
+    },
+    {
+     "file": "sources/tamp-LICENSE.txt",
+     "origin": "old/tamp/ctests/Unity/LICENSE.txt",
+     "bytes": 1123,
+     "sha256": "3b5e78b46728ecb293c4eec380114ed013ffb5f284d2762a0338610df779e275"
+    },
+    {
+     "file": "sources/tamp-LICENSE-2.txt",
+     "origin": "old/tamp/ctests/fatfs/LICENSE.txt",
+     "bytes": 1937,
+     "sha256": "2576183a3e1c2d2f4b3628a7ef93c2f937879698abdd6d554dd718e79062e079"
+    },
+    {
+     "file": "sources/tamp-LICENSE.md",
+     "origin": "old/tamp/ctests/littlefs/LICENSE.md",
+     "bytes": 1523,
+     "sha256": "0cb4ff1daf5fdc1359c6a6ee3116092f08fc100c9d58b1b77ab17bfd801f856d"
+    },
+    {
+     "file": "sources/tamp-LICENSE-APACHE-2",
+     "origin": "old/tamp/wasm/LICENSE-APACHE",
+     "bytes": 11357,
+     "sha256": "f14b20048c12393cb9920065c47fadc030210b0f9cab9849ce0a68a063ededc5"
+    },
+    {
+     "file": "sources/tamp-LICENSE-MIT-2",
+     "origin": "old/tamp/wasm/LICENSE-MIT",
+     "bytes": 1067,
+     "sha256": "06f0daaa2118afe32749658c3acfaced37caf8bf2a69e0e75fc452434cb7cc99"
+    }
+   ]
+  },
+  {
+   "id": "heatshrink",
+   "url": "https://github.com/atomicobject/heatshrink",
+   "declared": "ISC",
+   "spdx": [
+    "ISC"
+   ],
+   "flags": [],
+   "vendored_dir": "heatshrink",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/heatshrink-LICENSE",
+     "origin": "old/heatshrink/LICENSE",
+     "bytes": 778,
+     "sha256": "719955e6b3498b00d36046f19f4b785b238c65501bd009373b5af573912a7037"
+    }
+   ]
+  },
+  {
+   "id": "awesome-compopt",
+   "url": "https://github.com/MartinEesmaa/awesome-compopt",
+   "declared": "CC",
+   "spdx": [],
+   "flags": [
+    "cc"
+   ],
+   "vendored_dir": "awesome-compopt",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/awesome-compopt-LICENSE",
+     "origin": "old/awesome-compopt/LICENSE",
+     "bytes": 18655,
+     "sha256": "fe7b4ce83b8381cc5b216bbb4af73c570688d1b819c73bbaed8ca401f4677cd6"
+    }
+   ]
+  },
+  {
+   "id": "awesome-cpp",
+   "url": "https://github.com/hstsethi/awesome-cpp",
+   "declared": "CC",
+   "spdx": [],
+   "flags": [
+    "cc"
+   ],
+   "vendored_dir": "awesome-cpp",
+   "status": "collected from vendored tree",
+   "evidence": [
+    {
+     "file": "sources/awesome-cpp-LICENSE",
+     "origin": "old/awesome-cpp/LICENSE",
+     "bytes": 1095,
+     "sha256": "47f7b691dc48194eefe7e54b9e77a401510968cbb65fd9bf335da57c33c2ffbb"
+    }
+   ]
+  },
+  {
+   "id": "BARF",
+   "url": "http://cs.fit.edu/~mmahoney/compression/",
+   "declared": "GPL",
+   "spdx": [],
+   "flags": [
+    "gpl"
+   ],
+   "vendored_dir": "BARF",
+   "status": "collected from a source-file header",
+   "evidence": [
+    {
+     "file": "sources/BARF-HEADER.txt",
+     "origin": "old/BARF/barf.cpp",
+     "bytes": 2053,
+     "sha256": "9b4ea8f2ceb1108c4d0c5eca355184366446c2763c06c7ba1da5e357bda5afd4",
+     "note": "copyright/licence header from a vendored source file"
+    }
+   ]
+  },
+  {
+   "id": "BBB",
+   "url": "unknown",
+   "declared": "GPL",
+   "spdx": [],
+   "flags": [
+    "gpl"
+   ],
+   "vendored_dir": "BBB",
+   "status": "collected from a source-file header",
+   "evidence": [
+    {
+     "file": "sources/BBB-HEADER.txt",
+     "origin": "old/BBB/bbb.cpp",
+     "bytes": 2354,
+     "sha256": "971ad9bf730644b8b151c7fe6d3becd93325e546daf0c1f040b1fdcc8117b7b2",
+     "note": "copyright/licence header from a vendored source file"
+    }
+   ]
+  },
+  {
+   "id": "FLZP",
+   "url": "unknown",
+   "declared": "GPL-3.0-or-later",
+   "spdx": [
+    "GPL-3.0-or-later"
+   ],
+   "flags": [],
+   "vendored_dir": "FLZP",
+   "status": "collected from a source-file header",
+   "evidence": [
+    {
+     "file": "sources/FLZP-HEADER.txt",
+     "origin": "old/FLZP/flzp.cpp",
+     "bytes": 4521,
+     "sha256": "eaed32a88abbdb9138a1b8f2ee795c16c7cb26aa1a6e34c4138c633b2c37ee5e",
+     "note": "copyright/licence header from a vendored source file"
+    }
+   ]
+  },
+  {
+   "id": "FPAQF2",
+   "url": "unknown",
+   "declared": "GPL",
+   "spdx": [],
+   "flags": [
+    "gpl"
+   ],
+   "vendored_dir": "FPAQF2",
+   "status": "collected from a source-file header",
+   "evidence": [
+    {
+     "file": "sources/FPAQF2-HEADER.txt",
+     "origin": "old/FPAQF2/fpaq0f2.cpp",
+     "bytes": 474,
+     "sha256": "0147761a306402446f1dff00a790f7c818d901a426a6339a947fd40608d0b91b",
+     "note": "copyright/licence header from a vendored source file"
+    }
+   ]
+  },
+  {
+   "id": "SR3A",
+   "url": "http://cs.fit.edu/~mmahoney/compression/text.html",
+   "declared": "GPL-2.0-or-later",
+   "spdx": [
+    "GPL-2.0-or-later"
+   ],
+   "flags": [],
+   "vendored_dir": "SR3A",
+   "status": "collected from a source-file header",
+   "evidence": [
+    {
+     "file": "sources/SR3A-HEADER.txt",
+     "origin": "old/SR3A/sr3a.cpp",
+     "bytes": 1745,
+     "sha256": "289eab7ad6b737d2f1aa6fdcd45885ff1e8e0af1ef6df8075836dc7015bf4638",
+     "note": "copyright/licence header from a vendored source file"
+    }
+   ]
+  },
+  {
+   "id": "csc",
+   "url": "https://github.com/fusiyuan2010/CSC",
+   "declared": "verify",
+   "spdx": [],
+   "flags": [
+    "verify"
+   ],
+   "vendored_dir": null,
+   "status": "collected from upstream HEAD",
+   "evidence": [
+    {
+     "file": "sources/csc-LICENSE",
+     "origin": "https://raw.githubusercontent.com/fusiyuan2010/CSC/HEAD/LICENSE",
+     "bytes": 1211,
+     "sha256": "60d2c28d19d2bdf7bbaa59829e7a595234265e8111a01ccb74d25d6c4d2d013a"
+    }
+   ]
+  }
+ ]
+}

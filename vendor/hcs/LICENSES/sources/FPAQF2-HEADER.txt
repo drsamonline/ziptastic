@@ -1,0 +1,11 @@
+/* fpaq0f2 - Adaptive order 0 file compressor.
+(C) 2008, Matt Mahoney under GPL, http://www.gnu.org/licenses/gpl.txt
+
+To compile:    g++ -O2 -s -fomit-frame-pointer -march=pentiumpro fpaq0f2.cpp
+To compress:   fpaq0f2 c input output
+To decompress: fpaq0f2 d input output
+
+fpaq0f2 is an order-0 file compressor and arithmetic coder.  Each bit is
+modeled in the context of the previous bits in the current byte, plus
+the bit history (last 8 bits) observed in this context.
+*/

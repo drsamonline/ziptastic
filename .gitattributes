@@ -1,0 +1,5 @@
+# Licence texts under vendor/hcs are hashed byte for byte in
+# vendor/hcs/LICENSES/INDEX.json. Normalising line endings would change
+# those digests and make the vendored copy differ from the vault it mirrors,
+# so they are stored exactly as collected.
+vendor/hcs/LICENSES/** -text

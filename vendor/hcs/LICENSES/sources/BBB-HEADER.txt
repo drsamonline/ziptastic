@@ -1,0 +1,60 @@
+/* bbb.cpp - big block BWT compressor version 1, Aug. 31, 2006.
+(C) 2006, Matt Mahoney, mmahoney (at) cs.fit.edu
+This is free software under GPL, http://www.gnu.org/licenses/gpl.txt
+
+To compress/decompress: bbb command input output
+
+Commands are concatenated, e.g. 
+
+  bbb cfqm10 in out = compress (c) in fast mode (f), quiet (q), 10 MiB block size.
+  bbb df = decompress in fast mode.
+
+Commands:
+  c = compress (default).
+  d = decompress.
+  f = fast mode, needs 5x blocksize in memory, default is 1.25x blocksize.
+  bN, kN, mN = blocksize N bytes, KiB, MiB (compression only), default = m4.
+  q = quiet (no output except for errors).
+
+The compression format is a memory efficient Burrows-Wheeler Transform (BWT) followed 
+by a PAQ-like compression using a single order-0 context (no mixing) followed by 5 more
+adaptive stages with low order contexts, and bitwise arithmetic coding.
+
+LOW MEMORY BWT
+
+The BWT is able to sort blocks as large as 80% of available memory in slow
+mode or 20% in fast mode.  Using larger blocks generally improves compression,
+especially for text.  In fast mode, the bytes of a block are sorted by their
+right context (with wrap around) before compression with an order 0 model.  
+For example, the block "banana" is sorted as follows:
+
+           sorted  
+     block context  T
+     ----- ------- ---
+  0    n    abana   a
+  1    n    anaba   a
+  2    b    anana   a  <- p (starting point for inverse transform)
+  3    a    banan   b
+  4    a    nanab   n
+  5    a    naban   n
+
+After decompression, the transform is inverted by making a sorted copy of the
+block, T, then traversing the block as follows: from position p, find the
+next byte in T, then find the matching byte in the block with the same rank,
+i.e. if t[p] = the j'th occurrence of byte c, then set p = such that
+block[p] = the j'th occurrence of c.  Repeat n times, where n = block size.
+The initial value of p is the sorted position of the original first byte,
+which must be sent by the compressor.
+
+  Start at p = 2 (transmitted by the compressor).
+  Output block[2] = 'b'
+  T[2] contains the third 'a'.
+  Find the third 'a' in block at position 5.
+  Set p = 5.
+  output block[5] = 'a'
+  T[5] contains the second 'n'
+  Find the second 'n' in block at position 1.
+  Set p = 1.
+  etc...
+
+In fast mode, an array of n pointers into the block of n bytes is sorted

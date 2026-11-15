@@ -2,6 +2,8 @@
 
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
 
+
+![Screenshot](docs/shot.png)
 Canonical, offline, vendored source vault for the **CHCE** engine
 (Chimera Hybrid Compression Engine) and all CHIMERA-family projects
 (`heavenzip`, `ziptastic`, `compfactory`).
@@ -16,10 +18,18 @@ from the pinned tree.
 1. **Offline-only.** No neural networks, no model files, no GPU runtimes.
    Context-mixing (CM) compressors like `zpaq`, `paq8px`, `lpaq` are pure
    algorithms — they are **not AI** and are fully offline.
-2. **Single source of truth.** No submodules, no nested `.git` directories.
-   All sources are vendored flat.
-3. **License-audited.** Every source is listed with its license in
-   `SOURCES` and full text in `LICENSES/`.
+2. **Single source of truth.** One copy of each source, no nested `.git`
+   directories. Sources are vendored flat, with one deliberate exception: 23 of
+   them are **git submodules** pinned to an upstream commit, because copying
+   another project's history would make this vault a fork of it rather than a
+   mirror. See [Vendored sources and submodules](#vendored-sources-and-submodules).
+3. **License-audited.** Every source is listed with its licence identifier in
+   `SOURCES`, and `LICENSES/` carries the texts: the canonical SPDX text for each
+   identifier, plus the notice as it actually ships with the source. Every file
+   in there records where it came from and its SHA-256 in `LICENSES/INDEX.json`,
+   and `tools/check-licences.py` fails the build if a text goes missing or
+   changes without the record. One source (`LPAQ9`) is still unresolved and says
+   so rather than being assumed licensed.
 
 ---
 
@@ -39,8 +49,10 @@ from the pinned tree.
 ## Repository Layout
 HCS/
 ├── README.md # this file
-├── SOURCES.md # machine-readable manifest (id, url, pin, license)
-├── LICENSES/ # one .txt per source (full license text)
+├── SOURCES # machine-readable manifest (id, url, pin, licence, integration)
+├── NOTICE # whose work is inside, under what terms, and what is unresolved
+├── .gitmodules # URL mapping for the 23 pinned sources
+├── LICENSES/ # SPDX texts + per-source notices; INDEX.json records provenance
 ├── old/ # vendored sources (the vault)
 │ ├── xz/
 │ ├── zpaq/
@@ -173,9 +185,12 @@ Grouped by role in a CHCE pipeline.
 | `FPAQF2` | PAQ-family derivative | verify | `TBD` |
 | `SR3A` | Experimental | verify | `TBD` |
 
-> "verify" = license text needs to be copied into `LICENSES/` before
-> integration. `TBD` in the pin column is replaced by a commit SHA the
-> first time the source is built against.
+> "verify" = the licence needs confirming against the source's own file before
+> integration. `LICENSES/sources/` now holds the notice that ships with each
+> source, and `LICENSES/README.md` shows it beside the identifier `SOURCES`
+> claims, so confirming means reading one file and recording the result in this
+> table — see [Known gaps](#known-gaps). `TBD` in the pin column is replaced by a
+> commit SHA the first time the source is built against.
 
 ---
 
@@ -226,7 +241,11 @@ Plus these orthogonal transforms that operate **before** the entropy tier:
 
 1. `cd old/<source>` and check out the desired revision.
 2. Update the `pin` in `SOURCES`.
-3. Copy the license text into `LICENSES/<source>-<license>.txt`.
+3. Confirm the licence from the source's own `LICENSE`/`COPYING` file and correct
+   the `SOURCES` row if it moved. Then regenerate the licence record:
+   `python3 tools/build-licences.py && python3 tools/check-licences.py`. The
+   checker fails if a source in `SOURCES` has no entry in `LICENSES/INDEX.json`,
+   so a bump that changes the licence cannot pass silently.
 4. Regenerate any integration tests in `ziptastic` that consume this source.
 5. Open a PR titled `bump: <source> → <new-sha>`.
 
@@ -237,7 +256,8 @@ Plus these orthogonal transforms that operate **before** the entropy tier:
 1. `git clone --depth=1 <url> old/<id>` **inside this repo**.
 2. `rm -rf old/<id>/.git` — **critical, do not skip**.
 3. Add a row to `SOURCES`.
-4. Add the license text to `LICENSES/`.
+4. Record the licence identifier in the `SOURCES` row. Full licence texts are
+   not collected yet — see [Known gaps](#known-gaps).
 5. Add a row to the appropriate section of this README.
 6. Commit: `add: <id> (<role>)`.
 
@@ -251,6 +271,11 @@ mistake when vendoring):
 ```bash
 find old -name .git -type d
 # should print nothing
+```
+
+(The 23 pinned submodules are the exception and are expected to carry `.git`;
+the check above is about *copied* sources.) The equivalent for the pins is
+`./scripts/check-vendor.sh`, below.
 
 ## Vendored sources and submodules
 
@@ -295,6 +320,26 @@ if any directory under `old/` is empty, if a gitlink has no `.gitmodules` entry,
 or if a `.gitmodules` entry points at a directory that does not exist. CI runs it
 on every push with `submodules: recursive`, so a mirror that cannot materialise
 goes red instead of going quiet.
+
+## Known gaps
+
+- **One licence text is still unresolved.** 52 of 53 sources carry evidence in
+  `LICENSES/`. `LPAQ9` does not: the vendored copy is `lpaq9m.zpaq`, a binary
+  archive with no source and no notice in it, and `SOURCES` gives only a zip URL
+  that this vault does not mirror. Its `Public-Domain` verdict is therefore
+  unverified — treat it as unknown until someone fetches the upstream archive and
+  reads its README. `LICENSES/README.md` lists it under "What is still open" and
+  `tools/check-licences.py` prints it on every run.
+- **`MANIFEST.json`** records a producer and class per file for the files it
+  knows about, and was last written on 2026-11-04. It is not regenerated on
+  every push, so treat it as a snapshot rather than an index. `tools/manifest.py`
+  is what writes it.
+- **The HCS `LICENSE` is PolyForm Noncommercial 1.0.0**, which covers the files
+  this repository authors (the manifest, the catalogue, the tooling). The
+  vendored sources under `old/` keep their own licences, which are the ones that
+  govern them; the PolyForm terms cannot relicense code HCS did not write. That
+  distinction is worth stating plainly because the badge at the top of this file
+  reads as if it covers everything.
 
 ## Support
 

@@ -1,0 +1,50 @@
+/* barf.cpp - Better Archiver with Recursive Functionality
+
+(C) 2003, Matt Mahoney.  This is free software and may be copied,
+modified, and distributed under the GNU General Public License,
+http://www.gnu.org/licenses/gpl.txt
+
+To compress:   barf c files...  (appends .x or .x?? extension)
+To decompress: barf d file.x    (removes extension)
+
+If file names are omitted, reads names from standard input
+If compression/decompresion is successful, then the original files
+are removed (like with gzip).
+
+BARF compresses ANY nonempty file by at least one byte, including
+previously compressed files.  Thus, by recursive compression, it is
+possible to eventually compress any file to 0 bytes.
+
+BARF is fast and efficient.  In tests on the 14 file Calgary corpus,
+it compresses all of the files to 1 byte each in a single pass, or 0 bytes
+each in two passes.  Both passes run in under 1 second on a 750 MHz PC.
+
+BARF achieves this remarkable result by trying 257 different compression
+methods on each file, and choosing the best one.  The compression format
+is indicated by the file name extension, either .x or .x?? where ??
+is a digit and a letter, e.g. .x3a.
+
+To compile (Borland) with the Calgary corpus in a subdirectory:
+(g++ chokes on the huge barf.h header, over 11 MB).
+
+  bcc32 mkstring.cpp
+  cd calgary
+  dir/o/b | ..\mkstring > ..\barf.h
+  cd ..
+  bcc32 barf.cpp    (barf.exe is about 3 MB)
+  upx barf.exe      (optional, shrinks barf.exe to about 1 MB)
+
+To test:
+
+  cd calgary
+  dir/b | ..\barf c    (should produce bib.x, book1.x ... 1 byte each)
+  dir/b | ..\barf c    (bib.x.x0a, book1.x.x0b, ... 0 bytes each)
+  dir/b | ..\barf c    (Can't compress any more, sorry)
+  dir/b | ..\barf d    (bib.x, book1.x ... 1 byte each)
+  dir/b | ..\barf d    (bib, book1, ... in original form)
+
+You can premodel up to 255 files using mkstring, and those files will
+then be compressed to 1 byte, even if you rename them first.
+Other files are still compressed a little using a really crude LZ77 code,
+but of course you can do this over and over again :-)
+*/

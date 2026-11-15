@@ -7,7 +7,19 @@ updating consumers.**
 Columns:
 - **id** — directory name under `old/`
 - **url** — canonical upstream repository
-- **pin** — commit SHA or tag currently vendored (`TBD` until first build)
+- **pin** — what is actually vendored, and nothing else:
+  - a **40-character commit SHA** for the 23 sources that are git submodules —
+    the commit `git submodule status` reports, so it can be checked against the
+    checkout rather than trusted;
+  - `copy` for a tree that was copied in rather than pinned. The upstream commit
+    is not recoverable from the tree, and writing a plausible-looking SHA there
+    would be worse than saying so;
+  - `unvendored` for a row describing something not in `old/` yet.
+
+  `TBD` is not allowed: a row must say which of the three it is, and
+  `tools/check-sources.py` fails on `TBD`. Recovering a real pin for a copied
+  tree means fetching the upstream at the version the tree reports and recording
+  that commit — a task, not a guess.
 - **license** — SPDX identifier or `verify`
 - **integration** — `link` | `copy-src` | `external-process` | `reference`
 
@@ -17,119 +29,118 @@ Columns:
 
 | id | url | pin | license | integration |
 |---|---|---|---|---|
-| xz | https://github.com/tukaani-project/xz | TBD | 0BSD+LGPL-2.1 | link |
-| lzma | https://www.7-zip.org/sdk.html | TBD | Public-Domain | copy-src |
-| 7z | https://www.7-zip.org/ | TBD | Public-Domain | copy-src |
-| brotli | https://github.com/google/brotli | TBD | MIT | link |
-| fse | https://github.com/Cyan4973/FiniteStateEntropy | TBD | BSD-3-Clause | copy-src |
-| ryg_rans | https://github.com/rygorous/ryg_rans | TBD | Public-Domain | copy-src |
+| xz | https://github.com/tukaani-project/xz | copy | 0BSD+LGPL-2.1 | link |
+| lzma | https://www.7-zip.org/sdk.html | copy | Public-Domain | copy-src |
+| 7z | https://www.7-zip.org/ | copy | Public-Domain | copy-src |
+| brotli | https://github.com/google/brotli | copy | MIT | link |
+| fse | https://github.com/Cyan4973/FiniteStateEntropy | 9f30e0918f87bd835fa040d922a208d7b219e50b | BSD-3-Clause | copy-src |
+| ryg_rans | https://github.com/rygorous/ryg_rans | c9d162d996fd600315af9ae8eb89d832576cb32d | Public-Domain | copy-src |
 
 ## LZ / Match Finder
 
 | id | url | pin | license | integration |
 |---|---|---|---|---|
-| srep | https://github.com/essencesh/srep | TBD | all-rights-reserved | reference |
-| zstd | https://github.com/facebook/zstd | TBD | BSD-3-Clause | link |
-| lz4 | https://github.com/lz4/lz4 | TBD | BSD-2-Clause | link |
-| lzham | https://github.com/richgel999/lzham_codec | TBD | MIT | link |
-| freearc-c | https://github.com/seb3773/freearc-c | TBD | verify | copy-src |
-| freearc-main | https://github.com/Bulat-Ziganshin/FA | TBD | mixed | reference |
-| FA-master | https://github.com/Bulat-Ziganshin/FA | TBD | mixed | reference |
+| srep | https://github.com/essencesh/srep | copy | all-rights-reserved | reference |
+| zstd | https://github.com/facebook/zstd | copy | BSD-3-Clause | link |
+| lz4 | https://github.com/lz4/lz4 | copy | BSD-2-Clause | link |
+| lzham | https://github.com/richgel999/lzham_codec | d379b1f9121e2197881c61cfc4713c78848bdfe7 | MIT | link |
+| freearc-c | https://github.com/seb3773/freearc-c | copy | verify | copy-src |
+| freearc-main | https://github.com/Bulat-Ziganshin/FA | copy | mixed | reference |
+| FA-master | https://github.com/Bulat-Ziganshin/FA | copy | mixed | reference |
 
 ## Context-Mixing
 
 | id | url | pin | license | integration |
 |---|---|---|---|---|
-| zpaq | https://github.com/zpaq/zpaq | TBD | Public-Domain | link |
-| zpaqfranz | https://github.com/fcorbelli/zpaqfranz | TBD | PD+GPL | link |
-| paq8px | https://github.com/hxim/paq8px | TBD | GPL-2.0 | external-process |
-| LPAQ9 | http://mattmahoney.net/dc/lpaq9.zip | TBD | Public-Domain | external-process |
-| omnizip-zpaq | https://github.com/omnizip/omnizip-rs | TBD | verify | reference |
+| zpaq | https://github.com/zpaq/zpaq | copy | Public-Domain | link |
+| zpaqfranz | https://github.com/fcorbelli/zpaqfranz | c16ce5b667379208e3cae67e60051e12834fc40b | PD+GPL | link |
+| paq8px | https://github.com/hxim/paq8px | c84f576fc2c522194cd320743708652a154daf6b | GPL-2.0 | external-process |
+| LPAQ9 | http://mattmahoney.net/dc/lpaq9.zip | copy | Public-Domain | external-process |
+| omnizip-zpaq | https://github.com/omnizip/omnizip-rs | ae3a229fe96380280170e6be67de8d4f6193b1a9 | verify | reference |
 
 ## BWT
 
 | id | url | pin | license | integration |
 |---|---|---|---|---|
-| libbsc | https://github.com/IlyaGrebnov/libbsc | TBD | Apache-2.0 | link |
-| bzip3 | https://github.com/kspalaiologos/bzip3 | TBD | Apache-2.0 | link |
+| libbsc | https://github.com/IlyaGrebnov/libbsc | copy | Apache-2.0 | link |
+| bzip3 | https://github.com/kspalaiologos/bzip3 | 2f82d62cc29a46ddc20824e3a0e5067e3ff5b36e | Apache-2.0 | link |
 
 ## Numeric / Structured
 
 | id | url | pin | license | integration |
 |---|---|---|---|---|
-| pcodec | https://github.com/mayhemheroes/quantile-compression | TBD | Apache-2.0 | copy-src |
-| bitshuffle | https://github.com/kiyo-masui/bitshuffle | TBD | MIT | rewrite |
+| pcodec | https://github.com/mayhemheroes/quantile-compression | a9a2f8ec9361b9537cd12573162c1070bc7d9609 | Apache-2.0 | copy-src |
+| bitshuffle | https://github.com/kiyo-masui/bitshuffle | copy | MIT | rewrite |
 
 ## Fast / Asymmetric
 
 | id | url | pin | license | integration |
 |---|---|---|---|---|
-| zxc | https://github.com/hellobertrand/zxc | TBD | verify | link |
-| density | https://github.com/centaurean/density | TBD | BSD-2-Clause | link |
-| csc | https://github.com/fusiyuan2010/CSC | TBD | verify | link |
-| lizard | https://github.com/inikep/lizard | TBD | BSD-2-Clause | link |
-| brieflz | https://github.com/jibsen/brieflz | TBD | zlib | link |
-| snappy | https://github.com/google/snappy | TBD | BSD-3-Clause | link |
-| lzo | https://github.com/nemequ/lzo | TBD | GPL+commercial | external-process |
+| zxc | https://github.com/hellobertrand/zxc | 2be60193a2c218a48182a4ae06b45e0864b7cd1b | verify | link |
+| density | https://github.com/centaurean/density | 58938943bb0dfd85b186551a3d1d36cc286f9c1d | BSD-2-Clause | link |
+| lizard | https://github.com/inikep/lizard | d3becc7e80d3eb01147c2f63bed2e23fac533f19 | BSD-2-Clause | link |
+| brieflz | https://github.com/jibsen/brieflz | ad89acf4186adca8ad8c27c4ab376a49ae233cd0 | zlib | link |
+| snappy | https://github.com/google/snappy | 946606459314e55d029c85f9a8c46f8809467f0f | BSD-3-Clause | link |
+| lzo | https://github.com/nemequ/lzo | copy | GPL+commercial | external-process |
 
 ## Preprocessors
 
 | id | url | pin | license | integration |
 |---|---|---|---|---|
-| parmar | https://github.com/shallowbyte/parmar | TBD | verify | copy-src |
-| shoco | https://github.com/Ed-von-Schleck/shoco | TBD | MIT | copy-src |
-| smaz | https://github.com/antirez/smaz | TBD | BSD-3-Clause | copy-src |
+| parmar | https://github.com/shallowbyte/parmar | copy | verify | copy-src |
+| shoco | https://github.com/Ed-von-Schleck/shoco | 7c92fa9c4161ea97da90cc78e38cfb18476ba882 | MIT | copy-src |
+| smaz | https://github.com/antirez/smaz | 2f625846a775501fb69456567409a8b12f10ea25 | BSD-3-Clause | copy-src |
 
 ## Recompressors
 
 | id | url | pin | license | integration |
 |---|---|---|---|---|
-| preflate | https://github.com/deus-libri/preflate | TBD | Apache-2.0 | link |
-| preflate-rs | https://github.com/microsoft/preflate-rs | TBD | Apache-2.0 | link |
-| precomp-cpp | https://github.com/schnaader/precomp-cpp | TBD | Apache-2.0 | reference |
-| packJPG | https://github.com/YadeWira/packJPG | TBD | LGPL-3.0 | external-process |
-| aqueous | https://github.com/lifthrasiir/aqueous | TBD | MIT-0 | copy-src |
-| rhefo | https://github.com/T-3B/rhefo | TBD | verify | copy-src |
-| zopfli | https://github.com/google/zopfli | TBD | Apache-2.0 | link |
-| advancecomp | https://github.com/amadvance/advancecomp | TBD | GPL-3.0 | external-process |
+| preflate | https://github.com/deus-libri/preflate | copy | Apache-2.0 | link |
+| preflate-rs | https://github.com/microsoft/preflate-rs | copy | Apache-2.0 | link |
+| precomp-cpp | https://github.com/schnaader/precomp-cpp | copy | Apache-2.0 | reference |
+| packJPG | https://github.com/YadeWira/packJPG | copy | LGPL-3.0 | external-process |
+| aqueous | https://github.com/lifthrasiir/aqueous | f6367b24f0dbe36b772b4c0e69dc89d45812849c | MIT-0 | copy-src |
+| rhefo | https://github.com/T-3B/rhefo | b53d8d68812dec2c26fa08befa57370426100248 | verify | copy-src |
+| zopfli | https://github.com/google/zopfli | copy | Apache-2.0 | link |
+| advancecomp | https://github.com/amadvance/advancecomp | copy | GPL-3.0 | external-process |
 
 ## Fast Deflate
 
 | id | url | pin | license | integration |
 |---|---|---|---|---|
-| zlib-ng | https://github.com/zlib-ng/zlib-ng | TBD | zlib | link |
-| libdeflate | https://github.com/ebiggers/libdeflate | TBD | MIT | link |
+| zlib-ng | https://github.com/zlib-ng/zlib-ng | copy | zlib | link |
+| libdeflate | https://github.com/ebiggers/libdeflate | copy | MIT | link |
 
 ## Executable Packers
 
 | id | url | pin | license | integration |
 |---|---|---|---|---|
-| upx | https://github.com/upx/upx | TBD | GPL-2.0 | external-process |
-| zelf | https://github.com/seb3773/zelf | TBD | verify | reference |
+| upx | https://github.com/upx/upx | af76ac24544d0039b4634cbf791647a61b4adde4 | GPL-2.0 | external-process |
+| zelf | https://github.com/seb3773/zelf | 963ae4a68bced6833bfbd62543bdc5fcd3a866a8 | verify | reference |
 
 ## Embedded
 
 | id | url | pin | license | integration |
 |---|---|---|---|---|
-| tamp | https://github.com/BrianPugh/tamp | TBD | MIT | copy-src |
-| heatshrink | https://github.com/atomicobject/heatshrink | TBD | ISC | copy-src |
+| tamp | https://github.com/BrianPugh/tamp | 5279e7cf2322eb0a5f85acb9ca6de6d1b77561ea | MIT | copy-src |
+| heatshrink | https://github.com/atomicobject/heatshrink | 7d419e1fa4830d0b919b9b6a91fe2fb786cf3280 | ISC | copy-src |
 
 ## Discovery / Reference Lists
 
 | id | url | pin | license | integration |
 |---|---|---|---|---|
-| awesome-compopt | https://github.com/MartinEesmaa/awesome-compopt | TBD | CC | reference |
-| awesome-cpp | https://github.com/hstsethi/awesome-cpp | TBD | CC | reference |
+| awesome-compopt | https://github.com/MartinEesmaa/awesome-compopt | dddeb18b94f52f95d85774d6810641ca71575e72 | CC | reference |
+| awesome-cpp | https://github.com/hstsethi/awesome-cpp | 21a0c11074ccaad8f65dfb119c671d2ec5ecaa96 | CC | reference |
 
 ## Additional / Experimental
 
 | id | url | pin | license | integration |
 |---|---|---|---|---|
-| BARF | (fill in) | TBD | verify | reference |
-| BBB | (fill in) | TBD | verify | reference |
-| FLZP | (fill in) | TBD | verify | reference |
-| FPAQF2 | (fill in) | TBD | verify | reference |
-| SR3A | (fill in) | TBD | verify | reference |
+| BARF | http://cs.fit.edu/~mmahoney/compression/ | copy | GPL | reference |
+| BBB | unknown | copy | GPL | reference |
+| FLZP | unknown | copy | GPL-3.0-or-later | reference |
+| FPAQF2 | unknown | copy | GPL | reference |
+| SR3A | http://cs.fit.edu/~mmahoney/compression/text.html | copy | GPL-2.0-or-later | reference |
 
 ---
 
@@ -137,8 +148,8 @@ Columns:
 
 | id | url | pin | license | integration |
 |---|---|---|---|---|
-| csc | https://github.com/fusiyuan2010/CSC | TBD | verify | link |
-| lzo | https://github.com/nemequ/lzo | TBD | GPL+commercial | external-process |
+| csc | https://github.com/fusiyuan2010/CSC | unvendored | verify | link |
+| lzo | https://github.com/nemequ/lzo | copy | GPL+commercial | external-process |
 
 Clone them with:
 
@@ -166,6 +177,23 @@ git ls-tree HEAD old/ | awk '$1=="160000"{print $4, $3}'
 ---
 
 ## Licence corrections
+
+Verdicts below were read from the vendored tree on 15 Nov 2026, not from an
+upstream page. `LICENSES/sources/<id>-HEADER.txt` holds the quoted text.
+
+| id | was | is | why |
+|---|---|---|---|
+| `BARF` | `verify` | `GPL` | `old/BARF/barf.cpp` header: "This is free software and may be copied, modified, and distributed under the GNU General Public License, http://www.gnu.org/licenses/gpl.txt" — no version stated, so no version is claimed |
+| `BBB` | `verify` | `GPL` | `old/BBB/bbb.cpp`: "This is free software under GPL" — no version stated |
+| `FPAQF2` | `verify` | `GPL` | `old/FPAQF2/fpaq0f2.cpp`: "(C) 2008, Matt Mahoney under GPL" — no version stated |
+| `FLZP` | `verify` | `GPL-3.0-or-later` | `old/FLZP` header: "either version 3 of the License, or (at your option) any later version" |
+| `SR3A` | `verify` | `GPL-2.0-or-later` | `old/SR3A/sr3a.cpp`: "either version 2 of the License, or (at your option) any later version" |
+| `csc` | listed in Fast / Asymmetric | row removed | nothing is vendored under `old/csc`; the clone instructions stay in Pending Additions |
+
+`unknown` in the url column means the tree records no upstream and the host it
+would live on is not reachable from this machine to confirm one. It is not a
+guess at a URL.
+
 
 | id | was | is | why |
 |---|---|---|---|
