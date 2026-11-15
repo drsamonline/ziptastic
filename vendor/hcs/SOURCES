@@ -29,10 +29,10 @@ Columns:
 
 | id | url | pin | license | integration |
 |---|---|---|---|---|
-| xz | https://github.com/tukaani-project/xz | copy | 0BSD+LGPL-2.1 | link |
+| xz | https://github.com/tukaani-project/xz | d3e650e63c110e830fd5391e7f8b45df0b91d3da | 0BSD+LGPL-2.1 | link |
 | lzma | https://www.7-zip.org/sdk.html | copy | Public-Domain | copy-src |
 | 7z | https://www.7-zip.org/ | copy | Public-Domain | copy-src |
-| brotli | https://github.com/google/brotli | copy | MIT | link |
+| brotli | https://github.com/google/brotli | 028fb5a23661f123017c060daa546b55cf4bde29 | MIT | link |
 | fse | https://github.com/Cyan4973/FiniteStateEntropy | 9f30e0918f87bd835fa040d922a208d7b219e50b | BSD-3-Clause | copy-src |
 | ryg_rans | https://github.com/rygorous/ryg_rans | c9d162d996fd600315af9ae8eb89d832576cb32d | Public-Domain | copy-src |
 
@@ -52,17 +52,17 @@ Columns:
 
 | id | url | pin | license | integration |
 |---|---|---|---|---|
-| zpaq | https://github.com/zpaq/zpaq | copy | Public-Domain | link |
+| zpaq | https://github.com/zpaq/zpaq | 9ab539f644e364f0d92e2918b90ce2534c75653f | Public-Domain | link |
 | zpaqfranz | https://github.com/fcorbelli/zpaqfranz | c16ce5b667379208e3cae67e60051e12834fc40b | PD+GPL | link |
 | paq8px | https://github.com/hxim/paq8px | c84f576fc2c522194cd320743708652a154daf6b | GPL-2.0 | external-process |
-| LPAQ9 | http://mattmahoney.net/dc/lpaq9.zip | copy | Public-Domain | external-process |
+| LPAQ9 | http://mattmahoney.net/dc/lpaq9.zip | copy | GPL-2.0 | external-process |
 | omnizip-zpaq | https://github.com/omnizip/omnizip-rs | ae3a229fe96380280170e6be67de8d4f6193b1a9 | verify | reference |
 
 ## BWT
 
 | id | url | pin | license | integration |
 |---|---|---|---|---|
-| libbsc | https://github.com/IlyaGrebnov/libbsc | copy | Apache-2.0 | link |
+| libbsc | https://github.com/IlyaGrebnov/libbsc | 4d823bc57ca1ae6d39a74b244646ee545ff0dcea | Apache-2.0 | link |
 | bzip3 | https://github.com/kspalaiologos/bzip3 | 2f82d62cc29a46ddc20824e3a0e5067e3ff5b36e | Apache-2.0 | link |
 
 ## Numeric / Structured
@@ -109,7 +109,7 @@ Columns:
 | id | url | pin | license | integration |
 |---|---|---|---|---|
 | zlib-ng | https://github.com/zlib-ng/zlib-ng | copy | zlib | link |
-| libdeflate | https://github.com/ebiggers/libdeflate | copy | MIT | link |
+| libdeflate | https://github.com/ebiggers/libdeflate | 92e6a0db9fa848d742f9eb286c92afc60f2c3dda | MIT | link |
 
 ## Executable Packers
 
@@ -160,6 +160,20 @@ rm -rf old/csc/.git old/lzo/.git
 
 ---
 
+## Pin provenance
+
+A copied tree carries no git history, so its upstream commit was not recorded. Where the tree states a version and upstream has a tag for exactly that version, the tag's commit is a real pin and the version string is the evidence. Each row below was read from the file named, not inferred.
+
+| id | version in the tree | upstream tag | pinned to | evidence |
+|---|---|---|---|---|
+| `brotli` | 1.2.0 | `v1.2.0` | `028fb5a23661` | `old/brotli-master/c/common/version.h` |
+| `libbsc` | 3.4.0 | `v3.4.0` | `4d823bc57ca1` | `old/libbsc-master/VERSION` |
+| `libdeflate` | 1.26 | `v1.26` | `92e6a0db9fa8` | `old/libdeflate-master/libdeflate.h` |
+| `xz` | 5.8.4 | `v5.8.4` | `d3e650e63c11` | `old/xz-master/src/liblzma/api/lzma/version.h` |
+| `zpaq` | 7.15 | `7.15` | `9ab539f644e3` | `old/zpaq-master/zpaq.cpp` |
+
+These stay `copy`, with the reason: `zstd` states 1.6.0 and `lz4` states 1.10.1, and neither has a tag of that name — the copied trees are ahead of the last release, and a pin to the previous tag would be a claim the tree contradicts. `advancecomp`'s `configure.ac` reads `AC_INIT([AdvanceCOMP], [git_revision], ...)`, which is a placeholder, not a version. `zopfli`, `packJPG`, `precomp-cpp`, `bitshuffle`, `parmar`, `zlib-ng`, `freearc-c`, `freearc-main`, `FA-master`, `srep`, `LPAQ9`, `BARF`, `BBB`, `FLZP`, `FPAQF2` and `SR3A` state no version in a file this vault can read.
+
 ## Submodule entries
 
 23 rows above are `git submodule` entries, pinned by the commit SHA recorded in
@@ -188,6 +202,7 @@ upstream page. `LICENSES/sources/<id>-HEADER.txt` holds the quoted text.
 | `FPAQF2` | `verify` | `GPL` | `old/FPAQF2/fpaq0f2.cpp`: "(C) 2008, Matt Mahoney under GPL" — no version stated |
 | `FLZP` | `verify` | `GPL-3.0-or-later` | `old/FLZP` header: "either version 3 of the License, or (at your option) any later version" |
 | `SR3A` | `verify` | `GPL-2.0-or-later` | `old/SR3A/sr3a.cpp`: "either version 2 of the License, or (at your option) any later version" |
+| `LPAQ9` | `Public-Domain` | `GPL-2.0` | The vendored copy is `lpaq9m.zpaq`, a binary archive with no source and no notice in it, so the vault cannot establish this from a text. Recorded on the maintainer's statement (15 Nov 2026) that LPAQ carries the same licence as paq8 — which `SOURCES` records as `GPL-2.0`. `LICENSES/sources/LPAQ9-OWNER-STATEMENT.txt` records what was stated and that no text is present |
 | `csc` | listed in Fast / Asymmetric | row removed | nothing is vendored under `old/csc`; the clone instructions stay in Pending Additions |
 
 `unknown` in the url column means the tree records no upstream and the host it
