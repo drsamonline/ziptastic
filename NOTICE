@@ -1,0 +1,64 @@
+# NOTICE
+
+ziptastic is MIT (see `LICENSE`), and that covers the files this repository
+authors: `src/`, `include/`, `tests/`, `CMakeLists.txt`, `docs/`, `scripts/` and
+the workflows.
+
+It is not the whole story, because ziptastic **links** code. Linking is where the
+licence boundary sits in this fleet: `heavenzip` and `kosh` spawn programs and
+stay clear of it, while ziptastic compiles other people's code into its binary
+and therefore carries their terms in the artefact it ships.
+
+## What the binary contains
+
+Every linked library comes from `vendor/hcs` — a `git subtree` of
+[HCS](https://github.com/drsamonline/HCS), the fleet's source vault. HCS mirrors
+the upstream projects; ziptastic consumes them.
+
+| Library | Vendored path | Licence |
+|---|---|---|
+| xz / liblzma | `vendor/hcs/old/xz-master` | 0BSD + LGPL-2.1 |
+| preflate | `vendor/hcs/old/preflate-master` | Apache-2.0 |
+| libbsc | `vendor/hcs/old/libbsc-master` | Apache-2.0 |
+| zpaq (libzpaq) | `vendor/hcs/old/zpaq-master` | Public domain |
+| 7-Zip PPMd | `vendor/hcs/old/7z/C` | Public domain |
+| precomp-cpp contrib | `vendor/hcs/old/precomp-cpp-master/contrib` | Apache-2.0 |
+
+The `SOURCES` file inside `vendor/hcs` records the identifier for every source in
+the vault, and the full licence texts are collected in HCS under `LICENSES/` —
+`LICENSES/<SPDX-ID>.txt` for the canonical text and
+`LICENSES/sources/<id>-*` for the notice as it ships, with provenance and a
+SHA-256 for each file in `LICENSES/INDEX.json`. Read them there rather than here:
+one copy, in the vault, is the point of having a vault.
+
+A snapshot of HCS is vendored under `vendor/hcs`. Two checks keep it honest:
+`scripts/check-vendor.sh` proves every pin materialises, and
+`scripts/check-vendor-current.sh` compares `vendor/hcs/SOURCES` with the same file
+on HCS `main`. The second runs on `main` and on the weekly schedule rather than on
+every PR — a PR about something else should not fail because the vault moved — and
+it reports rather than fails when it cannot reach the network, because an outage
+must not look like a stale vault. When it does report a stale vault, the fix is a
+subtree pull, not an edit here.
+
+As of this file, `vendor/hcs` is a snapshot from before HCS gained `LICENSES/`, so
+that directory is not in this tree yet; the bump that brings it in is due.
+
+## What the binary does not contain
+
+- **No GPL, LGPL or AGPL code is linked.** `paq8px`, `upx`, `advancecomp`,
+  `packJPG` and `lzo` live in the vault and are reachable only through
+  `heavenzip`'s process boundary, never through this linker. `xz` is the one
+  LGPL component here, and it is used through its documented API, unmodified.
+- **No shelling out.** ziptastic's library code never spawns a process; that is
+  the rule the whole fleet is shaped around.
+
+## Third-party notices in the artefact
+
+When distributing a ziptastic binary, ship it with the texts for the libraries
+above — Apache-2.0 §4(d) requires the NOTICE content to travel with a derivative
+binary, and LGPL-2.1 requires the licence text and an offer of the corresponding
+source for liblzma. Both are satisfied by including HCS's `LICENSES/` directory
+alongside the binary, which is why it exists in that form.
+
+*Not legal advice. The texts are collected and traceable; whether a particular
+distribution satisfies them is a question for a lawyer.*
