@@ -1,0 +1,2 @@
+// Copyright (C) 2009-2014 Bulat Ziganshin. All rights reserved.
+// Mail Bulat.Ziganshin@gmail.com if you have any questions or want to buy a commercial license for the source code.

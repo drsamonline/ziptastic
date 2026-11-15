@@ -1,0 +1,42 @@
+- ****************************************************
+
+    LICENSE for sr3a.cpp
+
+    This program is free software; you can redistribute it and/or
+    modify it under the terms of the GNU General Public License as
+    published by the Free Software Foundation; either version 2 of
+    the License, or (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful, but
+    WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+    General Public License for more details at
+    Visit <http://www.gnu.org/copyleft/gpl.html>.
+
+To compress to sr3:    sr3a c input output
+        or for sr2:    sr3a c2 input output
+To decompress sr2/sr3: sr3a d input output
+    or for old sr3:    sr3a d3 input output
+
+There is no limit on file size.  The size of files over 2 GB will
+be reported as -1 (but still compressed and uncompressed correctly).
+
+To compile (g++ 3.4.5, upx 3.00w):
+g++ -Wall sr3a.cpp -O2 -Os -march=pentiumpro -fomit-frame-pointer -s -o sr3a.exe
+upx -qqq sr3a.exe
+
+
+PROGRAM DESCRIPTION
+
+SR2 is a symbol ranking compressor.  The "2" means it is the second
+compressor of this type, the first being SRANK by P. M. Fenwick in
+1997-98, available at ftp://ftp.cs.auckland.ac.nz/pub/staff/peter-f/srank.c
+
+A symbol ranking compressor maintains a list (a move-to-front queue)
+of the most recently seen symbols (bytes) in the current context in
+order of time since last seen.  After coding, the symbol is moved
+to the front of the queue.
+
+The original SRANK used a table of 2^10 to 2^18 hashed order-3
+contexts and a queue length of 3.  Hits were Huffman coded using
+1, 3, or 4 bits.  Misses were coded from a second order-0 queue

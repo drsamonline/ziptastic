@@ -1,0 +1,73 @@
+# NOTICE
+
+HCS is two things in one repository, and the licence boundary runs between them.
+
+## What this repository authors
+
+The catalogue, the manifest, the tooling and the documentation — `README.md`,
+`SOURCES`, `MANIFEST.json`, `PROJECT_OVERVIEW.md`, `PRIVACY.md`, `SECURITY.md`,
+`docs/`, `scripts/`, `tools/` and `LICENSES/` — are © 2026 Dr. Sohil Momin and
+licensed under **PolyForm Noncommercial 1.0.0** (see `LICENSE`).
+
+## What this repository mirrors
+
+Everything under `old/` is somebody else's work, copied in or pinned as a
+submodule. HCS claims no authorship of it and its own licence does not reach it:
+**each source stays under its own terms**, and those terms are the ones that
+govern it.
+
+| | |
+|---|---|
+| sources in `old/` | 52 |
+| of those, pinned as git submodules | 23 |
+| licence texts collected | 52 of 53 rows |
+| unresolved | `LPAQ9` |
+
+The licence of each source is recorded in `SOURCES` (the `license` column), and
+the text it rests on is in `LICENSES/`:
+
+- `LICENSES/<SPDX-ID>.txt` — the canonical licence text, from SPDX's
+  `license-list-data`.
+- `LICENSES/sources/<id>-<name>` — the notice as it actually ships with that
+  source: copied verbatim from the pinned tree where one exists, otherwise from
+  upstream, otherwise quoted from the source's own README or source header.
+- `LICENSES/INDEX.json` — for every file above, where it came from and its
+  SHA-256, so any statement here can be checked against the file it rests on.
+- `LICENSES/README.md` — the same table in readable form, with what is still open.
+
+Identifiers in use across the vault: Apache-2.0 (7), MIT (6), BSD-3-Clause (4),
+BSD-2-Clause (3), GPL-2.0 (2), Zlib (2), and one each of 0BSD, ISC, MIT-0,
+LGPL-2.1, LGPL-3.0, GPL-3.0, plus dual and public-domain arrangements recorded
+per row.
+
+## Two things a consumer must not assume
+
+- **Copyleft sources are present.** `paq8px`, `upx`, `advancecomp`, `packJPG`,
+  `lzo` and others under `old/` are GPL or LGPL. Mirroring them here
+  grants nothing: a product that links them inherits those terms, which is why
+  `ziptastic` reaches GPL code through a process boundary and not through its
+  linker.
+- **One source is all rights reserved.** `srep` has no licence file and its
+  header reads "Copyright (C) 2009-2014 Bulat Ziganshin. All rights reserved."
+  (`LICENSES/sources/srep-HEADER.txt`). It is in the vault for reference and for
+  a user who already has it. It is not redistributable in any form.
+
+## One row is unresolved
+
+`LPAQ9` has no licence evidence in this vault. The vendored copy is
+`lpaq9m.zpaq`, a binary archive containing no source and no notice, and `SOURCES`
+records only a zip URL this repository does not mirror. Its recorded verdict
+(`Public-Domain`) is therefore **unverified** — treat it as unknown until someone
+fetches the upstream archive and reads its readme. `tools/check-licences.py`
+prints it on every run.
+
+## Keeping this file true
+
+`python3 tools/check-licences.py` re-hashes every file in `LICENSES/INDEX.json`,
+fails if an id in `SOURCES` has no entry, and fails if an SPDX text is missing. It
+runs in CI on every push. If a source is added, bumped or re-licensed, this file
+and that record move in the same commit.
+
+*Not legal advice. The texts are collected and traceable; whether a particular
+use is permitted is a question for a lawyer, and the licence text is the
+authority, not this summary.*
