@@ -323,13 +323,13 @@ goes red instead of going quiet.
 
 ## Known gaps
 
-- **One licence text is still unresolved.** 52 of 53 sources carry evidence in
-  `LICENSES/`. `LPAQ9` does not: the vendored copy is `lpaq9m.zpaq`, a binary
-  archive with no source and no notice in it, and `SOURCES` gives only a zip URL
-  that this vault does not mirror. Its `Public-Domain` verdict is therefore
-  unverified — treat it as unknown until someone fetches the upstream archive and
-  reads its README. `LICENSES/README.md` lists it under "What is still open" and
-  `tools/check-licences.py` prints it on every run.
+- **Every vendored source has a licence text.** 52 of 52 carry evidence in
+  `LICENSES/`: the canonical SPDX text plus the notice as it ships, with
+  provenance and a SHA-256 per file in `INDEX.json`, re-checked on every push by
+  `tools/check-licences.py`. `LPAQ9` is recorded from the owner's statement rather
+  than from a text, and says so. One source, `rhefo`, is under the SSPL — not an
+  open-source licence — and `NOTICE` warns about it.
+
 - **`MANIFEST.json`** records a producer and class per file for the files it
   knows about, and was last written on 2026-11-04. It is not regenerated on
   every push, so treat it as a snapshot rather than an index. `tools/manifest.py`
