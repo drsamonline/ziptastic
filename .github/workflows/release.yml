@@ -147,3 +147,88 @@ jobs:
             ${{ steps.pkg.outputs.name }}
             SHA256SUMS
           if-no-files-found: error
+
+  windows:
+    # The engine compiles on Windows (the plugin loader was the only POSIX
+    # dependency), and heavenzip's Windows side has nothing to drive without it.
+    #
+    # Its own checksum file, not SHA256SUMS: that name belongs to the Linux asset,
+    # and two jobs uploading the same filename would race.
+    runs-on: windows-latest
+    steps:
+      - name: Check out with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Read the version out of CMakeLists
+        id: v
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^  VERSION \([0-9][0-9.]*\)/\1/p' CMakeLists.txt | head -1)"
+          test -n "$version" || { echo "::error::no VERSION line in CMakeLists.txt"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "building $version for Windows"
+
+      - name: Configure with MSVC
+        shell: bash
+        run: cmake -S . -B build -A x64 -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build the engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build --config Release --target ziptastic
+          exe="$(find build -name 'ziptastic.exe' -type f -print -quit)"
+          test -n "$exe" || { echo "::error::no ziptastic.exe"; exit 1; }
+
+      - name: Package and prove it runs
+        id: pkg
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.v.outputs.version }}"
+          name="ziptastic-${version}-windows-x86_64.exe"
+          exe="$(find build -name 'ziptastic.exe' -type f -print -quit)"
+          cp "$exe" "$name"
+          # It must answer for itself before it is published.
+          ./"$name" version
+          sha256sum "$name" > SHA256SUMS-windows
+          cat SHA256SUMS-windows
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Round trip through the Windows binary
+        # The release asset is the one artefact nobody rebuilds, so it is not enough
+        # that it links: compress a file and restore it, and compare the bytes.
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="${{ steps.pkg.outputs.name }}"
+          head -c 40000 /dev/urandom | base64 > rt.txt
+          ./"$bin" compress rt.txt rt.hzpkg
+          ./"$bin" decompress rt.hzpkg rt.back
+          cmp rt.txt rt.back
+          echo "windows binary round-trips: $(stat -c%s rt.txt) bytes"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ziptastic-windows
+          path: |
+            ziptastic-*-windows-x86_64.exe
+            SHA256SUMS-windows
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "${{ steps.pkg.outputs.name }}" SHA256SUMS-windows --clobber
+          else
+            echo "::error::no release for $tag — the Linux job creates it, so this job must not race it"
+            exit 1
+          fi
