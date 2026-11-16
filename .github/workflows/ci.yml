@@ -13,6 +13,40 @@ on:
   workflow_dispatch:
 
 jobs:
+  windows-build:
+    # Does the engine build on Windows? The CMakeLists has MSVC branches — /W4, /FIcstdint
+    # for the preflate targets, the libzpaq `#ifdef unix` split — so it was written with
+    # Windows in mind, but nothing has ever compiled it there.
+    #
+    # This is a build, not a test run: the suites are shell scripts and the release
+    # artefact is a Linux binary. If it builds, the release can carry a .exe.
+    runs-on: windows-latest
+    steps:
+      - name: Check out with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure with MSVC
+        shell: bash
+        run: cmake -S . -B build -A x64 -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build --config Release
+          exe="$(find build -name 'ziptastic.exe' -type f -print -quit)"
+          test -n "$exe" || { echo "::error::no ziptastic.exe"; exit 1; }
+          ls -l "$exe"
+
+      - name: It runs and reports a version
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe="$(find build -name 'ziptastic.exe' -type f -print -quit)"
+          "$exe" version
+
   build-and-test:
     runs-on: ubuntu-latest
     steps:
