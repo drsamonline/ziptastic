@@ -1,6 +1,6 @@
 # Vendored upstream sources (copy of the HCS mirror).
 #
-# 23 of these are submodules, pinned by the commit SHA in the tree and
+# 24 of these are submodules, pinned by the commit SHA in the tree and
 # mapped here. Until this file existed the pins had no URL, which is
 # unrecoverable: git knew the commit but not where to fetch it, so every
 # clone silently got 23 empty directories.
@@ -105,3 +105,7 @@
 [submodule "vendor/hcs/old/zxc"]
 	path = vendor/hcs/old/zxc
 	url = https://github.com/hellobertrand/zxc
+
+[submodule "vendor/hcs/old/freearc-067"]
+	path = vendor/hcs/old/freearc-067
+	url = https://github.com/despawnerer/freearc

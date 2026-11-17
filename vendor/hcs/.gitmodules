@@ -102,3 +102,6 @@
 [submodule "old/zxc"]
 	path = old/zxc
 	url = https://github.com/hellobertrand/zxc
+[submodule "old/freearc-067"]
+	path = old/freearc-067
+	url = https://github.com/despawnerer/freearc

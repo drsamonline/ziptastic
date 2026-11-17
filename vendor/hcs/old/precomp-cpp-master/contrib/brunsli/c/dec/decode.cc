@@ -25,7 +25,7 @@ int DecodeBrunsli(size_t in_size, const uint8_t* in, void* out_data,
                   DecodeBrunsliSink out_fun) {
   OutputStruct out = {out_fun, out_data};
   brunsli::JPEGData jpg;
-  brunsli::BrunsliStatus status = brunsli::BrunsliDecodeJpeg(in, in_size, &jpg, false);
+  brunsli::BrunsliStatus status = brunsli::BrunsliDecodeJpeg(in, in_size, &jpg, /*use_brotli=*/false);
   if (status != brunsli::BRUNSLI_OK) {
     return 0;
   }

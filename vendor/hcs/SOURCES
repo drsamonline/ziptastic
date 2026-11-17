@@ -46,7 +46,8 @@ Columns:
 | lzham | https://github.com/richgel999/lzham_codec | d379b1f9121e2197881c61cfc4713c78848bdfe7 | MIT | link |
 | freearc-c | https://github.com/seb3773/freearc-c | copy | GPL-2.0 | copy-src |
 | freearc-main | https://github.com/Bulat-Ziganshin/FA | copy | mixed | reference |
-| FA-master | https://github.com/Bulat-Ziganshin/FA | copy | mixed | reference |
+| FA-master | https://github.com/Bulat-Ziganshin/FA | d56aeb4e6231a73f3715d5d9adbe8ce5a26cb055 | mixed | reference |
+| freearc-067 | https://github.com/despawnerer/freearc | b070df927c4f749d8c101b3902c80fc3e864bfcc | mixed | reference |
 
 ## Context-Mixing
 
@@ -172,7 +173,7 @@ A copied tree carries no git history, so its upstream commit was not recorded. W
 | `xz` | 5.8.4 | `v5.8.4` | `d3e650e63c11` | `old/xz-master/src/liblzma/api/lzma/version.h` |
 | `zpaq` | 7.15 | `7.15` | `9ab539f644e3` | `old/zpaq-master/zpaq.cpp` |
 
-These stay `copy`, with the reason: `zstd` states 1.6.0 and `lz4` states 1.10.1, and neither has a tag of that name — the copied trees are ahead of the last release, and a pin to the previous tag would be a claim the tree contradicts. `advancecomp`'s `configure.ac` reads `AC_INIT([AdvanceCOMP], [git_revision], ...)`, which is a placeholder, not a version. `zopfli`, `packJPG`, `precomp-cpp`, `bitshuffle`, `parmar`, `zlib-ng`, `freearc-c`, `freearc-main`, `FA-master`, `srep`, `LPAQ9`, `BARF`, `BBB`, `FLZP`, `FPAQF2` and `SR3A` state no version in a file this vault can read.
+These stay `copy`, with the reason: `zstd` states 1.6.0 and `lz4` states 1.10.1, and neither has a tag of that name — the copied trees are ahead of the last release, and a pin to the previous tag would be a claim the tree contradicts. `advancecomp`'s `configure.ac` reads `AC_INIT([AdvanceCOMP], [git_revision], ...)`, which is a placeholder, not a version. `zopfli`, `packJPG`, `precomp-cpp`, `bitshuffle`, `parmar`, `zlib-ng`, `freearc-c`, `freearc-main`, `srep`, `LPAQ9`, `BARF`, `BBB`, `FLZP`, `FPAQF2` and `SR3A` state no version in a file this vault can read.
 
 ## Submodule entries
 
@@ -189,6 +190,33 @@ git ls-tree HEAD old/ | awk '$1=="160000"{print $4, $3}'
 ```
 
 ---
+
+## Pending Additions (FreeArc forks and mirrors, considered not vendored)
+
+Eight FreeArc repositories were offered for the vault. **None contains an `arc.ini`, a
+`.dll` or an `.exe`** — every one is source-only. `arc.ini` and the external-compressor
+DLLs (`srep.dll`, `lolz.dll`) ship in FreeArc's binary distribution, which is not on
+GitHub. These rows record what each repository is, so the question is not reopened.
+
+| id | url | pin | license | integration |
+|---|---|---|---|---|
+| freearc-067-bb | https://github.com/bigbenzh/freearc | unvendored | mixed | reference |
+| freearc-next | https://github.com/sysfce2/FreeArc-Next | unvendored | mixed | reference |
+| freearc-unix | https://github.com/john-peterson/freearc-unix | unvendored | mixed | reference |
+| freearc-compiled | https://github.com/shammyfiveducks/freearc-compiled | unvendored | mixed | reference |
+| freearc-mirror-c | https://github.com/birdie-github/mirror-freearc-c | unvendored | GPL-2.0 | reference |
+| freearc-c-sergey | https://github.com/sergey3695/freearc-c | unvendored | GPL-2.0 | reference |
+
+Why not vendored: `freearc-067-bb` forks `despawnerer/freearc` with an identical README
+and `freearc.cabal`; `freearc-next` forks the docs and Lua of `Bulat-Ziganshin/FA`;
+the three `freearc-c` rows fork the tree already pinned as `freearc-c`; `freearc-unix`
+and `freearc-compiled` are the same 357-file tree at the same commit as
+`despawnerer/freearc`. Vendoring a duplicate costs vault size and adds nothing the
+pinned copy does not have.
+
+`freearc-067` **is** vendored because it adds something no other entry has: FreeArc 0.67
+modernised for a current toolchain, carrying `clibs/Compression/SREP/srep.cpp` — the
+`rep` codec's actual source.
 
 ## Licence corrections
 

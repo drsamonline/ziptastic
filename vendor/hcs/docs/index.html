@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HCS — the vendored source vault for CHCE</title>
-<meta name="description" content="Every third-party compressor, preprocessor, recompressor and entropy-coder reference the CHCE engine uses, vendored flat and offline. 55 sources across 14 categories.">
+<meta name="description" content="Every third-party compressor, preprocessor, recompressor and entropy-coder reference the CHCE engine uses, vendored flat and offline. 52 sources across 13 categories.">
 <meta name="theme-color" content="#f7f6f2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#12140f" media="(prefers-color-scheme: dark)">
 <meta property="og:title" content="HCS — the vendored source vault">
@@ -63,7 +63,10 @@
   .btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 19px; border-radius: 3px;
           font-family: var(--mono); font-size: 13px; text-decoration: none;
           background: var(--accent); color: #fff; border: 1px solid var(--accent); }
-  :root[data-theme="dark"] .btn { color: #0d1a13; }
+  /* the filled button needs dark ink on the light accent; the ghost button is
+     transparent on the dark paper and must keep the page ink, or its label
+     disappears (measured 1.04:1 before this was scoped) */
+  :root[data-theme="dark"] .btn:not(.ghost) { color: #0d1a13; }
   .btn:hover { filter: brightness(1.08); }
   .btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
   .btn.ghost:hover { border-color: var(--accent); color: var(--accent); filter: none; }
@@ -120,10 +123,6 @@
   footer a { color: var(--mut); } footer a:hover { color: var(--accent); }
   .stamp { margin-left: auto; }
 </style>
-<style>
-/* ---- a11y: the rule each label needs, chosen against its measured surface -- */
-[data-theme="dark"] a.btn.ghost{color:#ffffff!important}
-</style>
 </head>
 <body>
 
@@ -164,10 +163,10 @@
     </div>
 
     <div class="status">
-      <div><b>55</b><span>sources</span></div>
-      <div><b>14</b><span>categories</span></div>
-      <div><b class="todo">0</b><span>pinned so far</span></div>
-      <div><b class="todo">13</b><span>licences to verify</span></div>
+      <div><b>52</b><span>sources</span></div>
+      <div><b>13</b><span>categories</span></div>
+      <div><b>28</b><span>pinned to a commit</span></div>
+      <div><b>52/52</b><span>licence texts collected</span></div>
     </div>
   </header>
 
@@ -181,7 +180,7 @@
   </section>
 
   <section id="register">
-    <h2>The register — 55 sources, 14 categories</h2>
+    <h2>The register — 52 sources, 13 categories</h2>
     <table>
       <thead><tr><th>Category</th><th style="text-align:right">Sources</th></tr></thead>
       <tbody>
@@ -190,7 +189,7 @@
       <tr><td>Context-Mixing</td><td class="n">5</td></tr>
       <tr><td>BWT</td><td class="n">2</td></tr>
       <tr><td>Numeric / Structured</td><td class="n">2</td></tr>
-      <tr><td>Fast / Asymmetric</td><td class="n">7</td></tr>
+      <tr><td>Fast / Asymmetric</td><td class="n">6</td></tr>
       <tr><td>Preprocessors</td><td class="n">3</td></tr>
       <tr><td>Recompressors</td><td class="n">8</td></tr>
       <tr><td>Fast Deflate</td><td class="n">2</td></tr>
@@ -198,7 +197,6 @@
       <tr><td>Embedded</td><td class="n">2</td></tr>
       <tr><td>Discovery / Reference Lists</td><td class="n">2</td></tr>
       <tr><td>Additional / Experimental</td><td class="n">5</td></tr>
-      <tr><td>Pending Additions (queued for next commit)</td><td class="n">2</td></tr>
       </tbody>
     </table>
     <p style="margin:14px 0 0;font-family:var(--mono);font-size:11.5px;color:var(--mut)">
@@ -223,12 +221,16 @@
   <section>
     <h2>Where the vault stands</h2>
     <div class="warn">
-      <p><b>0 of 55 sources are pinned, and 13 licences are still
-      marked <code>verify</code>.</b> The register carries a <code>pin</code> column and every row
-      reads <code>TBD</code> until the first build records a commit.</p>
-      <p>That matters because the whole argument for vendoring is reproducibility: until a row has a
-      pin, a consumer building from it is trusting <code>main</code>, which is the thing this vault
-      exists to avoid. It is stated here rather than left for a consumer to discover.</p>
+      <p><b>28 of 52 sources are pinned to a commit; 24 were copied in and their upstream
+      commit is not recoverable from the tree.</b> Those 24 say <code>copy</code> rather than
+      carrying a plausible-looking SHA, because a pin nobody can check is worse than an admitted
+      gap. <code>tools/propose-pins.py</code> re-reads each tree's own version string and proposes
+      a pin where upstream has a tag for it.</p>
+      <p><b>Every vendored source now has a licence text.</b> 52 of 52 carry evidence in
+      <code>LICENSES/</code> — the canonical SPDX text plus the notice as it ships, with provenance
+      and a SHA-256 per file in <code>INDEX.json</code>, re-checked on every push. Six rows still
+      read <code>verify</code> in <code>SOURCES</code>; their texts came from upstream and the
+      verdict column has not caught up.</p>
     </div>
   </section>
 
@@ -296,5 +298,41 @@ git subtree add --prefix vendor/hcs \
   });
 })();
 </script>
+<!-- fleet-nav:start -->
+<nav class="fleetnav" aria-label="The CHCE fleet">
+  <div class="fleetnav-wrap">
+    <p class="fleetnav-label">The CHCE fleet</p>
+    <ul>
+      <li><a href="https://drsamonline.github.io/HCS/" aria-current="page"><strong>HCS</strong></a><span>the vendored source vault — you are here</span></li>
+      <li><a href="https://drsamonline.github.io/ziptastic/">ziptastic</a><span>the engine</span></li>
+      <li><a href="https://drsamonline.github.io/heavenzip/">heavenzip</a><span>the orchestrator</span></li>
+      <li><a href="https://drsamonline.github.io/kosh/">kosh</a><span>the file workbench</span></li>
+      <li><a href="https://drsamonline.github.io/lexora/">lexora</a><span>the text canonicaliser</span></li>
+      <li><a href="https://drsamonline.github.io/compfactory/">compfactory</a><span>the rules</span></li>
+    </ul>
+    <p class="fleetnav-label">This repository</p>
+    <ul>
+      <li><a href="https://github.com/drsamonline/HCS/blob/main/NOTICE">NOTICE</a></li>
+      <li><a href="https://github.com/drsamonline/HCS/blob/main/LICENSES/README.md">licence record</a></li>
+      <li><a href="https://github.com/drsamonline/HCS/blob/main/SOURCES">the manifest</a></li>
+    </ul>
+  </div>
+</nav>
+<style>
+  .fleetnav { margin: 72px auto 0; padding: 26px 24px 34px; max-width: 64rem;
+    border-top: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+    color: inherit; font-size: 13px; line-height: 1.55; }
+  .fleetnav-wrap { display: flex; flex-direction: column; gap: 14px; }
+  .fleetnav-label { margin: 0; font-size: 10.5px; letter-spacing: .16em;
+    text-transform: uppercase; opacity: .5; }
+  .fleetnav ul { margin: 0; padding: 0; list-style: none; display: flex;
+    flex-wrap: wrap; gap: 6px 20px; }
+  .fleetnav li { display: flex; align-items: baseline; gap: 7px; }
+  .fleetnav a { color: inherit; text-decoration: none; padding-bottom: 1px;
+    border-bottom: 1px solid color-mix(in srgb, currentColor 32%, transparent); }
+  .fleetnav a:hover { border-bottom-color: currentColor; }
+  .fleetnav span { opacity: .55; font-size: 12px; }
+</style>
+<!-- fleet-nav:end -->
 </body>
 </html>
