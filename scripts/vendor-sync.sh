@@ -197,6 +197,26 @@ while read -r sha path state; do
   git update-index --add --cacheinfo "160000,$sha,$LOCAL/$path" || {
     echo "vendor-sync: could not record gitlink $path" >&2; exit 2; }
   mkdir -p "$LOCAL/$path"
+
+  # The vault's own .gitmodules is not the file git reads. Git reads the
+  # *superproject's* .gitmodules, with paths relative to this repository, so a
+  # gitlink recorded without an entry here fails every recursive checkout with
+  # "No url found for submodule path ..." — which is how CI caught the first
+  # attempt at this sync. Derive the URL from the vault's entry and add it.
+  if ! grep -q "^[[:space:]]*path = $LOCAL/$path\$" .gitmodules 2>/dev/null; then
+    url="$(awk -v p="$path" '
+      /^\[submodule/ { inside = 1; want = 0; next }
+      inside && /^[[:space:]]*path[[:space:]]*=/ { v = $0; sub(/^[^=]*=[[:space:]]*/, "", v); if (v == p) want = 1 }
+      inside && want && /^[[:space:]]*url[[:space:]]*=/ { v = $0; sub(/^[^=]*=[[:space:]]*/, "", v); print v; exit }
+    ' "$LOCAL/.gitmodules")"
+    if [ -z "$url" ]; then
+      echo "vendor-sync: no url for $path in $LOCAL/.gitmodules — cannot register it" >&2
+      exit 2
+    fi
+    printf '\n[submodule "%s/%s"]\n\tpath = %s/%s\n\turl = %s\n' \
+      "$LOCAL" "$path" "$LOCAL" "$path" "$url" >> .gitmodules
+    echo "registered $LOCAL/$path in .gitmodules ($url)"
+  fi
 done < "$work/links.change"
 echo "recorded $link_n gitlink(s)"
 
