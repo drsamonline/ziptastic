@@ -478,8 +478,9 @@ Err encode_lzma2_stream(std::span<const uint8_t> input,
 // meaningless — what matters is which one compresses smaller. Judged on a
 // sample, which is cheap and decisive: inflated text compresses several times
 // better than the DEFLATE stream it came from.
-bool precomp_helps(std::span<const uint8_t> payload, std::span<const uint8_t> original) {
-  const size_t kSample = 256 * 1024;
+bool precomp_helps(std::span<const uint8_t> payload, std::span<const uint8_t> original,
+                   size_t sample_cap = 0) {
+  const size_t kSample = sample_cap != 0 ? sample_cap : 256 * 1024;
   auto coded = [](std::span<const uint8_t> sample) -> size_t {
     StaticCostModel model(sample);
     MatchFinder::Options o;
@@ -519,6 +520,11 @@ bool precomp_helps(std::span<const uint8_t> payload, std::span<const uint8_t> or
   // XLSX is the case that exposed it: the estimate declined a transform worth
   // -50%, because the inflated XML's cost was extrapolated from a 256 KiB slice
   // that did not represent 3.2 MiB of repeating row markup.
+  // A caller that is choosing between two encodings of the SAME content can ask for a
+  // sample regardless of size: the candidates differ only in the pixel stream, so a slice
+  // of it is representative in a way a payload-vs-original comparison never is. The PNG
+  // stage uses this — coding both 3.4 MB payloads in full cost 25 s to resolve a margin
+  // that was 26% in one direction and 0.02% in the other.
   constexpr size_t kExactBelow = 8u << 20;
   // A structural signal beats a predictor here. If inflating expanded the data by
   // 2x or more, the original was DEFLATE over something highly compressible, and
@@ -542,7 +548,7 @@ bool precomp_helps(std::span<const uint8_t> payload, std::span<const uint8_t> or
   // this line. Making it measure would mean a full encode of both streams at any size.
   if (payload.size() >= original.size() * 2) return true;
 
-  if (payload.size() <= kExactBelow && original.size() <= kExactBelow) {
+  if (sample_cap == 0 && payload.size() <= kExactBelow && original.size() <= kExactBelow) {
     return coded(payload) < coded(original);
   }
 
@@ -947,7 +953,11 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
         std::vector<uint8_t> check;
         const bool ok = png_repack(unfiltered, check) && check.size() == stage_ecc.size() &&
                         std::memcmp(check.data(), stage_ecc.data(), stage_ecc.size()) == 0;
-        if (ok && precomp_helps(unfiltered, payload)) payload = std::move(unfiltered);
+        // 256 KiB, not the full encode: the two candidates are the same image with the same
+        // skeleton and the same preflate diff, so they differ only in the pixel stream and a
+        // slice of it decides. Measured: the answer is unchanged on both fixtures and the
+        // trial drops from 25 s to about 7 s. 64 KiB was tried first and chose wrong.
+        if (ok && precomp_helps(unfiltered, payload, 256u << 10)) payload = std::move(unfiltered);
       }
       std::vector<uint8_t> check;
       if (png_repack(payload, check) && check.size() == stage_ecc.size() &&
