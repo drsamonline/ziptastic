@@ -154,6 +154,12 @@ jobs:
     #
     # Its own checksum file, not SHA256SUMS: that name belongs to the Linux asset,
     # and two jobs uploading the same filename would race.
+    #
+    # It must also wait for the Linux job, because that job is what *creates* the
+    # release: its own publish step fails with "no release for $tag" if it gets there
+    # first. Nothing declared the dependency, so the order was whichever job finished
+    # first — and on a cold runner the MSVC build is the slower of the two.
+    needs: build-and-publish
     runs-on: windows-latest
     steps:
       - name: Check out with submodules

@@ -9,6 +9,37 @@ short version: what changed, and what it cost.
 
 ---
 
+## 1.4.3 — 2026-11-17
+
+### Fixed
+
+- **A valid 16-bit PCM WAV killed the process.** `ziptastic -9 any-valid.wav` died with SIGSEGV
+  on every file of 256 bytes or more, mono or stereo. Not the transform: `wav_pack()` round-tripped
+  every shape the tests covered. The accept/reject trial that decides whether to keep the transform
+  ran the whole pipeline with the wav stage still enabled, so it contained itself —
+  `base64_pays() → actual_cost() → compress() → wav stage → base64_pays()` — and the stack ran out.
+  A truncated WAV never reached the trial, which is why a corpus of malformed samples called the
+  engine healthy. The trial now switches off every stage that gates on it, and `trial_reentries()`
+  makes a recurrence a test failure rather than a crash. The issue's own 2,044-byte reproducer is
+  1,000 bytes now. `FINDINGS.md` §6g.
+- **`vendor-check` printed a remedy that cannot run.** `git subtree pull --prefix=vendor/hcs` fails
+  with "was never added" — the directory came in as one plain merge commit. The gate now says what
+  is true and points at `scripts/vendor-diff.sh`, which counts what a sync consists of.
+
+### Added
+
+- **`scripts/vendor-diff.sh` and `scripts/vendor-sync.sh`.** The first counts a sync (files to
+  copy, gitlinks to record, artifacts to skip); the second performs it. Applying the sync is
+  currently blocked upstream: HCS `main`'s brunsli calls a 3-argument `BrunsliEncodeJpeg` while its
+  own header declares four, so syncing it does not compile. The build caught it; the sync was
+  reverted.
+- **A Windows release asset.** `ziptastic-<version>-windows-x86_64.exe` with `SHA256SUMS-windows`,
+  built and round-tripped on `windows-latest`. The job existed since 2026-11-16 but no tag had been
+  pushed since, so the only published release (1.4.2) carried Linux alone. The job also now
+  declares `needs: build-and-publish`, because it uploads to a release that the Linux job creates.
+
+---
+
 ## 1.4.2 — 2026-11-12
 
 ### Fixed
