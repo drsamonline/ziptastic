@@ -141,6 +141,12 @@ bool unpack_one(const std::vector<uint8_t>& in, size_t base, size_t end,
   std::vector<unsigned char> inflated;
   std::vector<unsigned char> diff;
   if (!preflate_decode(inflated, diff, raw)) return false;
+  // Refuse a stream that inflates past the ceiling. preflate has no cap parameter, so
+  // the allocation has already happened by here; what this stops is the expensive part
+  // — running the block loop over hundreds of megabytes at 131 KB/s. The ceiling is
+  // absolute rather than proportional because deflate cannot exceed ~1032:1, so a ratio
+  // cap is unreachable (see png_wrap.hpp).
+  if (inflated.size() > kPngMaxInflated) return false;
 
   payload.clear();
   payload.reserve(inflated.size() + diff.size() + skeleton.size() + 64);
