@@ -1284,6 +1284,51 @@ The list cannot be derived, so the gate is the test, not the comment. `scripts/r
 now carries a *valid* WAV as well — exit 0, byte-exact, and strictly smaller than `--no-wav` —
 because every malformed fixture in that file passes whether or not this bug exists.
 
+## 6h. What the ratio ceiling costs (2026-11-17)
+
+The engine's open question was what the *last* few percent cost. Measured on one input, on this
+machine (§0: two cores, so every time below is one thread).
+
+**Input:** the first 256 KiB of a 2 MiB concatenation of 317 first-party source and doc files
+(`src/`, `include/`, `docs/`, `tests/unit/`, `config/`), prose and C++ in the proportion the tree
+actually has. The 2 MiB file is md5 `3cc0fa929d14f257b1ab92529f262136`.
+
+| tool | bytes | of 262,144 | time | throughput |
+|---|---|---|---|---|
+| `zstd -19` | 88,984 | 33.9% | 0.45 s | 568 KB/s |
+| `7z` (LZMA2) | 87,026 | 33.2% | 0.38 s | 678 KB/s |
+| `xz -9` | 87,000 | 33.2% | 0.46 s | 557 KB/s |
+| **`ziptastic -9`** | **72,625** | **27.7%** | 1.24 s | 206 KB/s |
+| `zpaq -m5` (CM) | 68,926 | 26.3% | 4.17 s | 61 KB/s |
+| `paq8px -5` | 59,625 | 22.7% | 207.9 s | **1.2 KB/s** |
+
+What each step of the ceiling costs, relative to the engine on the same bytes:
+
+| step | size | time | note |
+|---|---|---|---|
+| `ziptastic` → `zpaq -m5` | −5.1% | 3.4× | the one that is worth having |
+| `ziptastic` → `paq8px -5` | −17.9% | **168×** | 1.2 KB/s |
+
+At 1.2 KB/s, 2 MiB is about 28 minutes and 1 GB is about nine and a half days. A `paq8px -5` run on
+the full 2 MiB file did not finish inside the sandbox's 280-second command cap, which is consistent
+with the rate above rather than a separate finding.
+
+On the full 2 MiB file, for the tools that fit in a single call:
+
+| tool | bytes | of 2,097,152 | time |
+|---|---|---|---|
+| `zstd -19` | 493,983 | 23.6% | 2.18 s |
+| `7z` (LZMA2) | 481,067 | 22.9% | 2.32 s |
+| `xz -9` | 480,016 | 22.9% | 3.14 s |
+| **`ziptastic -9`** | **446,053** | **21.3%** | 7.05 s |
+| `zpaq -m5` (CM) | 370,695 | 17.7% | 21.85 s |
+
+**The conclusion is not "paq8px is 17.9% better".** It is that the top of the ceiling is unreachable
+by construction: paq8px is GPL-2+ and may never be linked into this engine (`heavenzip`,
+`docs/TOOL_MANIFEST.md`: "never inside ziptastic"). It can only ever be a separate program the user
+supplies, at a rate of about one kilobyte per second. The reachable ceiling is the CM backend the
+engine already has, and it is worth 5.1% for 3.4× the time — which is the trade `--max-ratio` makes.
+
 ## 7. What is open
 
 - ~~Re-measure PNG and GIF on real content.~~ **DONE** — see the note under the transform table.
