@@ -124,3 +124,57 @@ for `docs/shot.png` is unchanged at 67,217 bytes with a byte-exact round trip.
 The distinction matters for the next container someone adds: **cap by ratio when the
 format can inflate without bound; cap by absolute size when the cost is the size.** PNG
 is the second kind, and the note in `png_wrap.hpp` says so where the constant lives.
+
+## Filters: the engine wants the opposite of what deflate wants (2026-11-18)
+
+Every PNG row carries a filter byte, and the row's bytes are *deltas* against the row
+above or the pixel to the left. That is exactly right for deflate — it turns a gradient
+into small numbers — and it is what this engine has always compressed, because the
+transform inflates the IDAT and hands the bytes over as they are.
+
+A context-mixing model does not need the deltas. It predicts from context, and a
+screenshot's rows repeat exactly once the filters are removed. Measured by taking the
+same image, unfiltering it to true pixels in Python, and compressing both streams with
+`ziptastic -9`:
+
+| image | filtered (today) | unfiltered + filter map | change |
+|---|---|---|---|
+| `docs/shot.png` — 1,280×900 UI screenshot, flat colour | 60,678 | **44,694** | **−26.3%** |
+| `portrait.jpg` converted to PNG — 320×320 photograph | **65,152** | 97,556 | **+49.7%** |
+
+(The filter map is 900 bytes for the screenshot — one byte per row — and 229 compressed.)
+
+**Both directions, and by a lot.** A screenshot is the best case for unfiltering: 642 of
+its 900 rows use filter 2 (Up), which encodes "same as the row above", and removing that
+turns whole rows into runs the model predicts. A photograph is the worst case: adjacent
+pixels differ smoothly, the deltas are small, and the filtered stream is what compresses.
+
+So the answer is not "unfilter PNGs". It is **choose per file**, and the cost of choosing
+badly is 50% — which means the choice cannot be a constant.
+
+### What this changes about "filter search"
+
+The plan item was "re-choose the per-row filter before compressing", which is what
+optipng, zopflipng and ECT do. Their objective is the smallest *deflate* stream, and they
+search filter strategies to get it. That objective is not this engine's: here the encoder
+is a context-mixing block loop, and on a screenshot it does better with no filters at all
+than with the best filter set deflate could ask for.
+
+So the useful transform is:
+
+1. inflate the IDAT, split each row into its filter byte and its deltas;
+2. unfilter to true pixels, keep the filter bytes as a side array (one per row);
+3. **decide by measurement, on a sample** — the same 256 KiB sample trial the rest of this
+   engine uses — whether the unfiltered stream or the filtered one is smaller;
+4. store the winner, and on decode refilter with the stored bytes so the original IDAT is
+   reproduced exactly before preflate's diff is applied.
+
+Step 3 is the whole design. Without it, half the corpus gets 50% worse; with it, the
+screenshot case gains 26% and the photographic case is untouched. And the decision has to
+be a *sample* measurement, not a full second pass: the full pass costs 25 s and the sample
+costs about 1.3 s at the engine's measured 200 KB/s.
+
+Not implemented. The numbers above are from unfiltering in Python and compressing the two
+streams directly; the C++ transform would have to handle every colour type and bit depth,
+and exactness is the whole contract. It is written down here so that whoever builds it
+builds the trial-gated version and not the constant one.
