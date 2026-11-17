@@ -15,12 +15,25 @@
 // so there is no "our zlib differs from theirs" class of bug.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
 namespace chce {
 
 bool png_available();
+
+// The largest inflated stream this transform will accept: 256 MiB, absolute.
+//
+// zstd_wrap, xz_wrap and brotli_wrap cap *relative* to the input (4096x, with a
+// 256 MiB floor) because those formats can inflate unboundedly from a tiny stream.
+// PNG cannot: its IDAT is deflate, whose maximum expansion is about 1032:1, so a
+// ratio cap can never fire — measured, not assumed. What actually costs time here is
+// the absolute size, because the engine compresses inflated pixels at ~131 KB/s
+// (docs/PNG_MEASUREMENT.md): 256 MiB is about 33 minutes. Past that the transform
+// declines and the PNG is compressed as opaque bytes, which is the same call every
+// other gate in this engine makes when the price is out of proportion.
+inline constexpr uint64_t kPngMaxInflated = 256ull << 20;
 
 // The 8-byte PNG signature and at least one IDAT chunk.
 // Vectors rather than spans: this translation unit is built as C++17 because it

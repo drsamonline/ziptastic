@@ -93,3 +93,34 @@ noise — but it is a candidate that cannot win on this content and is still off
 `--no-lzma2` saves 1.9 s and produces identical bytes: the Tier-1 fallback trial ran, lost,
 and cost 7% of the run. That is the price of the guarantee, and it is on the record here
 rather than assumed.
+
+## The inflate ceiling, and the one that did not work
+
+The transform had no cap on how far an IDAT stream may inflate. The other container
+wraps (`zstd_wrap`, `xz_wrap`, `brotli_wrap`) cap **relative** to the input — 4096×,
+floor 256 MiB — because those formats can inflate unboundedly from a tiny stream. Copying
+that rule here produces a guard that can never fire:
+
+| input | ratio cap (4096×) | most deflate can produce (≈1032:1) |
+|---|---|---|
+| 92 KB | 380 MB | 95 MB |
+| 1 MB | 4 GiB | 1 GiB |
+| 10 MB | 40 GiB | 10 GiB |
+
+Deflate's own maximum expansion is about **1032:1**, so the ratio branch is unreachable,
+and the 256 MiB floor is unreachable below 64 KiB. A ratio cap on a PNG is decoration.
+
+What actually costs time is the **absolute** size, because the engine compresses inflated
+pixels at ~131 KB/s. So the ceiling is absolute:
+
+```
+kPngMaxInflated = 256 MiB    // ≈ 33 minutes at 131 KB/s
+```
+
+Past it the transform declines and the PNG is compressed as opaque bytes. A 93 KB
+screenshot (3.4 MB inflated) is three orders of magnitude clear of it, and the archive
+for `docs/shot.png` is unchanged at 67,217 bytes with a byte-exact round trip.
+
+The distinction matters for the next container someone adds: **cap by ratio when the
+format can inflate without bound; cap by absolute size when the cost is the size.** PNG
+is the second kind, and the note in `png_wrap.hpp` says so where the constant lives.

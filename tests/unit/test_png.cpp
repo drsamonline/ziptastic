@@ -485,4 +485,18 @@ TEST(packing_is_deterministic) {
   CHECK_MSG(a == b, "packing the same input twice gave different bytes");
 }
 
+// The inflate ceiling. PNG had none until 2026-11-17. A ratio cap was tried first and
+// is unreachable — deflate's maximum expansion is ~1032:1, so 4096:1 can never fire —
+// which is why this one is absolute. The numbers it has to clear are the real ones: a
+// 93 KB screenshot inflates 37x to 3.4 MB and must still be accepted.
+TEST(the_inflate_ceiling_admits_real_images) {
+  CHECK(kPngMaxInflated == 256ull << 20);
+  // The screenshot measured in docs/PNG_MEASUREMENT.md: 92,822 bytes -> 3,456,900.
+  CHECK(3456900ull < kPngMaxInflated);
+  // A ratio cap at 4096x would have allowed a 92 KB file to ask for 380 MB, and would
+  // have been unreachable anyway: deflate tops out near 1032:1, so 92 KB * 1032 is the
+  // most any IDAT of that size can become.
+  CHECK(92822ull * 1032 < kPngMaxInflated);
+}
+
 TEST_MAIN()
