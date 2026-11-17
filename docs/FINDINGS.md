@@ -1240,6 +1240,50 @@ scale. Nothing to vendor from either.
 3D geometry, an archive library in another language, or wrappers. None is a byte-exact coder that
 would beat what is already here, and none was measured further.
 
+## 6g. The accept/reject trial measured itself (2026-11-17)
+
+**The bug (ziptastic#22).** `ziptastic -9` segfaulted on *every* valid 16-bit PCM WAV of 256
+bytes or more, mono or stereo. It was not in the transform: `wav_pack()`/`wav_unpack()` round-trip
+every shape `tests/unit/test_wav.cpp` covered, and they still do. It was in the gate that decides
+whether to keep the transform.
+
+The wav stage asks `base64_pays()` — the generic "is this worth doing" trial — and that trial calls
+`actual_cost()`, which runs the whole pipeline. `actual_cost()` switched off `base64` to stop itself
+recursing, but not `wav`. So the trial contained itself:
+
+```
+base64_pays() -> actual_cost() -> compress() -> wav stage -> base64_pays() -> ...
+```
+
+with no base case. Depth 1, 2, 3 … measured with a counter in `actual_cost()` before the fix; the
+stack runs out, and the death is a SIGSEGV inside `compress()`, which is why it read as a crash in
+the transform. Below 256 bytes the trial's own floor (`pn < 256 || on < 256`) declined before
+reaching `actual_cost()`, which is exactly the boundary the issue reported: 64 B and 244 B fine,
+2,044 B dead.
+
+**Why the corpus called it healthy.** A WAV truncated mid-stream never reaches the trial — `parse()`
+rejects it, the transform does not run, the file compresses as opaque bytes and exits 0. A corpus of
+malformed samples is therefore a corpus of files this bug cannot touch.
+
+**What it was worth, on the issue's own fixtures** (synthetic sine, so these price the bug, not
+real music):
+
+| fixture | archive, stage on | archive, `--no-wav` | round trip |
+|---|---|---|---|
+| 1,000 mono frames, 2,044 B (the reproducer) | **1,000** | 1,355 | byte-exact |
+| 1,000 stereo frames, 4,044 B | **1,605** | 1,877 | byte-exact |
+| 8,000 mono frames, 16,044 B | **3,276** | 4,975 | byte-exact |
+
+Before the fix all three died with SIGSEGV, so the "stage on" column did not exist.
+
+**The fix, and the gate behind it.** `trial_options()` now switches off every stage that gates on
+`actual_cost()` — `base64` *and* `wav` — and `actual_cost()` returns "no opinion" (declined by both
+callers) instead of recursing if a trial is ever entered from inside another. That second half is
+observable: `trial_reentries()` counts it and `tests/unit/test_wav.cpp` asserts it stays at zero.
+The list cannot be derived, so the gate is the test, not the comment. `scripts/regression-corpus.sh`
+now carries a *valid* WAV as well — exit 0, byte-exact, and strictly smaller than `--no-wav` —
+because every malformed fixture in that file passes whether or not this bug exists.
+
 ## 7. What is open
 
 - ~~Re-measure PNG and GIF on real content.~~ **DONE** — see the note under the transform table.

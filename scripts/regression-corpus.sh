@@ -121,5 +121,30 @@ out_size=$(stat -c%s "$TMP/dups.dr")
 cmp -s "$TMP/dups.bin" "$TMP/dups.out" \
   && ok "near-duplicate tree: byte-exact" || bad "near-duplicate tree: round trip differs"
 
+# --- 6. A valid 16-bit PCM WAV --------------------------------------------------
+# The bug was not in the transform. It was in the trial that decides whether to keep
+# it: the trial re-entered compress() with the wav stage still enabled, so it
+# contained itself and every valid WAV of 256 bytes or more died with SIGSEGV.
+#
+# Every fixture in this file that is *malformed* passes either way, because parse()
+# rejects it and the transform never runs. So the fixture here is valid by
+# construction, and the three properties asserted are the ones that were broken: the
+# CLI exits 0 (it used to die on SIGSEGV), the round trip is byte-exact, and the
+# stage is worth something against --no-wav.
+emit tone.wav "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"
+"$BIN" -9 -f -o "$TMP/tone.dr" "$TMP/tone.wav" 2>/dev/null
+[ $? -eq 0 ] \
+  && ok "valid wav: exit 0" \
+  || bad "valid wav: the CLI did not exit 0"
+"$BIN" -d -f -o "$TMP/tone.out" "$TMP/tone.dr" 2>/dev/null
+cmp -s "$TMP/tone.wav" "$TMP/tone.out" \
+  && ok "valid wav: byte-exact" || bad "valid wav: round trip differs"
+"$BIN" -9 -f --no-wav -o "$TMP/tone.nowav.dr" "$TMP/tone.wav" 2>/dev/null
+with_wav=$(stat -c%s "$TMP/tone.dr")
+without_wav=$(stat -c%s "$TMP/tone.nowav.dr")
+[ "$with_wav" -lt "$without_wav" ] \
+  && ok "valid wav: the stage pays ($with_wav of $without_wav bytes)" \
+  || bad "valid wav: the stage bought nothing ($with_wav of $without_wav bytes)"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

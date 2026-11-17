@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <optional>
 #include <thread>
 
 #include "codecs/lzma2_fallback.hpp"
@@ -598,11 +599,46 @@ bool bcj_helps(std::span<const uint8_t> input) {
   return bcj_size < plain_size;
 }
 
+// Every stage whose accept/reject decision is made by actual_cost() has to be
+// switched off inside the trial, or the trial measures itself:
+//
+//   base64_pays() -> actual_cost() -> compress() -> <stage gate> -> base64_pays() -> ...
+//
+// has no base case. The result is not a slow run, it is unbounded recursion that
+// dies as a SIGSEGV deep inside compress(). That is ziptastic#22: the wav stage
+// gates on base64_pays() exactly as base64 does, but only base64 was switched off
+// here, so every valid 16-bit PCM WAV of 256 bytes or more — the trial's own floor —
+// recursed until the stack ran out. A truncated WAV never reached it, because parse()
+// rejects the file and the transform does not run, which is why a corpus of malformed
+// samples called the engine healthy.
+//
+// Adding a stage that gates on actual_cost() means adding it here. There is no way to
+// derive the list, so tests/unit/test_wav.cpp asserts the recursion never happens
+// instead: trial_reentries() must stay at zero.
+CompressOptions trial_options(const CompressOptions& opt) {
+  CompressOptions local = opt;
+  local.base64 = false;
+  local.wav = false;
+  local.max_ratio = false;  // and must not pay for the ratio ceiling
+  return local;
+}
+
+std::atomic<uint64_t> g_trial_reentries{0};
+
 }  // namespace
 
+// How many times a trial was entered from inside another trial. Zero on every
+// input the engine handles; anything else means a stage that gates on
+// actual_cost() was left enabled by trial_options().
+uint64_t trial_reentries() { return g_trial_reentries.load(); }
+
 // What this engine will actually pay for these bytes: run the real pipeline on
-// them, with base64 itself switched off so the trial cannot recurse, and take the
-// size it produces. Not an estimate of the pipeline — the pipeline.
+// them, with the trial-gated stages switched off (see trial_options) so the trial
+// cannot recurse, and take the size it produces. Not an estimate of the pipeline —
+// the pipeline.
+//
+// Returns no value when the pipeline failed or when it was re-entered; both mean
+// "no opinion", and both callers decline the transform rather than guess.
 //
 // Two earlier versions of this gate were estimates, and both were wrong in the
 // direction that costs ratio. The first used the range coder and BWT alone and
@@ -611,10 +647,22 @@ bool bcj_helps(std::span<const uint8_t> input) {
 // spreadsheet transform — which is most of what makes that payload cheap — was not
 // in the model either. The lesson is the one this project keeps relearning: there
 // is no cheap stand-in for running the thing.
-size_t actual_cost(std::span<const uint8_t> s, const CompressOptions& opt) {
-  CompressOptions local = opt;
-  local.base64 = false;     // the trial must not recurse into itself
-  local.max_ratio = false;  // and must not pay for the ratio ceiling
+std::optional<size_t> actual_cost(std::span<const uint8_t> s, const CompressOptions& opt) {
+  // The last line of defence behind trial_options(). A stage that gates on this
+  // function and was not switched off there would recurse here for ever; the depth
+  // counter stops it at the second level, records it so the test suite can fail on
+  // it, and hands back "no opinion" so the caller declines the transform. A missed
+  // optimisation is a bug report; a stack overflow in the field is ziptastic#22.
+  static thread_local int depth = 0;
+  if (depth > 0) {
+    ++g_trial_reentries;
+    return std::nullopt;
+  }
+  struct DepthGuard {
+    int& d;
+    explicit DepthGuard(int& v) : d(v) { ++d; }
+    ~DepthGuard() { --d; }
+  } guard{depth};
   // The Tier-1 LZMA2 fallback STAYS on. Turning it off was the last version's
   // mistake: on a 256 KiB prefix of the base64 text the native encoder costs
   // 16,412 and LZMA2 costs 10,128, so measuring only the native side made a
@@ -622,7 +670,7 @@ size_t actual_cost(std::span<const uint8_t> s, const CompressOptions& opt) {
   // engine would actually write.
   std::vector<uint8_t> out;
   CompressStats st;
-  if (compress(s, out, local, &st) != Err::Ok) return static_cast<size_t>(-1);
+  if (compress(s, out, trial_options(opt), &st) != Err::Ok) return std::nullopt;
   return out.size();
 }
 
@@ -652,10 +700,11 @@ int base64_verdict_cheaply(std::span<const uint8_t> packed, std::span<const uint
   // still runs the transforms that decide the answer.
   CompressOptions one = opt;
   one.block_size = kCheapSample;
-  const double p =
-      static_cast<double>(actual_cost(packed.first(pn), one)) / pn * packed.size();
-  const double o =
-      static_cast<double>(actual_cost(original.first(on), one)) / on * original.size();
+  const std::optional<size_t> pc = actual_cost(packed.first(pn), one);
+  const std::optional<size_t> oc = actual_cost(original.first(on), one);
+  if (!pc || !oc) return -1;  // no opinion at this size; the full trial below decides
+  const double p = static_cast<double>(*pc) / pn * packed.size();
+  const double o = static_cast<double>(*oc) / on * original.size();
   if (p * kDecisive < o) return 1;   // taking it is a clear win
   if (o * kDecisive < p) return 0;   // taking it is a clear loss
   return -1;                         // too close to call at this size
@@ -684,10 +733,11 @@ bool base64_pays(std::span<const uint8_t> packed, std::span<const uint8_t> origi
   // this transform is for, and a 1 KiB floor silently excluded it — a 1,081-byte JPEG
   // in a 843-byte `.json.gz` declined while the same content at 21 KB gained 19.7%.
   if (pn < 256 || on < 256) return false;
-  const double p =
-      static_cast<double>(actual_cost(packed.first(pn), opt)) / pn * packed.size();
-  const double o =
-      static_cast<double>(actual_cost(original.first(on), opt)) / on * original.size();
+  const std::optional<size_t> pc = actual_cost(packed.first(pn), opt);
+  const std::optional<size_t> oc = actual_cost(original.first(on), opt);
+  if (!pc || !oc) return false;  // could not measure: decline rather than guess
+  const double p = static_cast<double>(*pc) / pn * packed.size();
+  const double o = static_cast<double>(*oc) / on * original.size();
   return p < o;
 }
 
