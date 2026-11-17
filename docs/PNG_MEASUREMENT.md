@@ -54,3 +54,42 @@ everything it can. Inflating it exposes 787 KB of scanlines that the engine comp
 - `include/chimera/format.hpp` — `kLayer2Png` (layers2 bit 4).
 - `src/engine/compressor.cpp`, `decompressor.cpp` — the stage and its inverse.
 - `tests/unit/test_png.cpp` — 6 cases, fixture embedded as a byte array.
+
+## What the transform costs in seconds (2026-11-17)
+
+The numbers above are all ratio. The cost side was never written down, and a 93 KB PNG
+taking 25 seconds is the kind of thing that gets reported as a hang. Measured on
+`docs/shot.png` — 1,280×900, a UI screenshot — one thread, `ziptastic 1.4.3`:
+
+| run | bytes | time |
+|---|---|---|
+| `-9` | **67,217** | **25.7 s** |
+| `-9 --no-precomp` (transform off) | 86,626 | **0.70 s** |
+| `-9 --no-parse` | 70,487 | 15.1 s |
+| `-9 --no-bwt` | 67,217 | 26.2 s |
+| `-9 --no-lzma2` | 67,217 | 23.8 s |
+
+**Where the 25 seconds go.** The file is 92,822 bytes; its IDAT stream inflates to
+**3,456,900 bytes — 37×** — and the transform's price is running the whole block loop over
+that. 3.46 MB in 25.7 s is **131 KB/s**, which is two to five times slower than the
+engine's own stated 0.3–0.6 MB/s (`FINDINGS.md` §7). Inflated pixels are the worst case
+for a match finder: rows repeat by a few bytes at a time and almost nothing is long, so
+the optimal parse spends its time finding short matches that the range coder then prices.
+
+So the 25 seconds are not a bug and not waste — they are the price of 22.4%
+(86,626 → 67,217) on a file whose content the engine has no matches for.
+
+**The two knobs that exist**, for a caller who would rather have seconds:
+
+| flag | time | cost |
+|---|---|---|
+| `--no-precomp` | 0.70 s | +28.9% size (the transform's whole win, gone) |
+| `--no-parse` | 15.1 s | +4.6% size |
+
+`--no-bwt` changes neither the bytes nor the time, which means the BWT candidate ran on
+every block of inflated pixels and lost every time. It is not the cost — it is 0.5 s of
+noise — but it is a candidate that cannot win on this content and is still offered.
+
+`--no-lzma2` saves 1.9 s and produces identical bytes: the Tier-1 fallback trial ran, lost,
+and cost 7% of the run. That is the price of the guarantee, and it is on the record here
+rather than assumed.
