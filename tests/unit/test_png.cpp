@@ -499,4 +499,27 @@ TEST(the_inflate_ceiling_admits_real_images) {
   CHECK(92822ull * 1032 < kPngMaxInflated);
 }
 
+// The unfiltered mode: same image, true pixels instead of the file's per-row deltas.
+// The contract is that it is exact — repack must rebuild the original PNG byte for byte —
+// because preflate's diff is applied to the *filtered* stream, which this reconstructs
+// with the filter bytes carried alongside the pixels.
+TEST(the_unfiltered_mode_is_byte_exact) {
+  const auto in = vec(kPng, kPng_len);
+  std::vector<uint8_t> filtered_payload, unfiltered_payload, back;
+  CHECK_MSG(png_unpack(in, filtered_payload), "filtered mode declined a valid PNG");
+  CHECK_MSG(png_unpack_unfiltered(in, unfiltered_payload),
+            "unfiltered mode declined a valid PNG");
+
+  // The two forms must actually differ, or the mode is a no-op dressed as an option.
+  CHECK_MSG(filtered_payload != unfiltered_payload, "the two modes produced identical payloads");
+
+  CHECK_MSG(png_repack(unfiltered_payload, back), "repack rejected an unfiltered payload");
+  CHECK_MSG(back == in, "unfiltered round trip is not byte-exact");
+
+  // And the filtered form still decodes, which is what keeps existing archives readable.
+  back.clear();
+  CHECK_MSG(png_repack(filtered_payload, back), "repack rejected a filtered payload");
+  CHECK_MSG(back == in, "filtered round trip is not byte-exact");
+}
+
 TEST_MAIN()

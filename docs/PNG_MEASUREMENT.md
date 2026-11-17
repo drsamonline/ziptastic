@@ -174,7 +174,26 @@ screenshot case gains 26% and the photographic case is untouched. And the decisi
 be a *sample* measurement, not a full second pass: the full pass costs 25 s and the sample
 costs about 1.3 s at the engine's measured 200 KB/s.
 
-Not implemented. The numbers above are from unfiltering in Python and compressing the two
-streams directly; the C++ transform would have to handle every colour type and bit depth,
-and exactness is the whole contract. It is written down here so that whoever builds it
-builds the trial-gated version and not the constant one.
+**Implemented, trial-gated.** `png_unpack_unfiltered()` produces the second form; the PNG
+stage in `compressor.cpp` builds both and lets `precomp_helps()` — the same 256 KiB sample
+trial the rest of the chain uses — choose. Nothing is decided by a constant.
+
+End to end, same harness, `ziptastic 1.4.3` against this build:
+
+| image | 1.4.3 | with the choice | change | time |
+|---|---|---|---|---|
+| `docs/shot.png` — 1,280×900 screenshot | 67,217 | **51,822** | **−22.9%** | 18.7 → 44.1 s |
+| a 320×320 photograph as PNG | 70,322 | 70,308 | −0.02% (tie) | 1.4 → 2.3 s |
+
+The photograph is unharmed because the trial picks the filtered form for it — which is the
+whole point of measuring rather than choosing. Both round-trip byte-exact.
+
+**The cost is time: +136% on the screenshot**, because two payloads are built and sampled
+before one is kept. That is the honest trade and it is the next thing to attack — the
+sample could decide on a fraction of the rows, or a cheap statistic could pre-filter the
+cases where unfiltering cannot win. Neither is written.
+
+Scope: 8-bit images only (colour types 0/2/3/4/6). Sub-byte and 16-bit depths keep the
+filtered form, where the row geometry is unambiguous; anything else would be a guess.
+Payloads carry a version marker, so archives written before this still decode — the
+repack path accepts both forms, and `the_unfiltered_mode_is_byte_exact` asserts both.

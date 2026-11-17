@@ -934,9 +934,21 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   bool png = false;
   if (opt.precomp && png_available() && !stage_ecc.empty() &&
       png_likely(std::vector<uint8_t>(stage_ecc.begin(), stage_ecc.end()))) {
-    std::vector<uint8_t> payload;
     const std::vector<uint8_t> png_in(stage_ecc.begin(), stage_ecc.end());
+    std::vector<uint8_t> payload;
     if (png_unpack(png_in, payload)) {
+      // Two forms of the same image: the file's own per-row deltas, and its true pixels.
+      // Which one codes smaller is not a property of PNG, it is a property of the content
+      // and of this engine — measured at -26.3% on a flat-colour screenshot and +49.7% on
+      // a photograph (docs/PNG_MEASUREMENT.md). So it is decided by the same sample trial
+      // the rest of the chain uses, never by a constant.
+      std::vector<uint8_t> unfiltered;
+      if (png_unpack_unfiltered(png_in, unfiltered)) {
+        std::vector<uint8_t> check;
+        const bool ok = png_repack(unfiltered, check) && check.size() == stage_ecc.size() &&
+                        std::memcmp(check.data(), stage_ecc.data(), stage_ecc.size()) == 0;
+        if (ok && precomp_helps(unfiltered, payload)) payload = std::move(unfiltered);
+      }
       std::vector<uint8_t> check;
       if (png_repack(payload, check) && check.size() == stage_ecc.size() &&
           std::memcmp(check.data(), stage_ecc.data(), stage_ecc.size()) == 0 &&
