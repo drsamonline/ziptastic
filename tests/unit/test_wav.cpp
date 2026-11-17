@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "engine/compressor.hpp"
+#include "engine/decompressor.hpp"
 #include "harness.hpp"
 #include "precompressors/wav_wrap.hpp"
 
@@ -266,6 +268,92 @@ TEST(declines_a_format_it_does_not_handle) {
   wav[20] = 6;
   std::vector<uint8_t> packed;
   CHECK_MSG(!wav_pack(wav, packed), "accepted an A-law WAV");
+}
+
+// --- the caller, not the transform -------------------------------------------
+//
+// ziptastic#22 was not a bug in wav_pack(). The transform round-trips every shape
+// above, and it still does. The bug was in the accept/reject trial that decides
+// whether to keep it: actual_cost() ran the whole pipeline with the wav stage still
+// enabled, so the trial contained itself —
+//
+//   base64_pays() -> actual_cost() -> compress() -> base64_pays() -> ...
+//
+// — with no base case, and the stack ran out. A 64- or 244-byte WAV survived only
+// because wav_pack() declined it and the trial never ran; every valid WAV from the
+// trial's own 256-byte floor upwards died with SIGSEGV.
+//
+// Every test above calls wav_pack() and wav_unpack() directly, which is exactly why
+// they stayed green while the CLI crashed on a 2 KB WAV. These call compress().
+
+namespace {
+
+// The reported reproducer, byte for byte: 1,000 mono frames, 2,044 bytes total.
+std::vector<uint8_t> reported_reproducer() { return make_wav(1, 16, false, 1000); }
+
+}  // namespace
+
+TEST(compresses_a_valid_wav_instead_of_crashing) {
+  const auto wav = reported_reproducer();
+  CHECK_MSG(wav.size() == 2044, "the reproducer is not the size the issue reported");
+  CompressOptions opt;
+  std::vector<uint8_t> out, back;
+  CHECK_MSG(compress(wav, out, opt) == Err::Ok, "compress() failed on a valid 16-bit WAV");
+  CHECK_MSG(decompress(out, back) == Err::Ok, "decompress() failed");
+  CHECK_MSG(back == wav, "round trip is not byte-exact");
+  CHECK_MSG(trial_reentries() == 0, "the accept/reject trial re-entered itself");
+}
+
+TEST(the_wav_stage_pays_on_a_ramp_and_round_trips) {
+  // Mono and stereo, at the sizes the issue lists as the boundary. The ramp is the
+  // shape the transform exists for, so it must be strictly smaller with the stage on
+  // than with it off — which is also the proof that the stage actually ran, since
+  // nothing else differs between the two options.
+  for (size_t frames : {size_t{1000}, size_t{4000}}) {
+    for (uint32_t channels : {1u, 2u}) {
+      const auto wav = make_wav(channels, 16, false, frames);
+      CompressOptions on;
+      CompressOptions off;
+      off.wav = false;
+      std::vector<uint8_t> with_wav, without_wav, back;
+      CHECK_MSG(compress(wav, with_wav, on) == Err::Ok, "compress with the wav stage failed");
+      CHECK_MSG(compress(wav, without_wav, off) == Err::Ok,
+                "compress without the wav stage failed");
+      CHECK_MSG(decompress(with_wav, back) == Err::Ok, "decompress failed");
+      CHECK_MSG(back == wav, "round trip is not byte-exact");
+      CHECK_MSG(with_wav.size() < without_wav.size(),
+                "the wav stage did not pay on a ramp it is meant for");
+    }
+  }
+  CHECK_MSG(trial_reentries() == 0, "the accept/reject trial re-entered itself");
+}
+
+TEST(below_the_trials_floor_the_wav_stage_declines) {
+  // 100 frames is 244 bytes, under the 256-byte floor base64_pays() will measure.
+  // The gate therefore declines and the stream has to be byte-identical to the one
+  // written with the stage switched off — which is the difference between "the
+  // transform is off" and "the transform ran and was rejected".
+  const auto wav = make_wav(1, 16, false, 100);
+  CompressOptions on;
+  CompressOptions off;
+  off.wav = false;
+  std::vector<uint8_t> with_wav, without_wav;
+  CHECK_MSG(compress(wav, with_wav, on) == Err::Ok, "compress with the wav stage failed");
+  CHECK_MSG(compress(wav, without_wav, off) == Err::Ok, "compress without it failed");
+  CHECK_MSG(with_wav == without_wav, "the stage fired below the trial's measurement floor");
+}
+
+TEST(a_truncated_wav_still_compresses) {
+  // The row that made the bug look like health: a malformed WAV never reaches the
+  // trial, so it always "worked". It must keep working, and it must not be the only
+  // shape the suite covers.
+  auto wav = reported_reproducer();
+  wav.resize(wav.size() - 40);
+  CompressOptions opt;
+  std::vector<uint8_t> out, back;
+  CHECK_MSG(compress(wav, out, opt) == Err::Ok, "compress() failed on a truncated WAV");
+  CHECK_MSG(decompress(out, back) == Err::Ok, "decompress() failed");
+  CHECK_MSG(back == wav, "round trip is not byte-exact");
 }
 
 TEST_MAIN()

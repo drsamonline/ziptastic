@@ -111,4 +111,10 @@ struct CompressStats {
 Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
              const CompressOptions& opt, CompressStats* stats = nullptr);
 
+// How many times the accept/reject trial (actual_cost) was re-entered from inside
+// itself. It must be zero: a trial that contains a trial has no base case, which is
+// ziptastic#22 (unbounded recursion -> SIGSEGV on any valid 16-bit PCM WAV). Kept
+// observable so the test suite can assert the invariant rather than trust the prose.
+uint64_t trial_reentries();
+
 }  // namespace chce
