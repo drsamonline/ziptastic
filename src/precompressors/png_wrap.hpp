@@ -44,6 +44,13 @@ bool png_likely(const std::vector<uint8_t>& in);
 // varint per IDAT chunk length | varint diff_len | varint inflated_len |
 // diff | inflated | skeleton (every non-IDAT chunk, whole, in order)
 bool png_unpack(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload);
+
+// The same transform, but handing the model the image's *true pixels* instead of the
+// per-row deltas the file stores. Measured (docs/PNG_MEASUREMENT.md): -26.3% on a
+// flat-colour screenshot, +49.7% on a photograph, with this engine. It is a mode and not
+// a default because a constant is wrong by 50% in one direction; the caller measures on a
+// sample and keeps the smaller payload. Repack accepts both forms.
+bool png_unpack_unfiltered(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload);
 bool png_repack(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out);
 
 }  // namespace chce

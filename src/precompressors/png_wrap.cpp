@@ -6,6 +6,7 @@
 // is returned, like every other transform here.
 #include "png_wrap.hpp"
 
+#include <cstdlib>
 #include <cstring>
 #include <utility>
 
@@ -15,6 +16,12 @@ namespace chce {
 namespace {
 
 constexpr uint8_t kSig[8] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+// Payload version marker. Absent means the original layout, which began with the chunk
+// count as a varint; a count whose low seven bits are all set would begin 0xFF, so two of
+// them plus a tag cannot be mistaken for one.
+constexpr uint8_t kPayloadMagic0 = 0xFF;
+constexpr uint8_t kPayloadMagic1 = 0xFF;
+constexpr uint8_t kPayloadTag = '2';
 
 uint32_t rd32be(const uint8_t* p) {
   return (static_cast<uint32_t>(p[0]) << 24) | (static_cast<uint32_t>(p[1]) << 16) |
@@ -40,6 +47,100 @@ bool get_varint(const std::vector<uint8_t>& s, size_t& pos, uint64_t& out) {
     shift += 7;
   }
   return false;
+}
+
+// ---- row filters -----------------------------------------------------------
+//
+// Every PNG row begins with a filter byte and stores deltas against the row above, the
+// pixel to the left, or a Paeth prediction of both. That is exactly right for deflate,
+// and it is what this engine has always compressed. A context-mixing model does better
+// on the *unfiltered* pixels for flat-colour images (a screenshot's rows repeat once the
+// deltas are gone) and much worse on photographs, where the deltas are already small.
+// Measured both ways in docs/PNG_MEASUREMENT.md: -26.3% on a UI screenshot, +49.7% on a
+// photograph. So this is a mode, not a default: the caller measures and picks.
+
+size_t channels_for(uint8_t colour) {
+  switch (colour) {
+    case 0: return 1;  // greyscale
+    case 2: return 3;  // RGB
+    case 3: return 1;  // palette index
+    case 4: return 2;  // grey + alpha
+    case 6: return 4;  // RGBA
+    default: return 0;
+  }
+}
+
+int paeth(int a, int b, int c) {
+  const int p = a + b - c;
+  const int pa = std::abs(p - a), pb = std::abs(p - b), pc = std::abs(p - c);
+  if (pa <= pb && pa <= pc) return a;
+  if (pb <= pc) return b;
+  return c;
+}
+
+// Deltas -> true pixels, keeping the filter byte of each row.
+bool unfilter_rows(const uint8_t* filtered, size_t n, size_t stride, size_t bpp,
+                   std::vector<uint8_t>& pixels, std::vector<uint8_t>& filters) {
+  if (stride == 0 || n % (stride + 1) != 0) return false;
+  const size_t rows = n / (stride + 1);
+  pixels.assign(rows * stride, 0);
+  filters.assign(rows, 0);
+  for (size_t y = 0; y < rows; ++y) {
+    const uint8_t ft = filtered[y * (stride + 1)];
+    if (ft > 4) return false;
+    filters[y] = ft;
+    const uint8_t* src = filtered + y * (stride + 1) + 1;
+    uint8_t* out = pixels.data() + y * stride;
+    const uint8_t* prev = y ? pixels.data() + (y - 1) * stride : nullptr;
+    for (size_t x = 0; x < stride; ++x) {
+      const int a = x >= bpp ? out[x - bpp] : 0;
+      const int b = prev ? prev[x] : 0;
+      const int c = (prev && x >= bpp) ? prev[x - bpp] : 0;
+      int pred = 0;
+      switch (ft) {
+        case 0: pred = 0; break;
+        case 1: pred = a; break;
+        case 2: pred = b; break;
+        case 3: pred = (a + b) >> 1; break;
+        default: pred = paeth(a, b, c); break;
+      }
+      out[x] = static_cast<uint8_t>(src[x] + pred);
+    }
+  }
+  return true;
+}
+
+// The inverse, and the exactness contract: given the pixels and the filter bytes this
+// reproduces the original filtered stream byte for byte, which is what preflate's diff
+// is applied to on the way back to the original IDAT.
+bool refilter_rows(const std::vector<uint8_t>& pixels, const std::vector<uint8_t>& filters,
+                   size_t stride, size_t bpp, std::vector<uint8_t>& filtered) {
+  const size_t rows = filters.size();
+  if (stride == 0 || pixels.size() != rows * stride) return false;
+  filtered.assign(rows * (stride + 1), 0);
+  for (size_t y = 0; y < rows; ++y) {
+    const uint8_t ft = filters[y];
+    if (ft > 4) return false;
+    filtered[y * (stride + 1)] = ft;
+    const uint8_t* src = pixels.data() + y * stride;
+    uint8_t* out = filtered.data() + y * (stride + 1) + 1;
+    const uint8_t* prev = y ? pixels.data() + (y - 1) * stride : nullptr;
+    for (size_t x = 0; x < stride; ++x) {
+      const int a = x >= bpp ? src[x - bpp] : 0;
+      const int b = prev ? prev[x] : 0;
+      const int c = (prev && x >= bpp) ? prev[x - bpp] : 0;
+      int pred = 0;
+      switch (ft) {
+        case 0: pred = 0; break;
+        case 1: pred = a; break;
+        case 2: pred = b; break;
+        case 3: pred = (a + b) >> 1; break;
+        default: pred = paeth(a, b, c); break;
+      }
+      out[x] = static_cast<uint8_t>(src[x] - pred);
+    }
+  }
+  return true;
 }
 
 struct Chunk {
@@ -96,7 +197,7 @@ bool png_likely(const std::vector<uint8_t>& in) {
 }
 
 // One PNG, at [base, end) of `in`, into its own payload.
-bool unpack_one(const std::vector<uint8_t>& in, size_t base, size_t end,
+bool unpack_one(const std::vector<uint8_t>& in, size_t base, size_t end, bool unfilter,
                 std::vector<uint8_t>& payload) {
   std::vector<Chunk> chunks;
   if (walk_one(in, base, chunks) != end) return false;
@@ -148,8 +249,43 @@ bool unpack_one(const std::vector<uint8_t>& in, size_t base, size_t end,
   // cap is unreachable (see png_wrap.hpp).
   if (inflated.size() > kPngMaxInflated) return false;
 
+  // Optionally hand the model true pixels instead of the file's own deltas. Only for
+  // 8-bit images, where one filter byte and one byte per channel make the row geometry
+  // unambiguous; anything else keeps today's behaviour rather than guessing.
+  std::vector<uint8_t> pixels;
+  std::vector<uint8_t> filters;
+  bool did_unfilter = false;
+  if (unfilter) {
+    uint32_t w = 0, h = 0;
+    uint8_t depth = 0, colour = 0;
+    bool have_ihdr = false;
+    for (const Chunk& c : chunks) {
+      if (std::memcmp(in.data() + c.at + 4, "IHDR", 4) != 0 || c.len < 13) continue;
+      const uint8_t* q = in.data() + c.at + 8;
+      w = rd32be(q);
+      h = rd32be(q + 4);
+      depth = q[8];
+      colour = q[9];
+      have_ihdr = true;
+      break;
+    }
+    const size_t channels = have_ihdr ? channels_for(colour) : 0;
+    if (have_ihdr && depth == 8 && channels > 0 && w > 0 && h > 0) {
+      const size_t stride = static_cast<size_t>(w) * channels;
+      if (inflated.size() == static_cast<size_t>(h) * (stride + 1)) {
+        did_unfilter = unfilter_rows(inflated.data(), inflated.size(), stride, channels,
+                                     pixels, filters);
+      }
+    }
+  }
+  const std::vector<unsigned char>& body = did_unfilter ? pixels : inflated;
+
   payload.clear();
-  payload.reserve(inflated.size() + diff.size() + skeleton.size() + 64);
+  payload.reserve(body.size() + filters.size() + diff.size() + skeleton.size() + 64);
+  payload.push_back(kPayloadMagic0);
+  payload.push_back(kPayloadMagic1);
+  payload.push_back(kPayloadTag);
+  payload.push_back(did_unfilter ? 1 : 0);
   put_varint(payload, chunks.size());
   for (const Chunk& c : chunks) payload.push_back(c.idat ? 1 : 0);
   for (size_t i = 0; i < idat_lens.size(); ++i) {
@@ -161,17 +297,61 @@ bool unpack_one(const std::vector<uint8_t>& in, size_t base, size_t end,
     payload.push_back(static_cast<uint8_t>(c));
   }
   put_varint(payload, diff.size());
-  put_varint(payload, inflated.size());
+  put_varint(payload, body.size());
   for (int i = 0; i < 6; ++i) payload.push_back(wrapper[i]);
   payload.insert(payload.end(), diff.begin(), diff.end());
-  payload.insert(payload.end(), inflated.begin(), inflated.end());
+  payload.insert(payload.end(), body.begin(), body.end());
+  if (did_unfilter) {
+    put_varint(payload, filters.size());
+    payload.insert(payload.end(), filters.begin(), filters.end());
+  }
   payload.insert(payload.end(), skeleton.begin(), skeleton.end());
   return true;
+}
+
+// Rebuild the filtered stream from stored pixels + filter bytes. The row geometry is in
+// the skeleton (the verbatim non-IDAT chunks), so it is parsed from there rather than
+// stored a second time in the payload.
+bool refilter_from_skeleton(const std::vector<uint8_t>& payload, size_t skel_at,
+                            const std::vector<uint8_t>& pixels,
+                            const std::vector<uint8_t>& filters,
+                            std::vector<uint8_t>& filtered) {
+  // The skeleton is a concatenation of verbatim chunks: 4-byte length, 4-byte type, body,
+  // 4-byte CRC. Walk it for IHDR.
+  uint32_t w = 0, h = 0;
+  uint8_t depth = 0, colour = 0;
+  size_t pos = skel_at;
+  bool have = false;
+  while (pos + 12 <= payload.size()) {
+    const uint32_t len = rd32be(payload.data() + pos);
+    if (len > (1u << 30) || pos + 12 + len > payload.size()) break;
+    if (std::memcmp(payload.data() + pos + 4, "IHDR", 4) == 0 && len >= 13) {
+      const uint8_t* q = payload.data() + pos + 8;
+      w = rd32be(q);
+      h = rd32be(q + 4);
+      depth = q[8];
+      colour = q[9];
+      have = true;
+      break;
+    }
+    pos += 12 + len;
+  }
+  if (!have || depth != 8) return false;
+  const size_t channels = channels_for(colour);
+  if (channels == 0 || w == 0 || h == 0) return false;
+  if (filters.size() != h) return false;
+  return refilter_rows(pixels, filters, static_cast<size_t>(w) * channels, channels, filtered);
 }
 
 // One image's payload appended to `out`.
 bool repack_one(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out) {
   size_t pos = 0;
+  bool unfiltered = false;
+  if (payload.size() >= 4 && payload[0] == kPayloadMagic0 && payload[1] == kPayloadMagic1 &&
+      payload[2] == kPayloadTag) {
+    unfiltered = (payload[3] & 1) != 0;
+    pos = 4;
+  }
   uint64_t nchunks = 0;
   if (!get_varint(payload, pos, nchunks)) return false;
   if (nchunks == 0 || nchunks > (1u << 20)) return false;
@@ -206,6 +386,20 @@ bool repack_one(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out) 
   pos += static_cast<size_t>(diff_len);
   const size_t infl_at = pos;
   pos += static_cast<size_t>(infl_len);
+
+  // Unfiltered payloads carry the row filter bytes after the pixel stream; refiltering
+  // with them reproduces the original filtered stream exactly, which is what preflate's
+  // diff is applied to.
+  std::vector<uint8_t> filters;
+  if (unfiltered) {
+    uint64_t filter_len = 0;
+    if (!get_varint(payload, pos, filter_len)) return false;
+    if (filter_len == 0 || filter_len > (1u << 22)) return false;
+    if (pos + filter_len > payload.size()) return false;
+    filters.assign(payload.begin() + static_cast<long>(pos),
+                   payload.begin() + static_cast<long>(pos + filter_len));
+    pos += static_cast<size_t>(filter_len);
+  }
   const size_t skel_at = pos;
 
   std::vector<unsigned char> raw;
@@ -214,6 +408,13 @@ bool repack_one(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out) 
                                 payload.begin() + static_cast<long>(diff_at + diff_len));
     std::vector<unsigned char> u(payload.begin() + static_cast<long>(infl_at),
                                 payload.begin() + static_cast<long>(infl_at + infl_len));
+    if (unfiltered) {
+      // Pixels back to the file's own deltas, using the filter byte each row had. The
+      // row geometry comes from the skeleton's IHDR, which is the only place it survives.
+      std::vector<uint8_t> filtered;
+      if (!refilter_from_skeleton(payload, skel_at, u, filters, filtered)) return false;
+      u = filtered;
+    }
     if (!preflate_reencode(raw, d, u)) return false;
   }
 
@@ -274,7 +475,18 @@ bool repack_one(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out) 
 // precomp recipe), and it is carried verbatim.
 // ---------------------------------------------------------------------------
 
+bool png_unpack_mode(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload, bool unfilter);
+
 bool png_unpack(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload) {
+  return png_unpack_mode(in, payload, false);
+}
+
+bool png_unpack_unfiltered(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload) {
+  return png_unpack_mode(in, payload, true);
+}
+
+bool png_unpack_mode(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload,
+                     bool unfilter) {
   // Scan for the first PNG signature rather than demanding one at offset 0.
   //
   // This is the same move `scan_zip` made for archives inside tar: a container payload puts
@@ -314,7 +526,7 @@ bool png_unpack(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload) {
 
   std::vector<std::vector<uint8_t>> per_image(segments.size());
   for (size_t i = 0; i < segments.size(); ++i) {
-    if (!unpack_one(in, segments[i].first, segments[i].second, per_image[i])) return false;
+    if (!unpack_one(in, segments[i].first, segments[i].second, unfilter, per_image[i])) return false;
   }
 
   payload.clear();
