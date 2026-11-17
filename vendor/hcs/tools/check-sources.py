@@ -35,6 +35,11 @@ ROW = re.compile(r"^\|\s*([A-Za-z0-9_.+-]+)\s*\|\s*(\S+)\s*\|\s*(\S+)\s*\|\s*(\S
 NOT_ENFORCED = {"Pending Additions", "Submodule entries", "Licence corrections"}
 
 
+def section_key(section):
+    """The heading without its parenthetical, so `Pending Additions (…)` matches."""
+    return re.sub(r"\s*\(.*\)\s*$", "", section).strip()
+
+
 def read_manifest():
     """[(section, id, url)] for every table row, in file order."""
     rows, section = [], ""
@@ -47,6 +52,20 @@ def read_manifest():
             if m and m.group(1) not in ("id",) and set(m.group(1)) != {"-"}:
                 rows.append((section, m.group(1), m.group(2)))
     return rows
+
+
+def read_pins():
+    """[(section, id, pin)] — the pin column, which the other readers ignore."""
+    out, section = [], ""
+    with open(SOURCES, encoding="utf-8") as fh:
+        for line in fh:
+            if line.startswith("## "):
+                section = line[3:].strip()
+                continue
+            m = ROW.match(line.rstrip("\n"))
+            if m and m.group(1) != "id" and set(m.group(1)) != {"-"}:
+                out.append((section, m.group(1), m.group(3)))
+    return out
 
 
 def resolve_all(rows, dirs):
@@ -85,7 +104,11 @@ def main():
     dirs = sorted(d for d in os.listdir(VENDOR) if os.path.isdir(os.path.join(VENDOR, d)))
     rows = read_manifest()
 
-    enforced = [(s, i, u) for (s, i, u) in rows if s not in NOT_ENFORCED]
+    # The headings carry a parenthetical ("Pending Additions (queued for next
+    # commit)"), so an exact match silently enforced sections this script
+    # documents as advisory — `csc` was reported as a missing directory from a
+    # row that sits under Pending Additions and was never meant to be enforced.
+    enforced = [(s, i, u) for (s, i, u) in rows if section_key(s) not in NOT_ENFORCED]
     problems = []
 
     resolved, unrecorded = resolve_all(rows, dirs)
@@ -99,6 +122,19 @@ def main():
         if ident not in resolved:
             problems.append(f"SOURCES lists {ident!r} but old/ has no such directory "
                             f"(no exact match and no {ident}-* match)")
+
+    # A row must say what is actually vendored: a commit SHA for a submodule,
+    # `copy` for a tree that was copied in, `unvendored` for a queued row. `TBD`
+    # means nobody knows, which is the state this column was in for every row.
+    for section, ident, pin in read_pins():
+        if section_key(section) in NOT_ENFORCED:
+            continue
+        if pin == "TBD":
+            problems.append(f"SOURCES row {ident!r} has pin TBD — record the submodule "
+                            f"commit, or `copy`, or `unvendored`")
+        elif pin not in ("copy", "unvendored") and not re.fullmatch(r"[0-9a-f]{40}", pin):
+            problems.append(f"SOURCES row {ident!r} has pin {pin!r}, which is neither a "
+                            f"40-character commit SHA nor `copy`/`unvendored`")
 
     for d in unrecorded:
         problems.append(f"old/{d} is vendored but has no SOURCES row "

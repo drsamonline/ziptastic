@@ -12,7 +12,7 @@ Two kinds of file:
   copied verbatim from the vendored tree under `old/` where one exists,
   otherwise fetched from the upstream repository at HEAD.
 
-Collected: 52 of 52 sources. Unresolved rows are
+Collected: 53 of 53 sources. Unresolved rows are
 listed below with the reason; they are not silently treated as licensed.
 
 ## Sources
@@ -32,6 +32,7 @@ listed below with the reason; they are not silently treated as licensed.
 | `freearc-c` | GPL-2.0 | [GPL-2.0-only](GPL-2.0-only.txt) | `freearc-c-LICENSE` | collected from vendored tree |
 | `freearc-main` | mixed | — | `freearc-main-LICENSE` | collected from vendored tree |
 | `FA-master` | mixed | — | `FA-master-UNLICENSE.txt` | collected from vendored tree |
+| `freearc-067` | mixed | — | `freearc-067-LICENSE` | collected from vendored tree |
 | `zpaq` | Public-Domain | — | `zpaq-COPYING` | collected from vendored tree |
 | `zpaqfranz` | PD+GPL | — | `zpaqfranz-COPYING`, `zpaqfranz-LICENSE`, `zpaqfranz-LICENSE-2`, `zpaqfranz-LICENSE-3` | collected from vendored tree |
 | `paq8px` | GPL-2.0 | [GPL-2.0-only](GPL-2.0-only.txt) | `paq8px-README-licence.txt` | collected from the source's README licence section |
@@ -45,7 +46,7 @@ listed below with the reason; they are not silently treated as licensed.
 | `density` | BSD-2-Clause | [BSD-2-Clause](BSD-2-Clause.txt) | `density-LICENSE-APACHE`, `density-LICENSE-MIT` | collected from vendored tree |
 | `lizard` | BSD-2-Clause | [BSD-2-Clause](BSD-2-Clause.txt) | `lizard-LICENSE`, `lizard-LICENSE-2`, `lizard-LICENSE-3`, `lizard-COPYING`, `lizard-COPYING-2` | collected from vendored tree |
 | `brieflz` | zlib | [Zlib](Zlib.txt) | `brieflz-LICENSE` | collected from vendored tree |
-| `snappy` | BSD-3-Clause | [BSD-3-Clause](BSD-3-Clause.txt) | `snappy-COPYING`, `snappy-COPYING.notestdata`, `snappy-LICENSE`, `snappy-LICENSE-2` | collected from vendored tree |
+| `snappy` | BSD-3-Clause | [BSD-3-Clause](BSD-3-Clause.txt) | `snappy-COPYING`, `snappy-COPYING.notestdata` | collected from vendored tree |
 | `lzo` | GPL+commercial | — | `lzo-COPYING` | collected from vendored tree |
 | `parmar` | Apache-2.0 | [Apache-2.0](Apache-2.0.txt) | `parmar-LICENSE` | collected from vendored tree |
 | `shoco` | MIT | [MIT](MIT.txt) | `shoco-LICENSE` | collected from vendored tree |
@@ -54,15 +55,15 @@ listed below with the reason; they are not silently treated as licensed.
 | `preflate-rs` | Apache-2.0 | [Apache-2.0](Apache-2.0.txt) | `preflate-rs-LICENSE` | collected from vendored tree |
 | `precomp-cpp` | Apache-2.0 | [Apache-2.0](Apache-2.0.txt) | `precomp-cpp-LICENSE`, `precomp-cpp-LICENSE-2`, `precomp-cpp-LICENSE-3`, `precomp-cpp-LICENSE-4`, `precomp-cpp-LICENSE-5`, `precomp-cpp-LICENSE-6` | collected from vendored tree |
 | `packJPG` | LGPL-3.0 | [LGPL-3.0-only](LGPL-3.0-only.txt) | `packJPG-LICENSE` | collected from vendored tree |
-| `aqueous` | MIT-0 | [MIT-0](MIT-0.txt) | `aqueous-LICENSE.txt`, `aqueous-LICENSE.7zip.txt`, `aqueous-LICENSE.advancecomp-7z.txt`, `aqueous-LICENSE.cryptopp.txt`, `aqueous-LICENSE.ect.txt`, `aqueous-LICENSE.fflate.txt`, `aqueous-LICENSE.go.txt`, `aqueous-LICENSE.gzip.txt`, `aqueous-LICENSE.infozip.txt`, `aqueous-LICENSE.isa-l.txt`, `aqueous-LICENSE.klauspost-compress.txt`, `aqueous-LICENSE.libdeflate.txt`, `aqueous-LICENSE.libslz.txt`, `aqueous-LICENSE.lodepng.txt`, `aqueous-LICENSE.miniz.txt`, `aqueous-LICENSE.pako.txt`, `aqueous-LICENSE.sdefl.txt`, `aqueous-LICENSE.stb.txt`, `aqueous-LICENSE-2.txt`, `aqueous-LICENSE.uzip.txt`, `aqueous-LICENSE.uzlib.txt`, `aqueous-LICENSE.wabt.txt`, `aqueous-LICENSE.zlib-chromium.txt`, `aqueous-LICENSE.zlib-cloudflare.txt`, `aqueous-LICENSE.zlib-ng.txt`, `aqueous-LICENSE.zlib.txt`, `aqueous-LICENSE.zlibjs.txt`, `aqueous-LICENSE.zopfli.txt` | collected from vendored tree |
+| `aqueous` | MIT-0 | [MIT-0](MIT-0.txt) | `aqueous-LICENSE.txt` | collected from vendored tree |
 | `rhefo` | SSPL-1.0 | [SSPL-1.0](SSPL-1.0.txt) | `rhefo-LICENSE.txt` | collected from vendored tree |
 | `zopfli` | Apache-2.0 | [Apache-2.0](Apache-2.0.txt) | `zopfli-COPYING`, `zopfli-LICENSE` | collected from vendored tree |
 | `advancecomp` | GPL-3.0 | [GPL-3.0-only](GPL-3.0-only.txt) | `advancecomp-COPYING`, `advancecomp-copying.txt`, `advancecomp-COPYING-2`, `advancecomp-COPYING-3` | collected from vendored tree |
 | `zlib-ng` | zlib | [Zlib](Zlib.txt) | `zlib-ng-LICENSE.md` | collected from vendored tree |
 | `libdeflate` | MIT | [MIT](MIT.txt) | `libdeflate-COPYING` | collected from vendored tree |
-| `upx` | GPL-2.0 | [GPL-2.0-only](GPL-2.0-only.txt) | `upx-COPYING`, `upx-LICENSE`, `upx-COPYING-2`, `upx-LICENSE.txt`, `upx-LICENSE-2.txt`, `upx-COPYING-3`, `upx-COPYING-4`, `upx-LICENSE-2`, `upx-LICENSE-3` | collected from vendored tree |
+| `upx` | GPL-2.0 | [GPL-2.0-only](GPL-2.0-only.txt) | `upx-COPYING`, `upx-LICENSE` | collected from vendored tree |
 | `zelf` | GPL-3.0 | [GPL-3.0-only](GPL-3.0-only.txt) | `zelf-LICENSE` | collected from vendored tree |
-| `tamp` | MIT | [MIT](MIT.txt) | `tamp-LICENSE-APACHE`, `tamp-LICENSE-MIT`, `tamp-LICENSE.txt`, `tamp-LICENSE-2.txt`, `tamp-LICENSE.md`, `tamp-LICENSE-APACHE-2`, `tamp-LICENSE-MIT-2` | collected from vendored tree |
+| `tamp` | MIT | [MIT](MIT.txt) | `tamp-LICENSE-APACHE`, `tamp-LICENSE-MIT`, `tamp-LICENSE.txt`, `tamp-LICENSE-APACHE-2`, `tamp-LICENSE-MIT-2` | collected from vendored tree |
 | `heatshrink` | ISC | [ISC](ISC.txt) | `heatshrink-LICENSE` | collected from vendored tree |
 | `awesome-compopt` | CC | — | `awesome-compopt-LICENSE` | collected from vendored tree |
 | `awesome-cpp` | CC | — | `awesome-cpp-LICENSE` | collected from vendored tree |
