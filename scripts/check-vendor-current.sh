@@ -42,26 +42,22 @@ echo "  upstream: $remote_sha ($(wc -l < "$tmp") lines)" >&2
 # The remedy used to be printed here as `git subtree pull --prefix=vendor/hcs ...`.
 # It cannot run: vendor/hcs was never `git subtree add`ed (one plain copy commit, no
 # `git-subtree-dir` marker), so subtree refuses outright. Forcing it with
-# `-s subtree --allow-unrelated-histories` "merges well" and then proposes a 543-file,
-# -91,112-line change that deletes `vendor/hcs/old/zstd/zstd.h` and every other
-# materialised submodule — because the two trees are not the same shape:
+# `-s subtree --allow-unrelated-histories` "merges well" and then proposes a change
+# that deletes every materialised submodule and imports HCS's committed build
+# artifacts, because the two trees are not the same shape:
 #
-#   HCS main          24 gitlinks, 262 committed `.o` build artifacts
-#   vendor/hcs here   submodule contents materialised as real files, and 247 files
-#                     HCS does not have (paq8px/, uc2/src/, srep/, repackkit/)
+#   HCS main          24 gitlinks, committed `.o` files and a compiled `srep`
+#   vendor/hcs here   submodule contents materialised as real files, plus local
+#                     extras HCS does not have (repackkit/, old/freearc/, ...)
 #
-# So a tree-level sync in either direction is wrong: it would import build artifacts
-# and delete the sources the build compiles. Syncing means copying the files HCS tracks
-# as regular files, re-materialising the 24 submodules at the SHAs the new SOURCES
-# pins, and keeping the local extras. Nobody has written that yet, so this gate reports
-# drift without pretending there is a one-line fix. Tracked as issue #25.
-#
-# `compfactory/scripts/bump-hcs.ps1` is not that fix either: it is a four-line wrapper
-# around the same `git subtree pull`, so it fails with the same "was never added".
+# So a tree-level sync in either direction is wrong. `scripts/vendor-diff.sh` counts
+# what a correct one consists of — copy, re-materialise, preserve — without touching
+# anything; the write phase is issue #25. Counts are deliberately not repeated here:
+# they move every time HCS does.
 echo "  remedy: none automated — see issue #25. vendor/hcs is a MATERIALISED mirror," >&2
 echo "          not a git subtree: 'git subtree pull' refuses here, and forcing it" >&2
-echo "          deletes 91k lines the build needs." >&2
-echo "          compfactory/scripts/bump-hcs.ps1 runs that same command and fails the" >&2
-echo "          same way. A sync must copy HCS's tracked files, re-materialise the 24" >&2
-echo "          submodules at the pinned SHAs, and keep the 247 mirror-only files." >&2
+echo "          deletes the submodule sources the build compiles." >&2
+echo "          What a sync would consist of: ./scripts/vendor-diff.sh" >&2
+echo "          compfactory/scripts/bump-hcs.ps1 runs the impossible command" >&2
+echo "          (filed as compfactory#8)." >&2
 exit 1
