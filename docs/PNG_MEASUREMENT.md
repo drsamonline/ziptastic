@@ -215,3 +215,32 @@ Scope: 8-bit images only (colour types 0/2/3/4/6). Sub-byte and 16-bit depths ke
 filtered form, where the row geometry is unambiguous; anything else would be a guess.
 Payloads carry a version marker, so archives written before this still decode — the
 repack path accepts both forms, and `the_unfiltered_mode_is_byte_exact` asserts both.
+
+## The speed/ratio frontier a caller can use today (2026-11-18)
+
+Everything above is one point on a curve. Measured on `docs/shot.png` with the unfilter
+trial in place, so these are the choices available now:
+
+| run | bytes | time | vs default |
+|---|---|---|---|
+| `-9` | **51,822** | 29.8 s | — |
+| `-9 --no-parse` | 52,884 | **23.2 s** | **+2.1% size, −22% time** |
+| `-9 --no-lzma2` | 51,822 | 29.7 s | nothing: the LZMA2 trial ran and lost |
+| `-9 --no-bwt` | 51,822 | 31.8 s | nothing: BWT ran and lost on every block |
+| `-9 --no-precomp` | 86,626 | 0.5 s | +67% size, −98% time |
+| `-9 --no-parse --no-lzma2` | 92,930 | 23.3 s | **stored** — see below |
+
+**`--no-parse` is the good speed point now.** It costs 2.1% and saves 22%, where it used to
+cost 4.6% on the filtered stream: with the unfiltered payload the parse has much less to do,
+because the rows are long runs the model predicts without searching.
+
+**The two flags together store the file.** 92,930 bytes against a 92,822-byte input is not a
+regression: the framing overhead is exactly 108 bytes, measured on incompressible input
+(`/dev/urandom`, 92,822 → 92,930). So `--no-parse --no-lzma2` makes the engine give up and
+store, which is the guard doing its job — but a caller reading the number without the framing
+constant would think the archive grew.
+
+**What this does not give you.** No point on this curve is fast *and* small: the only
+sub-second option is 67% larger, and the only small option is 30 seconds. That is what S1 in
+the plan is for — a fast deflate re-encode of the IDAT, the way ECT and oxipng do it, which is
+a second code path and not a flag on this one.
