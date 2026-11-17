@@ -61,6 +61,9 @@ The numbers above are all ratio. The cost side was never written down, and a 93 
 taking 25 seconds is the kind of thing that gets reported as a hang. Measured on
 `docs/shot.png` — 1,280×900, a UI screenshot — one thread, `ziptastic 1.4.3`:
 
+Measured on **1.4.3**, before the unfilter trial below changed the default — the absolute
+numbers are a 1.4.3 baseline, not today's.
+
 | run | bytes | time |
 |---|---|---|
 | `-9` | **67,217** | **25.7 s** |
@@ -86,8 +89,10 @@ So the 25 seconds are not a bug and not waste — they are the price of 22.4%
 | `--no-precomp` | 0.70 s | +28.9% size (the transform's whole win, gone) |
 | `--no-parse` | 15.1 s | +4.6% size |
 
-`--no-bwt` changes neither the bytes nor the time, which means the BWT candidate ran on
-every block of inflated pixels and lost every time. It is not the cost — it is 0.5 s of
+`--no-bwt` changed neither the bytes nor the time on 1.4.3, which means the BWT candidate
+ran on every block of inflated pixels and lost every time. (Re-checked 2026-11-18 against
+today's build: `--no-bwt` still equals the default, 51,822, so the claim holds while the
+absolute number has moved on.) It is not the cost — it is 0.5 s of
 noise — but it is a candidate that cannot win on this content and is still offered.
 
 `--no-lzma2` saves 1.9 s and produces identical bytes: the Tier-1 fallback trial ran, lost,
@@ -189,7 +194,20 @@ The photograph is unharmed because the trial picks the filtered form for it — 
 whole point of measuring rather than choosing. Both round-trip byte-exact.
 
 **The cost is time: +136% on the screenshot**, because two payloads are built and sampled
-before one is kept. That is the honest trade and it is the next thing to attack — the
+before one is kept. The payload builds are cheap — 208 ms and 179 ms for the two forms of a
+3.4 MB image — so the cost was the *trial*: `precomp_helps` codes both streams in full below
+8 MiB, which is two 3.4 MB encodes. Passing it a 256 KiB sample budget instead:
+
+| trial | screenshot | photograph | time |
+|---|---|---|---|
+| full encode of both (8 MiB rule) | 51,822 ✓ | 70,308 ✓ | 44.1 s |
+| 64 KiB sample | **67,222 ✗** | 70,308 | — |
+| 256 KiB sample | 51,822 ✓ | 70,308 ✓ | **29.2 s** |
+
+64 KiB was tried first and **chose wrong** — the middle 64 KiB of this payload is a busy
+region where the two forms look alike. 256 KiB resolves it and costs 15 s less than the
+full encode. That is the sampling floor for this decision on this content; a smaller one
+would need a different sample location, not just a smaller one. That is the honest trade and it is the next thing to attack — the
 sample could decide on a fraction of the rows, or a cheap statistic could pre-filter the
 cases where unfiltering cannot win. Neither is written.
 
