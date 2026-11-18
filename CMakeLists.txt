@@ -101,11 +101,24 @@ add_library(preflate_shim STATIC
   src/precompressors/png_wrap.cpp
   src/precompressors/jpeg_wrap.cpp
   src/precompressors/gzip_wrap.cpp
+  src/precompressors/lz4_wrap.cpp
   src/entropy/cm_zpaq.cpp)
 set_target_properties(preflate_shim PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 # zstd_vendor is here for the PNG fast path: the transform deflates its own pixel
 # stream with a codec that is already in the tree rather than adding one.
-target_link_libraries(preflate_shim PUBLIC preflate_vendor zpaq_vendor brunsli_vendor zstd_vendor)
+# lz4_vendor is here for the LZ4 salvage transform: it re-encodes a frame and compares,
+# so it needs both the decoder and an encoder whose matcher is bit-identical to liblz4's.
+add_library(lz4_vendor STATIC
+  vendor/hcs/old/lz4-dev/lib/lz4.c
+  vendor/hcs/old/lz4-dev/lib/lz4frame.c
+  vendor/hcs/old/lz4-dev/lib/lz4hc.c
+  vendor/hcs/old/lz4-dev/lib/xxhash.c)
+target_include_directories(lz4_vendor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/vendor/hcs/old/lz4-dev/lib)
+if(NOT MSVC)
+  target_compile_options(lz4_vendor PRIVATE -w)
+endif()
+
+target_link_libraries(preflate_shim PUBLIC preflate_vendor zpaq_vendor brunsli_vendor zstd_vendor lz4_vendor)
 target_include_directories(preflate_shim PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/include)

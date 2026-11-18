@@ -31,6 +31,7 @@
 #include "precompressors/ecc_wrap.hpp"
 #include "precompressors/bmp_wrap.hpp"
 #include "precompressors/gzip_wrap.hpp"
+#include "precompressors/lz4_wrap.hpp"
 #include "precompressors/xz_wrap.hpp"
 #include "precompressors/brotli_wrap.hpp"
 #include "precompressors/zstd_wrap.hpp"
@@ -1147,6 +1148,23 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
     }
   }
 
+  // Layer 0 — LZ4. Unlike the streams above this one stores no parse: LZ4's matcher is
+  // deterministic, so the frame is recovered by re-encoding the plaintext and comparing.
+  // Measured at 36.7% on a text `.lz4` (docs/LZ4_MEASURED.md) where storing the sequence
+  // list instead measured +49.7% *worse* on the same class of file.
+  bool lz4 = false;
+  if (!precomp && !gzip && !xz && !brotli && !zstd && opt.precomp && opt.lz4 &&
+      lz4_available() && !stage0.empty()) {
+    std::vector<uint8_t> payload;
+    const std::vector<uint8_t> in(stage0.begin(), stage0.end());
+    if (lz4_likely(in) && lz4_unpack(in, payload) &&
+        precomp_helps(std::span<const uint8_t>(payload), stage0)) {
+      gate_structural = payload.size() >= stage0.size() * 2;
+      precomp_payload = std::move(payload);
+      lz4 = true;
+    }
+  }
+
   // Layer 0 — recursion. A container inside a container is the common case: a
   // .tar.gz holding an .xlsx, a ZIP holding a CSV, a PDF holding a ZIP. The chain
   // above runs once, so it stops at the first boundary and the transform that
@@ -1159,7 +1177,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // chain can reach. Runs BEFORE the nested numeric stage, so decode undoes it
   // after.
   bool precomp_nested = false;
-  if ((precomp || gzip || xz || brotli || zstd) && opt.precomp && preflate_available() &&
+  if ((precomp || gzip || xz || brotli || zstd || lz4) && opt.precomp && preflate_available() &&
       !precomp_payload.empty()) {
     std::vector<uint8_t> payload;
     if (preflate_unpack(precomp_payload, payload) &&
@@ -1173,7 +1191,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // document whose payload is base64, and until now the nested stage only tried the
   // numeric and XML transforms, so the blob was never decoded.
   bool base64_nested = false;
-  if ((precomp || gzip || xz || brotli || zstd) && opt.base64 && base64_available() && !precomp_payload.empty()) {
+  if ((precomp || gzip || xz || brotli || zstd || lz4) && opt.base64 && base64_available() && !precomp_payload.empty()) {
     std::vector<uint8_t> nested;
     if (base64_pack(precomp_payload, nested)) {
       std::vector<uint8_t> check;
@@ -1189,7 +1207,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // the blob it wrapped, the blob sits at offset 0 and brunsli can recognise it —
   // which is the difference between 0.7% and 19.5% on that file class.
   bool jpeg_nested = false;
-  if ((precomp || gzip || xz || brotli || zstd) && opt.jpeg && jpeg_available() && !precomp_payload.empty()) {
+  if ((precomp || gzip || xz || brotli || zstd || lz4) && opt.jpeg && jpeg_available() && !precomp_payload.empty()) {
     std::vector<uint8_t> packed;
     if (jpeg_pack(precomp_payload, packed)) {
       std::vector<uint8_t> check;
@@ -1202,7 +1220,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // BMP one level down. A ZIP of BMPs stores raw pixels inside two DEFLATE layers, and the
   // colour-plane split takes it from 120,878 to 1,206 bytes on the fixture that motivated it.
   bool bmp_nested = false;
-  if ((precomp || gzip || xz || brotli || zstd) && opt.bmp && bmp_available() && !precomp_payload.empty() &&
+  if ((precomp || gzip || xz || brotli || zstd || lz4) && opt.bmp && bmp_available() && !precomp_payload.empty() &&
       bmp_likely(std::span<const uint8_t>(precomp_payload))) {
     std::vector<uint8_t> payload;
     if (bmp_pack(precomp_payload, payload)) {
@@ -1219,7 +1237,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // hands us the PNG bytes, and without this stage the PNG's own DEFLATE is compressed as
   // if it were opaque — a second compression layer nothing removes. Measured at -79.9%.
   bool png_nested = false;
-  if ((precomp || gzip || xz || brotli || zstd) && opt.precomp && png_available() && !precomp_payload.empty() &&
+  if ((precomp || gzip || xz || brotli || zstd || lz4) && opt.precomp && png_available() && !precomp_payload.empty() &&
       png_likely(precomp_payload)) {
     std::vector<uint8_t> payload;
     if (png_unpack(precomp_payload, payload)) {
@@ -1234,7 +1252,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   }
 
   bool gif_nested = false;
-  if ((precomp || gzip || xz || brotli || zstd) && opt.gif && gif_available() && !precomp_payload.empty()) {
+  if ((precomp || gzip || xz || brotli || zstd || lz4) && opt.gif && gif_available() && !precomp_payload.empty()) {
     std::vector<uint8_t> packed;
     if (gif_pack(precomp_payload, packed)) {
       std::vector<uint8_t> check;
@@ -1247,7 +1265,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
 
   bool numeric_nested = false;
   bool xml_numeric_nested = false;
-  if ((precomp || gzip || xz || brotli || zstd) && opt.numeric && numeric_available() && !precomp_payload.empty()) {
+  if ((precomp || gzip || xz || brotli || zstd || lz4) && opt.numeric && numeric_available() && !precomp_payload.empty()) {
     std::vector<uint8_t> nested;
     // This is the case the whole item exists for: precomp inflated the xlsx and
     // what came out is XML, where the cell values live inside <v> tags.
@@ -1269,7 +1287,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // Every Layer 0 bit the stream carries, built once so the three encode paths
   // cannot disagree about which transforms were applied.
   const uint8_t layers3 = (bmp_nested ? kLayer3BmpNested : 0) | (xz ? kLayer3Xz : 0) |
-                          (brotli ? kLayer3Brotli : 0) | (zstd ? kLayer3Zstd : 0);
+                          (brotli ? kLayer3Brotli : 0) | (zstd ? kLayer3Zstd : 0) | (lz4 ? kLayer3Lz4 : 0);
   const uint8_t layers2 = (sqlite ? kLayer2Sqlite : 0) |
                           (base64_nested ? kLayer2Base64Nested : 0) |
                           (jpeg_nested ? kLayer2JpegNested : 0) |
@@ -1295,7 +1313,7 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
   // applied, otherwise the original. The flag and the data must agree or the
   // decoder will run the inverse transform on bytes that never had it.
   std::span<const uint8_t> data =
-      (precomp || gzip || xz || brotli || zstd) ? std::span<const uint8_t>(precomp_payload)
+      (precomp || gzip || xz || brotli || zstd || lz4) ? std::span<const uint8_t>(precomp_payload)
                                                  : stage0;
   const bool bcj = opt.bcj && bcj_x86_likely(data) && bcj_helps(data);
   if (bcj) {
