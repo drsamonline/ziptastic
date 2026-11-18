@@ -83,6 +83,7 @@ void print_usage(FILE* f) {
       "      --parallel       self-contained blocks, compressed on N threads\n"
       "      --no-lzma2       disable the LZMA2 fallback (breaks Tier-1)\n"
       "      --no-parse       disable the optimal parse (RAW blocks only)\n"
+      "      --png-fast       compress PNG pixels inside the transform (fast, larger)\n"
       "      --no-adaptive    disable adaptive tables (static rANS only)\n"
       "      --no-range       disable the range-coded model\n"
       "      --no-bcj         disable the x86 BCJ transform\n"
@@ -349,6 +350,8 @@ int parse_args(int argc, char** argv, Options& o) {
       o.comp.precomp = false;
     } else if (a == "--no-lzma2") {
       o.comp.lzma2_fallback = false;
+    } else if (a == "--png-fast") {
+      o.comp.png_fast = true;
     } else if (a == "--no-parse") {
       o.comp.parse = false;
     } else if (a == "--no-adaptive") {

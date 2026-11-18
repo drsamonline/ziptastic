@@ -51,6 +51,13 @@ bool png_unpack(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload);
 // a default because a constant is wrong by 50% in one direction; the caller measures on a
 // sample and keeps the smaller payload. Repack accepts both forms.
 bool png_unpack_unfiltered(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload);
+
+// The fast form: the same unfiltered pixels, but compressed here with zstd instead of being
+// handed to the block loop. Measured (docs/PNG_MEASUREMENT.md): the pixels deflate to 70,987
+// bytes in 0.11 s on the screenshot fixture, where the block loop takes ~17 s to reach 51,822
+// for the whole archive. This form is the middle of that frontier — tens of times faster for a
+// few tens of percent more bytes — and it is a *choice*, not a default.
+bool png_unpack_fast(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload);
 bool png_repack(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out);
 
 // Where the stored pixel stream sits inside a payload, and how long it is.

@@ -1378,14 +1378,13 @@ sampling 64 KiB from inside them (`png_pixel_span`) — resolves the decision in
 below the 1.4.3 baseline. The lesson is the location, not the size: a sample of the region that
 actually differs is worth four times a sample of the whole.
 
-**What is still missing**: no point on the measured frontier is fast *and* small — the only
-sub-second option (`--no-precomp`) is 67% larger, and the only small one is 17–30 s. The fast
-path is specified and measured, not built: deflate at level 9 gives **70,987 bytes in 0.11 s** on
-the unfiltered pixels, against 91,773 for the file's own filtered bytes (which is the trap — a
-fast path that re-deflates what is there reproduces the file and is worth nothing). Roughly
-**72 KB in 0.2 s** is the missing middle, 100× faster than the CM path for 39% more bytes. A
-zopfli-class encoder would trade seconds for bytes on top; `zopfli-master` and
-`libdeflate-master` are already in the vault. `PNG_MEASUREMENT.md` has the table.
+**The frontier now has a middle, shipped 2026-11-18.** `--png-fast` compresses the pixels inside
+the transform with zstd instead of handing them to the block loop: **62,618 bytes in 1.3 s** on
+`screenshot.png`, against 51,822 in 17.6 s for the CM default and 86,626 in 0.5 s for
+`--no-precomp`. That is 7% smaller than 1.4.3 in a fourteenth of its time. The obvious design —
+re-deflate the file's own bytes — measures as worthless (91,773 against a 92,822-byte file), so
+the transform unfilters first and compresses *that*. Three payload forms now exist and all three
+round-trip byte-exact. `PNG_MEASUREMENT.md` has the tables.
 
 ## 7. What is open
 
