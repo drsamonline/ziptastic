@@ -39,7 +39,7 @@ the I/O path is a network-backed filesystem. Ratios are the meaningful column.
 | 6 — Coarse index | | | | not started |
 | 7 — Huffman modes | | | | not started |
 | 8 — Semantic precompression | | | | not started |
-| 9 — BWT / Brotli / Zstd / LZ4 | | | | not started |
+| 9 — BWT / Brotli / Zstd / LZ4 | LZ4 +33.1% on a reproducible frame | n/a | n/a | **shipped** — see `LZ4_MEASURED.md` |
 | 10 — CM backend | | | | not started |
 | 11 — PPMd | | | | not started |
 | 12 — Optimization | | | | not started |
@@ -1496,6 +1496,12 @@ and **+50.9% worse** on 4 MB of logs. It wins only where LZ4 found few long
 matches (52 sequences for 1.65 MB of JSON: −27.7%). Full numbers and the
 re-encode-and-compare route in `LZ4_MEASURED.md`. The table is kept because it is
 the baseline any better attempt has to beat.
+
+**2026-11-18: the better attempt exists and ships.** The re-encode-and-compare route stores no
+parse at all — the frame is rebuilt from the plaintext and compared — and measures **71,707 against
+107,254 with the transform off (+33.1%)**, byte-exact, on a frame from the liblz4 this build links.
+It declines frames from a different version, because the matcher changed in 1.10.1. `LZ4_MEASURED.md`
+has both numbers and the open question about real-content evidence.
 
 ## LZ4 precompression — the ideal case (superseded)
 

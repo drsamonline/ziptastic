@@ -129,3 +129,23 @@ ones this build can already reproduce.
 **The header is read, not guessed.** Block size, block mode and the content-size flag are in the
 frame descriptor, so only the compression level is searched: 13 levels instead of a 32-combination
 grid. On a file that will decline anyway, that is the difference between 32 re-encodes and 10.
+
+## The bit was allocated against a policy, and the policy was checked (2026-11-18)
+
+`FORMAT.md` says a free `layers3` bit may be allocated only when four things hold. All four now do,
+but the first was **not** met when the transform merged, and this section records both states.
+
+| condition | status |
+|---|---|
+| 1. a measured win on **real** content, against the same archive with the transform disabled | **met — 2026-11-18.** The first measurement was a formula-generated XML fixture, which the policy says does not count. Re-measured on a **686,080-byte tar of this repository's own documentation**: 383,591 bytes as `.lz4`, archive **159,668 with the transform against 271,350 without — +41.2%**, byte-exact, `layers3 = 0x10`. |
+| 2. a gate that declines, on a control | met — it declines a frame from liblz4 1.9.4, a real control rather than a self-made one |
+| 3. a byte-exact inverse, verified on the same run | met — `lz4_unpack` rebuilds and compares before returning a payload |
+| 4. a test that asserts the transform fired | met — `integration.corpus` case 8 checks the layer bit and that the archive shrank |
+
+**The real-content number is larger than the synthetic one** (+41.2% against +33.1%), which is the
+opposite of the BMP lesson the policy was written from — but that is luck, not vindication: a tar of
+markdown is close to the best case for this transform, and it is still one file.
+
+**What remains unmeasured is the hit rate**, not the payoff: how often a `.lz4` in the wild was
+written by the liblz4 this build links. That is the open question, and it is a sampling question
+about other people's files rather than anything a fixture can answer.

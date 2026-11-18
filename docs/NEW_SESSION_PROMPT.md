@@ -82,8 +82,11 @@ box has one core of throughput and reports two (§0); and an adaptive block size
 - **A green suite proves nothing about an untested path** — and a round trip proves nothing about
   whether a transform fired. `scripts/regression-corpus.sh` exists because every one of those bugs
   round-tripped perfectly while the archive sat at input size.
-- **Write the negative results down.** `FINDINGS.md` §5 exists so nobody rebuilds LZ4
-  precompression, zip-store unpacking, adaptive Huffman or the precomp-gate move.
+- **Write the negative results down — and read them as scope, not as verdicts.** `FINDINGS.md` §5
+  exists so nobody rebuilds zip-store unpacking, adaptive Huffman or the precomp-gate move. LZ4 is
+  the cautionary case: "LZ4 precompression does not pay" was true of *storing the parse* and false
+  of *re-encoding and comparing*, which shipped in 1.4.5 at +33.1%. A negative result names a
+  design, not a format.
 - **Never delete a user's data.** ziptastic does not remove its input; destructive decisions belong
   to the layer that was told to extract.
 

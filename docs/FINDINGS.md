@@ -1447,7 +1447,12 @@ round-trip byte-exact. `PNG_MEASUREMENT.md` has the tables.
 - **Speed.** 0.3–0.6 MB/s is the trade for the ratio. **Attacked for PNG on 2026-11-18** —
   `--png-fast` is 13× faster for 21% more bytes (§6i) — and not for anything else.
 - **The 99 MB ISO and 128 MB raw image** are unmeasured: ~8–10 minutes each at these speeds.
-- **LZ4 salvage — built 2026-11-18**, `kLayer3Lz4`, layer 3 bit 4. Worth **+33.1%** on a text
+- **LZ4 salvage — built 2026-11-18**, `kLayer3Lz4`, layer 3 bit 4. All four of `FORMAT.md`'s
+  conditions for allocating a free bit now hold: the win is **+41.2%** on a 686 KB tar of this
+  repository's own documentation (159,668 against 271,350 with the transform off), byte-exact. The
+  first measurement was a formula-generated fixture, which the policy says does not count, and it
+  was re-measured rather than argued. **What remains unmeasured is the hit rate** — how often a
+  `.lz4` in the wild comes from the liblz4 this build links — which no fixture can answer. Worth **+33.1%** on a text
   frame and **0.0%** on one written by a different liblz4: the matcher changed between 1.9.4
   and 1.10.1, so the transform declines those. The version caveat was the whole story, not a
   footnote — the earlier 16/16 was one library on both sides. `LZ4_MEASURED.md` has both
