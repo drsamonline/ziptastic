@@ -9,15 +9,37 @@ short version: what changed, and what it cost.
 
 ---
 
-## Unreleased
+## 1.4.5 — 2026-11-18
 
 ### Added
 
+- **LZ4 salvage.** An `.lz4` file is now stored as the plaintext it holds, with the frame rebuilt
+  on decode by re-encoding and comparing — no parse stored at all. On a text frame produced by the
+  same liblz4 this build links: **71,707 bytes against 107,254 with the transform off, +33.1%**,
+  byte-exact. The alternative — storing the sequence list — was measured at **+49.7% worse** on the
+  same class of file, because our descriptors are three varints per sequence against LZ4's one or
+  two bytes.
+  **It declines when the producing liblz4 is not the one this build links.** The matcher changed
+  between 1.9.4 and 1.10.1, so a frame from the older library is stored unchanged. That is the
+  honest scope: the transform's value depends on who wrote the file.
+  `--no-lz4` exists because every transform has an off switch.
 - **`--no-jpeg` and `--no-gif`.** Every other transform had an off switch and these two did not,
   so their contribution could not be measured and a caller could not exclude them. Found while
   trying to measure what brunsli does inside a PDF — where it turns out to be worth **+23.1%**
   (17,594 vs 22,881 with it off). `test_cli.sh` now asserts that every transform in the chain has
   one.
+
+### Measured, and recorded rather than built
+
+- **zopfli on the PNG fast form: rejected.** 64,905 bytes for the pixel stream in 16.8 s, against a
+  65,856-byte *whole* zstd payload in 1.3 s — 13× slower for no size, and dominated by both ends of
+  the frontier. 1 → 15 iterations buys 0.5%.
+- **The transform table in `FINDINGS.md` §2 ablated as a set**, for the first time: three rows
+  produced nothing on a fixture built to match their own description. Two were one cause (base64
+  inside a plain `.gz`, which the gate declines correctly); `SQLite` turned out to be worth
+  **27.8%** on a large indexed database, four times the figure the table quoted.
+- **A four-class PNG corpus**: the −22.9% headline is the *screenshot* case; a photograph is −16%,
+  a palette image −18%. The PNG layer fires on all four classes; only the size of its win varies.
 
 ## 1.4.4 — 2026-11-18
 
