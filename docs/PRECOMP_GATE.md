@@ -49,6 +49,16 @@ Tier-1 fallback stops that reaching the user. **That is the real open item**, an
 the gate's *accuracy*, not its position.
 
 A better fix would compare the actual chosen encoding rather than a structural proxy, at the
-cost of running the backend twice on a sample. Not attempted; the existing rule plus the
-Tier-1 fallback has not produced a user-visible loss yet, and this turn produced no evidence
-that it does.
+cost of running the backend twice on a sample. **Attempted and shipped 2026-11-18** — not as a
+replacement for the structural rule, but as an escape hatch from it: `precomp_helps` now takes
+an optional sample budget, and a caller that is choosing between two encodings of the *same*
+content passes one. The PNG stage uses it to decide filtered-vs-unfiltered pixels, where the
+candidates differ only in the pixel stream and a 256 KiB slice is representative in a way a
+payload-vs-original comparison never is (`FINDINGS.md` §6i).
+
+What that cost and bought: coding both 3.4 MB payloads in full took 25 s of a 44 s run;
+sampling at 256 KiB keeps the identical decision and takes 29.2 s. Sampling at 64 KiB was
+tried first and **chose wrong** — the same ~6% error this file's sibling records for a 64 KiB
+sample in §3g. So the escape hatch is real, and it is bounded: it works when the two
+candidates share everything but one region, and it must not be used to compare unrelated
+content, which is the case the structural rule exists for.
