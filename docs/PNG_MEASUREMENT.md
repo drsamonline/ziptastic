@@ -231,7 +231,9 @@ trial in place, so these are the choices available now:
 
 Re-measured 2026-11-18 after the trial moved to a 64 KiB pixel-stream sample, so this table and
 the one above it are not comparable — the default got 1.4 s faster and 15,395 bytes smaller
-between them. Against 1.4.3 the default is now **67,217 in 18.3 s → 51,822 in 17.4 s**.
+between them. Against 1.4.3 the default is now **67,217 → 51,822 bytes**, and never slower across three
+interleaved runs per binary (20.5/20.5/23.7 s → 18.8/19.1/19.9 s; §0 says this box has no
+stable clock, so single-pair timings are not quoted).
 
 **`--no-parse` is the good speed point now.** It costs 2.1% and saves 22%, where it used to
 cost 4.6% on the filtered stream: with the unfiltered payload the parse has much less to do,

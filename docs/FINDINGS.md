@@ -1349,16 +1349,20 @@ deltas are already small and are what compresses. Both directions, by a lot — 
 **chosen per file by the 256 KiB trial**, never by a constant, and the stage keeps whichever
 the trial prefers.
 
-End to end, `-9`, back to back on the same machine state:
+End to end, `-9`, both binaries interleaved on the same machine state, three runs each
+(§0: this box has no stable clock, so the spread is stated):
 
-| image | 1.4.3 | now | change | time |
-|---|---|---|---|---|
-| `docs/shot.png` | 67,217 in 18.3 s | **51,822 in 17.4 s** | **−22.9%** | **4% faster** |
-| photograph | 70,322 in 1.4 s | 70,308 in 2.0 s | −0.02% | +0.6 s |
+| image | 1.4.3 | now | size |
+|---|---|---|---|
+| `docs/shot.png` | 67,217 — 20.5, 20.5, 23.7 s | **51,822** — 18.8, 19.1, 19.9 s | **−22.9%** |
+| photograph | 70,322 — 1.4 s | 70,308 — 2.0 s | −0.02% |
 
-**The ratio costs nothing in time, and on the screenshot it comes with a small speed gain** —
-the unfiltered stream has long runs, so the parse has less to search. That was not the plan;
-it is what the measurement said, twice per binary.
+**The ratio costs no time at all, and on the screenshot it is slightly faster** — every one of
+the three new runs beat every one of the three old ones, which is the only claim a box with
+this much variance supports. A single pair of runs read 18.3 vs 17.4 s and a later pair read
+20.9 s; the honest statement is the interleaved one. The likely reason is that unfiltered rows
+are long runs, so the parse has less to search — but that is inference, and the *measurement*
+is only that the new build is never slower here.
 
 The photographic row of §2 stands unchanged at −7.0%/−10.6%, because the trial keeps the
 filtered form for photographs; the screenshot is where the new number comes from.
