@@ -73,6 +73,7 @@ void print_usage(FILE* f) {
       "      --no-wav         disable the WAV per-channel delta transform\n"
       "      --no-jpeg        disable the JPEG (brunsli) transform\n"
       "      --no-gif         disable the GIF (LZW decode) transform\n"
+      "      --no-lz4         disable the LZ4 salvage transform\n"
       "      --no-sqlite      disable the SQLite page-grouping transform\n"
       "      --no-ecc         disable CD sector parity regeneration\n"
       "      --no-bmp         disable the BMP colour-plane transform\n"
@@ -346,6 +347,8 @@ int parse_args(int argc, char** argv, Options& o) {
       o.comp.jpeg = false;
     } else if (a == "--no-gif") {
       o.comp.gif = false;
+    } else if (a == "--no-lz4") {
+      o.comp.lz4 = false;
     } else if (a == "--no-base64") {
       o.comp.base64 = false;
     } else if (a == "--no-numeric") {

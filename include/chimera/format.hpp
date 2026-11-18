@@ -177,10 +177,16 @@ enum LayerFlags3 : uint8_t {
   // by re-encoding. Framing matters: a stream written to a pipe omits its content size, so no
   // seekable encode reproduces it. Measured headroom 22.7% on a .tar.zst, the largest of the three.
   kLayer3Zstd = 1u << 3,
+  // An LZ4 frame whose plaintext is stored and whose frame is recovered by re-encoding with the
+  // parameters the frame header states. Unlike the three above it stores no parse at all: storing
+  // one measured +49.7% *worse* on text (LZ4_MEASURED.md), and re-encoding measured 36.7% better.
+  // It declines when the producing liblz4 is not the one this build links, because the matcher
+  // changed between 1.9.4 and 1.10.1.
+  kLayer3Lz4 = 1u << 4,
 };
 
 inline constexpr uint8_t kLayerMask3 =
-    kLayer3BmpNested | kLayer3Xz | kLayer3Brotli | kLayer3Zstd;
+    kLayer3BmpNested | kLayer3Xz | kLayer3Brotli | kLayer3Zstd | kLayer3Lz4;
 
 inline constexpr uint8_t kLayerMask2 =
     kLayer2Sqlite | kLayer2Base64Nested | kLayer2JpegNested | kLayer2GifNested |

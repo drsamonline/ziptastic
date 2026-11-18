@@ -33,6 +33,7 @@
 #include "precompressors/ecc_wrap.hpp"
 #include "precompressors/bmp_wrap.hpp"
 #include "precompressors/gzip_wrap.hpp"
+#include "precompressors/lz4_wrap.hpp"
 #include "precompressors/xz_wrap.hpp"
 #include "precompressors/brotli_wrap.hpp"
 #include "precompressors/zstd_wrap.hpp"
@@ -453,6 +454,12 @@ Err decompress(std::span<const uint8_t> in, std::vector<uint8_t>& out,
   if ((fh.layers & kLayerGzip) != 0) {
     std::vector<uint8_t> original;
     if (!gzip_repack(dst, original)) return Err::Corrupt;
+    dst = std::move(original);
+    if (!within_cap(dst)) return Err::SizeMismatch;
+  }
+  if ((fh.layers3 & kLayer3Lz4) != 0) {
+    std::vector<uint8_t> original;
+    if (!lz4_repack(dst, original)) return Err::Corrupt;
     dst = std::move(original);
     if (!within_cap(dst)) return Err::SizeMismatch;
   }

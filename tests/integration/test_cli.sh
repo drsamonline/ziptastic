@@ -232,7 +232,7 @@ expect_fail $? "a stream claiming format v7 is refused"
 # so that a caller can exclude one that misfires on their data. JPEG and GIF were the two
 # without one until 2026-11-18 — found by trying to measure what brunsli contributes to a PDF.
 for flag in --no-precomp --no-numeric --no-base64 --no-wav --no-sqlite --no-ecc --no-bmp \
-            --no-jpeg --no-gif; do
+            --no-jpeg --no-gif --no-lz4; do
   if "$BIN" --help 2>&1 | grep -q -- "$flag"; then
     ok "help lists $flag"
   else

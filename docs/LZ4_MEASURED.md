@@ -105,11 +105,27 @@ is what a successful salvage replaces:
 sequence descriptors that killed the store-the-parse version. This is the ideal case the first
 half of this document described, now reachable.
 
-## Status
+## Built, and the caveat was the whole story (2026-11-18)
 
-**Feasible and measured, not built.** The pieces are: a frame parser, the parameter search, a
-re-encode through the vendored `lz4`, and the existing rebuild-and-compare verify. Bit 5 in
-`format.hpp` stays free until it is built.
+`lz4_wrap.cpp` implements the route: parse the frame, decode it, search for the parameters that
+reproduce it, store the plaintext, verify by rebuilding. `kLayer3Lz4` is layer 3 bit 4.
 
-What it needs to beat is not this document's earlier table but the 36.7% above — the store-the-parse
-version measured +49.7% *worse* on the same class of file, so the two designs are not close.
+| frame | produced by | archive with | `--no-lz4` | worth |
+|---|---|---|---|---|
+| a text frame | **liblz4 1.10.1**, the version this build links | **71,707** | 107,254 | **+33.1%** |
+| the same text | **liblz4 1.9.4**, a python binding | 113,198 | 113,198 | **0.0% — declines** |
+
+**The version caveat turned out to be the whole story, not a footnote.** The earlier 16/16 result
+was self-consistent — one library on both sides — and it over-generalised. LZ4's matcher changed
+between 1.9.4 and 1.10.1, so a frame written by the older library cannot be reproduced by the
+newer one, and the transform declines it. Declining is correct and costs a decode plus ten
+re-encodes; firing is worth a third of the file.
+
+That means the transform's value depends on **who produced the file**, and 1.9.4 is common. What
+would widen it: try the older matcher too, which means linking a second liblz4 or porting the
+1.9.4 match finder. Not done, and not obviously worth it — the frames most worth salvaging are the
+ones this build can already reproduce.
+
+**The header is read, not guessed.** Block size, block mode and the content-size flag are in the
+frame descriptor, so only the compression level is searched: 13 levels instead of a 32-combination
+grid. On a file that will decline anyway, that is the difference between 32 re-encodes and 10.

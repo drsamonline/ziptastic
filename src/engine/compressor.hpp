@@ -67,6 +67,7 @@ struct CompressOptions {
   // coefficients, which is worth ~19% on a photo where compressing the JPEG
   // bytes is worth ~2%.
   bool jpeg = true;
+  bool lz4 = true;   // LZ4 salvage by re-encode-and-compare
   // GIF recompression: decode LZW to indices, which compress far better.
   bool gif = true;
   // Integer CSV/TSV columns as delta+varint: -76% measured on a whole file.

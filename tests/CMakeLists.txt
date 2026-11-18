@@ -1,7 +1,7 @@
 # Test suite. Each unit test is its own executable with TEST_MAIN() inside,
 # registered with CTest. Integration tests are shell scripts driving the CLI.
 
-set(CHCE_UNIT_TESTS varint header lzma2 match_finder parser rans range_coder bcj coarse_index huffman bwt zpaq ppmd dedup jpeg gif numeric xml_numeric base64 gzip xz brotli zstd wav sqlite png ecc bmp defaults containers integrity offsets roundtrip fuzz)
+set(CHCE_UNIT_TESTS varint header lzma2 match_finder parser rans range_coder bcj coarse_index huffman bwt zpaq ppmd dedup jpeg gif numeric xml_numeric base64 gzip xz brotli zstd lz4 wav sqlite png ecc bmp defaults containers integrity offsets roundtrip fuzz)
 
 foreach(t ${CHCE_UNIT_TESTS})
   add_executable(test_${t} unit/test_${t}.cpp)
@@ -23,6 +23,10 @@ target_link_libraries(test_brotli PRIVATE brotli_vendor)
 # test_zstd builds both framings itself, because a piped frame is the case that breaks a naive
 # re-encode and it is worth having a fixture for it.
 target_link_libraries(test_zstd PRIVATE zstd_vendor)
+
+# test_lz4 builds its own frames with the same library the transform links, and asserts that a
+# frame it cannot reproduce is declined rather than approximated.
+target_link_libraries(test_lz4 PRIVATE lz4_vendor)
 
 if(UNIX)
   target_compile_definitions(test_jpeg PRIVATE
