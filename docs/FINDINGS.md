@@ -1442,9 +1442,13 @@ round-trip byte-exact. `PNG_MEASUREMENT.md` has the tables.
   payload that encodes worse; a Tier-0 guard now catches that case, but the rule itself is still
   a predictor.
 - **The base64 gate costs ~2.7× compress time** where it runs.
-- **Speed.** 0.3–0.6 MB/s is the trade for the ratio, and it has not been attacked.
+- **Speed.** 0.3–0.6 MB/s is the trade for the ratio. **Attacked for PNG on 2026-11-18** —
+  `--png-fast` is 13× faster for 21% more bytes (§6i) — and not for anything else.
 - **The 99 MB ISO and 128 MB raw image** are unmeasured: ~8–10 minutes each at these speeds.
-- **LZ4 salvage** by re-encode-and-compare — untried, and the only route that could still pay.
+- **LZ4 salvage by re-encode-and-compare** — **tried 2026-11-18 and it works**: 16/16 frames
+  reproduced by searching a 16-combination (block size × level × linkage) grid, and worth
+  **36.7%** on a text `.lz4` (113,198 → 71,694). Not built; `LZ4_MEASURED.md` has the design
+  and the one caveat, which is that the search was proven against one liblz4 version.
 - ~~The block offset table (Phase 3b).~~ **DONE** — format v8, section 3c. What it does not do is
   make archive mode addressable: that mode is sequential by construction, and `--block` on one is
   a refusal by design.

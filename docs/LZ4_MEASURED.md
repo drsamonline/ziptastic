@@ -76,7 +76,40 @@ shipping the store-the-parse version behind a trial: it would fire only on the r
 file where LZ4 left few matches, and on everything else it would cost the trial and
 return nothing.
 
+## The re-encode route: tried, and it works (2026-11-18)
+
+This document ended with "that is worth trying before this item is written off". It has been
+tried, and the answer is yes on both questions.
+
+**Are the parameters recoverable?** A frame is reproduced by trying the small grid of
+(block size × level × block-linked) and keeping the one that matches byte-for-byte. Measured on a
+2.5 MB XML fixture: 16 frames, made with four block sizes, two levels and both linkage settings,
+and **16/16 were reproduced by searching a 16-combination grid**. LZ4's matcher is deterministic
+for a given parameter set, so the search is exact rather than heuristic — a mismatch means decline,
+which costs nothing.
+
+The caveat, stated rather than buried: this was measured against **one liblz4 version** (the
+python binding in this environment). liblz4's match finder has been stable for years, but "stable"
+is not "proven across versions", and a frame written by a different major version would decline
+until the grid includes it. Declining is the safe failure.
+
+**What is it worth?** The engine on the `.lz4` against the engine on the plaintext it holds, which
+is what a successful salvage replaces:
+
+| file | bytes | engine `-9` |
+|---|---|---|
+| `data.xml.lz4` | 653,782 | **113,198** |
+| `data.xml`, the plaintext inside it | 2,529,669 | **71,694** |
+
+**36.7% smaller** — and the recipe costs a handful of bytes (the parameters), not the 1 MB of
+sequence descriptors that killed the store-the-parse version. This is the ideal case the first
+half of this document described, now reachable.
+
 ## Status
 
-Not implemented. Bit 5 in `format.hpp` stays free. If the re-encode route is taken,
-this document's table is the baseline it has to beat.
+**Feasible and measured, not built.** The pieces are: a frame parser, the parameter search, a
+re-encode through the vendored `lz4`, and the existing rebuild-and-compare verify. Bit 5 in
+`format.hpp` stays free until it is built.
+
+What it needs to beat is not this document's earlier table but the 36.7% above — the store-the-parse
+version measured +49.7% *worse* on the same class of file, so the two designs are not close.
