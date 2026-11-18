@@ -1379,8 +1379,13 @@ below the 1.4.3 baseline. The lesson is the location, not the size: a sample of 
 actually differs is worth four times a sample of the whole.
 
 **What is still missing**: no point on the measured frontier is fast *and* small — the only
-sub-second option (`--no-precomp`) is 67% larger, and the only small one is 30 s. Closing that
-needs a fast deflate re-encode of the IDAT, which is a second code path.
+sub-second option (`--no-precomp`) is 67% larger, and the only small one is 17–30 s. The fast
+path is specified and measured, not built: deflate at level 9 gives **70,987 bytes in 0.11 s** on
+the unfiltered pixels, against 91,773 for the file's own filtered bytes (which is the trap — a
+fast path that re-deflates what is there reproduces the file and is worth nothing). Roughly
+**72 KB in 0.2 s** is the missing middle, 100× faster than the CM path for 39% more bytes. A
+zopfli-class encoder would trade seconds for bytes on top; `zopfli-master` and
+`libdeflate-master` are already in the vault. `PNG_MEASUREMENT.md` has the table.
 
 ## 7. What is open
 
