@@ -1,0 +1,448 @@
+# CHCE bitstream format — version 1
+
+This document is the normative spec for the bytes `ziptastic` writes. It is
+written as the engine is built: every mode section is filled in by the phase
+that implements it. `include/chimera/format.hpp` is the source of truth in
+code; if the two ever disagree, the header wins and this file gets fixed.
+
+## Conventions
+
+- **Integers** are unsigned little-endian **LEB128 varints** unless a fixed
+  width is stated. A varint is at most 10 bytes; encodings wider than 64 bits
+  are invalid.
+- **`u8`** is one unsigned byte.
+- A **block** is the unit the mode selector works on. Its uncompressed size is
+  at most 1 GiB (`kMaxBlockSize`); it is never zero.
+- All sizes are byte counts, never element counts.
+- Decoders reject any stream that is not exactly self-consistent: no trailing
+  bytes, no size disagreements, no unknown mode bytes.
+
+## Stream layout
+
+```
++--------------------------------------------------+
+| magic         "CHCE"                       4 B   |
+| version       u8 = 0x01                    1 B   |
+| flags         u8                           1 B   |
+| original_size varint                            |
+| block_count   varint                            |
++--------------------------------------------------+
+| block 0                                          |
+| block 1                                          |
+| ...                                              |
++--------------------------------------------------+
+```
+
+### magic
+
+The four bytes `0x43 0x48 0x43 0x45` (`"CHCE"`). Any other value is
+`bad-magic`. Note this is *not* a self-extracting header: a CHCE stream is
+only readable by `ziptastic` (and by anything that implements this document).
+
+### version
+
+`0x01`. A decoder must reject any other value with `bad-version` rather than
+guessing.
+
+### flags
+
+| bit | mask | name | meaning |
+|---|---|---|---|
+| 0 | `0x01` | `coarse_on` | the coarse (SREP-style) index was consulted while parsing |
+| 1 | `0x02` | `max_ratio` | `--max-ratio` was in effect when the stream was written |
+| 2 | `0x04` | `precomp_on` | Layer 0 semantic precompression was applied to at least one block |
+
+Bits 3–7 are reserved and **must be zero**; a decoder rejects them with
+`bad-flags`. Flags describe how the stream was produced, not how to read it —
+a decoder never needs them to decode correctly.
+
+### original_size
+
+Total byte count of the uncompressed input. Capped at 1 TiB
+(`kMaxStreamSize`) so a corrupt header cannot trigger an absurd allocation.
+The decoder verifies the sum of the block output sizes equals this value.
+
+### block_count
+
+Number of blocks that follow. Because a block is never empty,
+`block_count <= original_size`, and an empty input is `original_size = 0,
+block_count = 0` with no blocks at all.
+
+## Block layout
+
+```
+| mode              u8       |
+| uncompressed_size varint   |
+| compressed_size   varint   |
+| body              compressed_size bytes |
+|                            |  = metadata + payload
+```
+
+- `uncompressed_size` — bytes this block expands to. Never 0, never above
+  1 GiB.
+- `compressed_size` — length of the **block body**, which is metadata plus
+  payload. For RAW the metadata is empty, so body == payload. Defining it this
+  way lets the decoder bounds-check one span before any mode-specific parsing
+  happens, and means an unknown mode is a hard error rather than a skipped
+  block.
+- `metadata` — defined per mode below, and always read out of the body.
+
+The decoder additionally enforces that a block cannot claim more output than
+the stream's remaining `original_size` budget, and that the bytes a mode
+actually produced match `uncompressed_size`.
+
+## Modes
+
+| byte | name | metadata | status |
+|---|---|---|---|
+| `0x00` | `RAW` | none | **implemented** (Phase 0) |
+| `0x01` | `RANS_CTX` | see below | **implemented** (Phase 4) |
+| `0x02` | `HUFF_STATIC` | Phase 7 | reserved |
+| `0x03` | `HUFF_ADAPT` | Phase 7 | reserved |
+| `0x04` | `BWT_BSC` | Phase 9 | reserved |
+| `0x05` | `LZMA2_FALLBACK` | see below | **implemented** (Phase 1) |
+| `0x06` | `BROTLI` | Phase 9 | reserved |
+| `0x07` | `ZSTD` | Phase 9 | reserved |
+| `0x08` | `LZ4` | Phase 9 | reserved |
+| `0x09` | `CM_ZPAQ` | Phase 10 | reserved |
+| `0x0A` | `PPMD` | Phase 11 | reserved |
+| `0x0B` | `LZ_RAW` | see below | **implemented** (Phase 3, transitional) |
+
+Bytes `0x0C`–`0xFF` are undefined and rejected as `bad-mode`.
+
+### `0x01` — RANS_CTX
+
+The parse, coded with context-modelled rANS. The body starts with a model byte
+and then, for model 0 (static):
+
+```
+| model = 0x00 | 28 frequency tables | payload |
+```
+
+and for model 1 (adaptive):
+
+```
+| model = 0x01 | varint chunk_tokens | varint total_tokens |
+| 28 tables (chunk 0) |
+| repeated per chunk: varint payload_len | payload |
+```
+
+Model 1 cuts the token stream into chunks of `chunk_tokens` tokens. Chunk 0 is
+coded with the tables in the body, measured over the whole block. Every later
+chunk is coded with a table derived from the symbols already decoded: both sides
+seed their counts from the transmitted frequencies, then decay by three quarters
+and add the previous chunk's histogram, never letting a symbol that has been
+seen fall below 1. Nothing after chunk 0 is transmitted.
+
+Model 2 (range coder) has no tables and no framing at all:
+
+```
+| model = 0x02 | range-coded payload |
+```
+
+It uses the standard binary range coder with 11-bit adaptive probabilities and
+bit trees, so the model adapts after every bit — the cadence the format's
+predecessors could not express. Contexts match model 0: flag on position&3,
+literals on the previous byte's high nibble, length slots on position&3,
+distance slots on the length slot. Remainders are coded as direct bits.
+
+Model 0 is the fast path; models 1 and 2 are chosen per block when smaller. The
+chunk framing costs about 5 bytes per chunk (a length varint and the rANS
+flush), which is why model 1 loses on small or incompressible blocks.
+
+The tables, in both models, are:
+
+```
+| 4  flag tables   | ctx = position & 3                        | 2 symbols  |
+| 16 literal tables| ctx = previous byte >> 4                  | 256 symbols|
+| 4  len tables    | ctx = position & 3                        | 32 symbols |
+| 4  dist tables   | ctx = min(3, len_slot >> 2)               | 64 symbols |
+| payload          | everything remaining                      |            |
+```
+
+Each table is written as `varint n_nonzero`, then `n_nonzero` pairs of
+`varint symbol, varint frequency`. The frequencies must sum to exactly 4096
+(12-bit scale); a decoder rejects any table that does not, because a wrong total
+would desynchronise the arithmetic and silently produce garbage.
+
+Lengths: 2..9 map to slots 0..7; longer lengths take a slot plus extra bits.
+Distances: the three nearest take slots 1..3; the rest use LZMA's slot pairing.
+Remainders are coded as individual bits through a uniform two-symbol table, so
+they cost exactly one bit each.
+
+Tables are measured on the block (a static coder). Phase 5 replaces the
+measurement with adaptation, which removes the table bytes entirely.
+
+### `0x0B` — LZ_RAW (transitional)
+
+The output of the optimal parse with no entropy coding: literal runs as raw
+bytes, matches as a length and a distance.
+
+```
+| repeated until uncompressed_size bytes are produced: |
+|   0x00  varint count   count bytes |  literal run
+|   0x01  varint len     varint dist |  match
+```
+
+A match may reference bytes produced by **earlier blocks** — the LZ window
+carries across the stream — so the decoder expands into one growing buffer
+rather than per block. Overlapping matches (`dist < len`) are legal and are how
+runs are expressed.
+
+This mode exists so the Phase 3 parse could be round-tripped and measured
+before Phase 4 supplied a coder. It is expected to be **much larger** than
+LZMA2 (literals cost 8 bits instead of ~4-5), and Phase 4's `RANS_CTX`
+supersedes it. It is kept rather than removed because it is the only mode whose
+size isolates the parse from the coder.
+
+### `0x05` — LZMA2_FALLBACK
+
+Body layout:
+
+```
+| props_len  varint  |   always 1 today
+| props      props_len bytes |  LZMA2 filter property (dict-size code)
+| payload    remaining bytes |  a bare LZMA2 stream, no .xz container
+```
+
+`payload` is a **raw LZMA2 stream** — the bytes `xz --format=raw` produces, not
+an `.xz` file. `props` is the liblzma filter property for LZMA2 (one byte, the
+dictionary-size code), so a decoder rebuilds the exact filter without guessing
+options. Upstream `xz --format=raw --lzma2=dict=64MiB -dc` decodes any
+`LZMA2_FALLBACK` payload produced by this build; the test suite checks that.
+
+The encoder uses preset 9 (64 MiB dictionary) and preset 9|EXTREME, and keeps
+whichever is smaller, because extreme is not a superset — it wins by 4.1% on
+`xml` and loses by 0.02% on `dickens`.
+
+### `0x00` — RAW
+
+No metadata. `compressed_size` equals `uncompressed_size` and the payload is
+the block verbatim. Used for incompressible data and as the Phase 0 baseline;
+the mode selector will keep choosing it whenever it wins, since a block is
+never allowed to grow beyond a trivial margin.
+
+## Error codes
+
+The decoder returns exactly one of these; nothing throws.
+
+| code | meaning |
+|---|---|
+| `ok` | stream decoded, output length equals `original_size` |
+| `bad-magic` | first four bytes are not `"CHCE"` |
+| `bad-version` | version byte is not `0x01` |
+| `bad-flags` | reserved flag bits set |
+| `bad-mode` | mode byte undefined, or not implemented in this build |
+| `bad-varint` | varint truncated or wider than 64 bits |
+| `truncated` | stream ended mid-field or mid-payload |
+| `bad-block-size` | zero block, block above 1 GiB, or stream above 1 TiB |
+| `size-mismatch` | declared sizes disagree with the bytes produced |
+| `trailing-data` | bytes remain after the last block |
+| `corrupt` | an entropy backend rejected its own payload |
+| `io-error` | CLI read/write failure |
+
+## Encoder behaviour notes
+
+These are not part of the wire format, but they explain what a decoder can
+assume and what a future version may change.
+
+- **Block size** defaults to 256 KiB (`kDefaultBlockSize`) and is settable
+  with `-b`. It is not recorded in the stream: the decoder learns each block's
+  size from its own header, so any block size decodes with any build.
+- **Headers are written up front**, which means the encoder knows the input
+  size before it starts writing. The CLI therefore buffers its input. A
+  streaming header variant (block count moved to a trailer) is deliberately
+  deferred: it costs ratio (you cannot choose block boundaries without knowing
+  the size) and buys nothing for the file-to-file use case.
+- **The LZMA2 fallback is whole-stream, not per-block.** A `LZMA2_FALLBACK`
+  stream contains exactly one block covering the whole input. Independent
+  per-block LZMA2 streams would reset the dictionary every 256 KiB and lose
+  badly to `xz -9` on files with long-range redundancy, so the fallback is
+  chosen as an alternative to the entire CHCE-native encoding and the
+  comparison is on total stream size. Per-block LZMA2 becomes meaningful only
+  once blocks carry their own model state, which is what Phase 4's rANS blocks
+  do.
+- **State carries across blocks.** From Phase 2 onward the LZ dictionary, both
+  match-finder indexes and the rANS context models persist from block to block;
+  the format does not delimit that state, because the decoder rebuilds it by
+  decoding in order. This is what makes CHCE one engine rather than a chain of
+  independent compressions.
+- **Determinism.** The same input with the same options produces byte-identical
+  output; the test suite asserts this.
+
+## Version 2: CRC-32 of the original bytes
+
+The header gained a 4-byte little-endian CRC-32 (IEEE 802.3, reflected) of the
+**original, pre-transform** bytes, and `kFormatVersion` went from 1 to 2.
+
+Layout is now:
+
+```
+"CHCE" | version u8 | flags u8 | original_size varint | block_count varint | crc32 u32
+```
+
+The checksum is verified **after every inverse transform has run**, so it covers
+what the user actually gets back rather than what the blocks happened to hold.
+A mismatch returns `Err::ChecksumMismatch` ("checksum mismatch").
+
+**Why it was needed.** The format had no integrity field at all. With precomp,
+BCJ, dedup and per-block backend selection stacked up, a transform bug would
+return plausible-looking wrong bytes and report success — the exact failure mode
+the dedup and preflate work kept flirting with. Measured before the change: a
+single flipped byte in a dedup packet decoded to wrong content of the right
+length, silently. After: `checksum mismatch`, exit 1.
+
+**Cost:** 4 bytes per stream, plus one CRC pass over the output at each end.
+Nothing measurable.
+
+**Compatibility:** version 2 only. Version 1 streams are rejected with
+`bad-version` rather than misread — this project is pre-1.0 and there are no
+version-1 streams in the wild, but a reader that guessed would be worse than one
+that refuses.
+
+**Test:** `corruption_is_detected` flips a byte at three positions and requires
+the decoder to refuse rather than return wrong bytes as success.
+
+## Version 4: per-block SHA-256 and a trailer
+
+`kFormatVersion` is 4. The block header gained a 32-byte digest and the stream
+gained a trailer. Full write-up and measurements: `INTEGRITY.md`.
+
+Current layout, superseding the v1 shapes above:
+
+```
+"CHCE" | version u8 = 5 | flags u8 | layers u8 | layers2 u8 | original_size varint
+       | block_count varint | crc32 u32
+
+per block:
+  mode u8 | uncompressed_size varint | compressed_size varint | sha256[32]
+         | metadata | payload
+
+trailer:
+  "ZTIX" | block_count varint | sha256(manifest)[32]
+```
+
+- `layers2` (added in v5) is the second Layer 0 bitfield. All eight bits of
+  `layers` are allocated, so the ninth transform needed a new field rather than a
+  wider integer. No bit of `layers2` is allocated yet; `kLayerMask2` is 0 and a
+  stream setting any bit there is `bad-flags`.
+- `layers` (added in v3) is the Layer 0 bitfield: `kLayerNumeric` 0x01,
+  `kLayerNumericNested` 0x02, `kLayerXmlNumeric` 0x04, `kLayerXmlNested` 0x08,
+  `kLayerBase64` 0x10, `kLayerGzip` 0x20. Bit 6 is free. Bits outside
+  `kLayerMask` are `bad-flags`.
+- `original_size` is the payload size AFTER the Layer 0 transforms, not the
+  caller's byte count: it is what the block loop is validated against, and the
+  CRC-32 of the true original is what guards the round trip. The two differ
+  whenever a transform changes the payload's length.
+- `sha256` is the digest of the block's **decoded plaintext** — the bytes that
+  block contributes before any Layer 0 inverse runs. It is checked as the block
+  comes out of the decoder, so a damaged block is named by index instead of
+  surfacing as a whole-archive CRC failure after everything has been decoded.
+- The **manifest** is, per block and in order, `mode | uncompressed_size |
+  compressed_size | sha256`, hashed together into the trailer's 32-byte digest.
+  It binds the ordered set of headers, so a dropped, duplicated or reordered
+  block or an edited header field fails before any payload is decoded.
+- The trailer is mandatory and must be the last thing in the stream; anything
+  after it is `trailing-data`.
+
+New errors: `block-checksum-mismatch` (a block failed its digest, reported with
+its index) and `manifest-mismatch` (the trailer disagrees with the block set).
+
+Two constants exist so a decoder can refuse a header before allocating for it:
+`kMinBlockHeaderBytes` (35 — mode, two one-byte varints, 32-byte digest) and
+`kMaxBlocks` (16.7M). `block_count` is rejected with `bad-block-size` if it
+exceeds either the ceiling or the bytes actually present divided by
+`kMinBlockHeaderBytes`. See `VALIDATION.md`.
+
+**Cost:** 69 bytes for a single-block stream, 32 per additional block. Time is
+the real cost — the digest runs at 140.8 MB/s here, about 22% of decode wall time
+on the measured sample. See `INTEGRITY.md` for the three ways to reduce it.
+
+**Compatibility:** version 4 only. v3 streams are rejected with `bad-version`,
+the same clean break as v1→v2 and v2→v3.
+
+## Policy: who may take a free layer bit, and what forces a version bump
+
+Written 2026-11-04, closing `RELEASE_PLAN.md` Phase 2 item 3. Until this existed, the next
+transform was decided by whoever was holding the keyboard: `layers`, `layers2` and `layers3`
+were filled one bit at a time, each with a different standard of evidence.
+
+**A free bit in `layers3` (bits 1–7) may be allocated only when all four hold:**
+
+1. **A measured win on real content**, recorded in `FINDINGS.md`, against the same archive with
+   the transform disabled. A fixture generated from a formula does not count — that is how BMP
+   read −99% and meant −37%.
+2. **A gate that can decline**, and declines on a control. A transform that cannot say no is a
+   transform that will make something worse.
+3. **A byte-exact inverse**, verified by rebuilding the input and comparing, on the same run
+   that produced the payload. Every transform here does this; it is the rule that makes a wrong
+   transform cost ratio instead of data.
+4. **A test that asserts the transform fired**, not merely that the round trip worked. A round
+   trip passes whether or not the gate opened, which is how the streamed-ZIP gap survived a
+   green suite.
+
+**What forces a version bump** (and therefore what a free bit must never be used for):
+
+- a new field in the header or the trailer, or a field that changes width or meaning;
+- a change to the block layout — a new mode byte, or a new per-block metadata shape;
+- a change to the trailer's structure, as v8 made with the offset table;
+- running out of bits in the last layer byte: `layers3` full means v9 adds `layers4`, and that
+  is a header change even though it is "only" one byte.
+
+**What does not force a bump**: allocating an existing free bit, adding a backend inside the
+existing mode-byte space, or changing which backend wins. Those are compatible with a reader
+that knows the version it is reading.
+
+**But "compatible with the format" is not "compatible with older readers".** A build that does not
+know a bit refuses the stream, and until 2026-11-07 it refused it as `bad-flags` — "invalid header
+flags" — which reads as corruption in a file that is perfectly intact. Measured, on the `.xz` bit:
+a 1.2.0 binary given a v8 stream with `layers3 = 0x02` fails with that message. The error is now
+`unknown-transform`, whose message says the stream was written by a newer build. The format version
+is still v8, because the *format* did not change; the reader's knowledge did.
+
+## Version 8: the block offset table
+
+`kFormatVersion` is 8. **The header is unchanged from v7**; only the trailer grew, by one absolute
+u64 per block and a four-byte tail marker. Full write-up, measurements and the shapes that were
+rejected: `FORMAT_V8.md`.
+
+```
+"CHCE" | version u8 = 8 | flags u8 | layers u8 | layers2 u8 | layers3 u8
+       | original_size varint | true_size varint | block_count varint | crc32 u32
+
+per block:
+  mode u8 | uncompressed_size varint | compressed_size varint | sha256[32]
+         | metadata | payload
+
+trailer:
+  "ZTIX" | block_count varint | sha256(manifest)[32]
+        | block_offset[0..count-1], each u64 little-endian
+        | "ZTOX"
+```
+
+- Each `block_offset` is the position of that block's **header**, counted from the first byte of
+  the stream (the `C` of `CHCE`). An SFX stub or a joined split set in front of the stream does not
+  change the table: the reader adds its own prefix offset.
+- The trailer is a fixed size for a given block count — `trailer_bytes(count)` in `block.hpp` — so
+  a reader that has the header can compute `end - trailer_bytes(count)` and land on `ZTIX` without
+  parsing anything. That is why the entries are fixed-width and not delta-coded varints, which
+  would be about five bytes a block smaller and could only be walked from one end.
+- `ZTOX` marks the end of the table. It distinguishes a complete stream from one truncated inside
+  its table, and it is checked: a missing marker is `corrupt`, not a length field that happens to
+  be wrong.
+- **Validation.** `read_trailer` checks the structure and that the offsets strictly increase.
+  `read_index` additionally follows every entry to a block header, requires the blocks to tile the
+  stream from the end of the file header to the trailer with no gap, and re-hashes those headers
+  into the manifest. `decompress()` compares the table against the offsets it observed while
+  walking, so a table that disagrees with the stream it describes is `manifest-mismatch`.
+- **`not-self-contained`** is new. `decode_blocks` (and `ziptastic d --block N`) refuse a stream
+  whose blocks are not independently decodable — archive mode, or any Layer 0 or stream-level
+  transform — rather than returning a block's plaintext when it is an intermediate of the inverse
+  chain.
+
+**Cost:** `8 × blocks + 4` bytes over a v7 trailer: 0.13% of a 225-block archive, 0.01% of a
+one-block 118 KB archive, and **1.7% of a 687-byte one-block archive** — the case where it buys
+nothing and costs the most. See `FINDINGS.md` §3c.
+
+**Compatibility:** version 8 only. A v7 stream is rejected with `bad-version`: its trailer has no
+table, and a reader that guessed would read the manifest as offsets.

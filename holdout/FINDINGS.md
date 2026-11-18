@@ -1,0 +1,1497 @@
+# Findings: the single authoritative record
+
+Written 2026-11-04. **This document supersedes the per-item write-ups in this directory.** Those
+are the history — how each number was arrived at, what failed on the way, what was corrected —
+and several of them contain figures that were later revised. Where this document and an older
+one disagree, **this one is right**.
+
+The reason it exists: after a long session the directory held 57 documents, some of them with
+three successive corrections appended, and a reader could find −99% and −37% for the same
+transform in two places without any indication of which was current.
+
+---
+
+## 0. The machine every number here was measured on
+
+**One core of throughput, reported as two.** The development box reports `nproc 2` and has no
+`cpu.max` quota, but it does not execute two threads at once:
+
+- two Python threads over a pure-CPU loop: **0.95×** against serial (no speedup);
+- two *processes* over the same loop: 8,835 ms concurrent against 9,696 ms sequential — where real
+  parallelism would have been about 4,850 ms.
+
+This is written down first because it changes how to read every speed number in this document. All of
+them were taken here:
+
+- "Tier-1 fallback on a second thread: **9% slower**" (§5) is an artefact of oversubscription, not of
+  working sets failing to fit in 2 GiB. Nobody has shown that a second thread does not help.
+- "Parallelising the selector: **no gain**" (§5) is the same artefact.
+- The ±40 ms spread on an 800 ms decode (§3c) is a contended single core, not a noisy neighbour.
+- Every ratio number is unaffected: ratio does not depend on how many cores ran, and it reproduces
+  exactly run to run.
+
+So: **ratio claims in this document are solid, and thread claims are unmeasured.** Anything about
+`--parallel`, `-T`, or a per-block time split needs a machine that actually runs two cores, and this
+one does not.
+
+## 1. What the engine is
+
+Format **v8**. Header: `"CHCE" | version | flags | layers | layers2 | layers3 | original_size |
+true_size | block_count | crc32`, per block `mode | usize | csize | sha256[32] | metadata |
+payload`, then a `ZTIX` trailer with the block count, a manifest digest, **one absolute u64 per
+block** and a `ZTOX` tail marker.
+
+- **`original_size`** is the size *after* Layer 0; **`true_size`** is what the caller gets back.
+- Three layer bytes, because each was filled as it was needed. `layers3` has seven free bits.
+- Nine backends per block (RAW, rANS, static Huffman, range, BWT, PPMd, LZMA2 fallback, CM under
+  `--max-ratio`), chosen by smallest output. Adaptive Huffman is off by default.
+- **The block offset table** (v8, Phase 3b): every block's position is in the trailer, so a
+  block can be reached without walking the stream — 0.76% of the archive read to find any one
+  block, and one block decoded in about 1/100th of a full decode. Section 3c.
+- 34 test suites, all passing; 53 CLI assertions; plus `scripts/regression-corpus.sh`,
+  which asserts the property each historical bug broke rather than only the round trip. A full audit of `compressor.cpp` and
+  `decompressor.cpp` is recorded in section 6.
+
+## 2. Layer 0 transforms, with the numbers that are current
+
+Every figure below is post-compression: how much smaller the *archive* got.
+
+| transform | bit | measured | fixture |
+|---|---|---|---|
+| integer CSV/TSV columns | layers 0x01 | **−77.4%** | a whole CSV file |
+| spreadsheet cell values | layers 0x04 | **−50.3%** | `.xlsx`, 2×40,000 ints |
+| the same, inside a container | layers 0x08 | −51.2% | the inflated sheet XML |
+| base64 runs decoded | layers 0x10 | **−19.5%** | base64 of a 21 KB JPEG |
+| gzip members inflated | layers 0x20 | −21.2% / −25.4% | `.xml.gz`, `.tar.gz` |
+| second container level | layers 0x40 | **−44.8%** | `.tar.gz` holding an `.xlsx` |
+| WAV PCM per-channel delta | layers 0x80 | −16.4% / −14.2% / −6.1% | 16-bit / 24-bit / float |
+| SQLite pages by B-tree type | layers2 0x01 | −4.8% / −6.3% small · **−27.8%** 6.9 MB indexed | 295 KB / 3.46 MB db; the large figure is §7 ablation |
+| base64 one level down | layers2 0x02 | −19.7% | `.json.gz` with a JPEG |
+| JPEG one level down | layers2 0x04 | see section 4 | |
+| GIF one level down | layers2 0x08 | see section 4 | |
+| PNG image data inflated | layers2 0x10 | **−7.0% / −10.6%** photographic · **−22.9%** screenshot | photographic PNGs; the screenshot figure is §6i |
+| **CD sector parity (ECM)** | layers2 0x20 | **−28.2%** | real Mode 2 Form 1 image |
+| BMP colour planes + row delta | layers2 0x40 | **−36.9% / −48.3%** | photographic BMPs |
+| PNG one level down | layers2 0x80 | **−0.3%, usually declines** | ZIP of photographic PNGs |
+| **BMP one level down** | layers3 0x01 | **−36.9% / −48.3%** | ZIP of photographic BMPs |
+
+**Ablated as a set on 2026-11-18** (`TRANSFORM_ABLATION.md`): one fixture per row, transform on
+against `--no-<transform>`. Most rows reproduce in direction. Three produce **nothing at all** on
+a fixture built to match their own description — `gzip members` on a plain `.gz`, and `base64 one
+level down`, which lives inside a gzip member and therefore depends on the first. `SQLite` looked
+like a third and is not: it fires on multi-kind databases and is worth **27.8%** on a 6.9 MB
+indexed one, four times the −6.3% this table quotes, and nothing at all on a single-B-tree
+database. The table's single figure sits at the bottom of that range. The gzip case is the gate being right, and it is **content-specific**: on four `.gz` fixtures the
+transform fires on three (worth 48.5% on a CSV, 16.1% on a PNG, 13.2% on a JPEG) and declines only
+on repetitive XML, where the engine's own compression of the `.gz` bytes already reaches what
+inflating would. So the −21.2% above is conditional on the member exposing something the block loop
+cannot already reach — which it usually does.
+Read every row here as conditional, not as a property of the format.
+
+**These were re-measured on real content on 2026-11-04, and the earlier synthetic figures were
+2–8× too optimistic.** The original fixtures were generated gradients whose pixels are a formula;
+they compress to almost nothing under any transform, so they measured the fixture rather than the
+transform. BMP was corrected first (−99.2% → −37% to −48%), then PNG, GIF and JPEG were checked
+the same way. Every number in the tables above is now from real content.
+
+**One regression this exposed, now fixed**: a 1.2 KB UI-style PNG encoded to **336 bytes with the
+transform and 309 without it** — the gate accepted a payload the block encoder then made worse,
+because on a file that small the block framing is a large fraction of the total. Below 2 MiB the
+encoder now also builds the untransformed stream and keeps whichever is smaller, so a transform
+cannot make a small file bigger. That file is **309 bytes** today.
+
+## 3. Against the field
+
+| file | ziptastic `-9` | zstd `-19` | `xz -9e` |
+|---|---|---|---|
+| 2 MB English prose | 408,421 | 546,717 (+25.3%) | 543,572 (+24.9%) |
+| 6.8 MB sheet XML | 70,090 | 390,673 (+82.1%) | 163,656 (+57.2%) |
+| 4.7 MB raw CD image | 1,417,452 | — | 2,014,224 (+29.6%) |
+| 4.8 MB cooked ISO | 3,333,904 | 3,352,732 (+0.6%) | 3,339,112 (+0.2%) |
+| 1.4 MB floppy image | 1,257,830 | — | 1,257,792 (−0.0%) |
+| 8 MB near-duplicate asset tree | 228,012 | — | 227,972 (−0.0%) |
+
+**Where a format transform fires, the win is large and structural. Where none fires, it is a
+tie, and twice marginally behind.** On data with neither a format to parse nor redundancy a
+general compressor misses, ziptastic is an LZMA-class compressor with more machinery and no
+advantage. Speed is not in this table and is not favourable: `-9` runs at 0.3–0.6 MB/s here
+against `xz`'s 1–2 MB/s.
+
+## 3b. A realistic game-asset tree, end to end
+
+The tables above are single files. This is the shape the engine is actually for: a mixed tree of
+textures, audio, CSV and logs, 6.3 MB unpacked, shipped the two ways a game ships assets.
+
+| archive | ziptastic `-9` | `xz -9e` | `zstd -19` |
+|---|---|---|---|
+| `tree.tar` (6,328,320 B) | **1,275,048** | 1,983,636 (+35.7%) | 2,064,101 (+38.2%) |
+| `tree.zip` (2,797,544 B, deflated) | **1,284,836** | 1,610,228 (+20.2%) | 1,616,603 (+20.5%) |
+
+Both round-trip byte-exact. **On a realistic mixed tree the engine is 20–36% smaller than `xz
+-9e`**, which is the number to quote: not the 57% on sheet XML and not the 0.2% on a cooked ISO,
+but the 20–36% a real asset tree gets.
+
+Two things in that table are worth noting:
+
+- **The ZIP carries `layers = 0x40`** — the second container level fired, so precomp reached
+  inside the archive and the nested transforms ran on the members. The tar carries `layers = 0`.
+- ~~**A ZIP inside a plain tar is not reached.**~~ **Fixed, and the diagnosis was wrong.** The tar
+  was never the obstacle. `scan_zip` read each member's compressed size from its *local header*,
+  and a ZIP written to a pipe — which every tool produces when it cannot seek — leaves those
+  fields zero and puts the real sizes in a data descriptor after the data. So the member was
+  skipped, and the same file failed whether or not a tar was around it. The scan now reads the
+  central directory, which always carries the real sizes, and a stray local-header signature
+  inside compressed data no longer stops it (`break` → `continue`).
+
+  Measured on a 320,316-byte streamed ZIP of two text members: **320,424 bytes before** (no
+  transform, and larger than the input) and **183,286 after** — −42.8%. The same ZIP inside a
+  327,680-byte tar: **321,197 → 183,454**, −44.0%. Both byte-exact.
+
+## 3c. Addressable blocks (v8), and what the table costs
+
+Format v8 adds a block offset table to the trailer: one absolute u64 per block, plus a `ZTOX`
+marker that lets a reader compute where the table starts from the end of the stream. Blocks were
+already self-contained in parallel mode and already carried their own SHA-256; nothing could find
+one without walking from the front. `FORMAT_V8.md` is the design record.
+
+Measured with `tests/benchmark/index_cost.cpp` on 3.68 MB of concatenated project documentation,
+16 KiB blocks, **225 blocks**, 1,377,975-byte archive:
+
+| | |
+|---|---|
+| reading the whole index | **0.04 ms**, touching **10,414 of 1,377,975 bytes (0.76%)** |
+| decoding the whole stream, walking the headers | **810–817 ms** median |
+| decoding the whole stream from the index, 2 threads | **800–842 ms** median |
+| decoding one block from its offset | **4–11 ms** (two runs on a 2-core box) |
+
+The table costs `8 × blocks + 4` bytes over a v7 trailer:
+
+| case | archive | blocks | added | share |
+|---|---|---|---|---|
+| 3.68 MB of docs, 16 KiB blocks | 1,377,975 | 225 | 1,804 | 0.131% |
+| 460 KB of docs, 64 KiB blocks | 145,164 | 8 | 68 | 0.047% |
+| 460 KB of docs, default block size | 118,284 | 1 | 12 | 0.010% |
+| 1 KB of text | 687 | 1 | 12 | **1.7%** |
+
+**The last row is a real cost, not a rounding error**, and it is the same shape as the 1.2 KB PNG
+in section 2: on a single-block archive the table is 1.7% of the output and says nothing the reader
+could not derive. It is kept for now because removing it means a second trailer shape, and the flag
+byte is full, so it would cost another header field. If small files ever matter more than
+uniformity, that is the change to make.
+
+What the table is **not** allowed to do is be wrong. Four checks, none of which decodes a payload:
+the table's structure; that the entries tile the stream from the end of the file header to the
+trailer with no gap; that the headers found at those offsets re-hash to the stored manifest; and
+that a decoder which walked the blocks sees the same offsets. A corrupted table is a refusal, never
+a wrong answer.
+
+**The two decode paths cannot be told apart on this machine, and an earlier claim that they
+could was a benchmark artefact.** The first version of `index_cost` timed the walking path
+first and the index path second, so whichever ran first paid for cold pages and first touch of
+the output buffer — and that alone produced a "4–6% win" which was then attributed to the
+digest check. With both paths warmed before either is timed, the two sit at 810–817 ms and
+800–842 ms across repeated invocations, with a **±40 ms spread between runs on two cores**.
+Every difference this benchmark is trying to resolve is 6–30 ms, which is inside that spread.
+
+So the honest summary is arithmetic rather than measurement: the table removes a 10 KB header
+scan from an 800 ms decode, which is microseconds, and **an index-driven decode is not
+measurably faster than a walk when the stream is already in memory**.
+
+The digest check did move into the workers in `decompress()`'s parallel path anyway
+(`decode_blocks_parallel` already did it), because it is strictly less serial work and cannot
+be slower — not because it was measured to help. Measured before and after with the warmed
+benchmark: 809.9 vs 817.3 ms median, which is the noise.
+
+`decompress()` was therefore **not** rewritten to decode from the index. A second decode path
+in the same function, for a difference that cannot be resolved here, is a bad trade —
+`FORMAT_V8.md` records it.
+
+**And a partial decode of a transformed stream is refused, not answered** (`not-self-contained`):
+an archive-mode block may reference an earlier one, and the inverse chain needs the whole stream,
+so a block's plaintext is only the caller's bytes when the stream was written `--parallel` with no
+Layer 0 transform.
+
+## 3d. Block size, swept at last
+
+`kDefaultBlockSize` has been 4 MiB since the note in `format.hpp` that recorded one corpus
+(dickens) at three sizes. Nothing had swept it since, and `RELEASE_PLAN.md` Phase 3 listed it as an
+open measurement. Swept 2026-11-04 on four real corpora, native block loop (`-9 --no-lzma2`, so the
+whole-stream fallback cannot mask the result), archive size in bytes:
+
+| corpus | 64 KiB | 256 KiB | 1 MiB | 4 MiB | 16 MiB |
+|---|---|---|---|---|---|
+| `tree.tar`, 1.6 MB mixed | 375,442 | 346,417 | 322,462 | **316,900** | 316,900 |
+| `code.txt`, 846 KB | 173,654 | 159,520 | **149,468** | 149,468 | 149,468 |
+| `big.txt`, 1.4 MB vendor code | — | 187,730 | 185,179 | **180,016** | — |
+| `huge.txt`, 2.75 MB mixed sources | — | — | **393,003** | 395,411 | 395,411 |
+
+Cells repeat where the block size exceeds the file: one block either way is the same stream.
+
+**4 MiB stays.** Against 256 KiB it is 4.3–9.3% smaller on the homogeneous corpora, and against
+1 MiB it is between 1.8% smaller and **0.6% larger**. The one corpus where a smaller block wins is
+the heterogeneous one — 2.75 MB of unrelated source files — because the per-block selector can pick a
+different backend for each block, and a 4 MiB block forces one choice across content that does not
+share a model. So there is no single best block size: it trades model size against the selector's
+freedom to adapt, and the trade moves with how uniform the input is.
+
+4 MiB is within 0.6% of the best on every corpus measured and is the size every other number in this
+document was taken at, so it does not move without a reason that is bigger than 0.6%.
+
+**An adaptive block size was the obvious next idea, and the evidence does not support building it.**
+The 1 MiB win on `huge.txt` reproduces exactly — 393,003 against 395,411 — and the mechanism is
+partly what it looked like: at 1 MiB the three blocks split two rANS-parsed and one BWT, while the
+single 4 MiB block is BWT throughout, so the selector does get to choose per block.
+
+But that is not the whole story, and the rest of it points the other way:
+
+| configuration | 1 MiB | 4 MiB | gap |
+|---|---|---|---|
+| all candidates | 393,003 | 395,411 | 1 MiB by **0.6%** |
+| `--no-bwt` | 398,349 | 425,154 | 1 MiB by **6.7%** |
+| a second heterogeneous corpus, 1.7 MB | 254,007 | 251,674 | 4 MiB by 1.0% |
+
+With BWT removed the gap *widens* sevenfold, which is not "more freedom for the selector" — it is the
+rANS path itself degrading with block size. And on the second corpus 4 MiB wins outright with every
+block on BWT at both sizes, so there is no diversity to exploit. The effect is small,
+corpus-dependent, and not attributable to one mechanism.
+
+So: a feature that tries 4 MiB, then retries as 4×1 MiB and keeps the smaller, would cost a second
+encode of every block — on a 2.7 MB file, about 6.5 s to 12 s — to win at most 0.6% on the corpora
+where it wins at all, on an engine that already runs at 0.4 MB/s. **Not built, and the reasoning is
+here so it is not rebuilt.**
+
+Speed is not in this table because this machine cannot resolve it (§3c): every size ran at
+0.37–0.45 MB/s on these corpora, which is the spread between runs, not between block sizes.
+
+## 3e. The Huffman candidate is now gated by a measurement
+
+`SELECTOR_PROFILE.md` measured the static Huffman candidate at **18% of a 1 MB prose run for
+nothing** — byte-identical output with and without it — and said the next step was a sample trial
+rather than a default flip. Built 2026-11-04.
+
+The trial encodes a 64 KiB prefix of the block with the coder that would actually run, scales that
+to the block, and runs the full candidate only if the estimate is within 1% of the best candidate so
+far. A prefix because a byte histogram is a whole-block property and any slice represents it; the 1%
+slack is deliberately in Huffman's favour, because running it needlessly costs time and skipping it
+wrongly costs ratio.
+
+**No ratio changed.** Archive sizes on all six corpora, gated against `--no-huffman`:
+
+| corpus | gated | `--no-huffman` | outcome |
+|---|---|---|---|
+| `tree.tar`, 1.6 MB | 316,900 | 316,900 | skipped |
+| `code.txt`, 846 KB | 149,468 | 149,468 | skipped |
+| `big.txt`, 1.4 MB code | 180,016 | 180,016 | skipped |
+| `huge.txt`, 2.75 MB mixed | 395,411 | 395,411 | skipped |
+| `p1m.txt`, 310 KB text | 70,726 | 70,726 | skipped |
+| **`seven.bin`, 1 MB, 7 symbols** | **287,758** | 289,862 | **ran, won 0.73%** |
+
+The first five are byte-identical to the numbers in §3d, taken before the gate existed. The last one
+is the case the candidate exists for, and the trial lets it run.
+
+**The time saving is not claimed.** `SELECTOR_PROFILE.md`'s 18% was measured on a different file
+with an older build, and this machine cannot resolve an effect that size against its own spread
+(§3c). What is measured is the decision: `-v` now reports `huffman: N offered, M skipped by the
+sample trial`, because the output is identical whether the candidate ran and lost or never ran —
+a size comparison cannot tell you whether a gate is working.
+
+## 3f. The LZMA2 fallback, gated with a 20% margin
+
+The Tier-1 fallback is a guarantee, not an optimisation: it exists so a stream is never much worse
+than an LZMA-class compressor. `SELECTOR_PROFILE.md` measured it at 34% of a run and said the fix
+was a sample comparison that could only *trigger* the full run.
+
+Gated 2026-11-04. A 64 KiB middle slice is encoded with the real LZMA2 encoder at the same settings,
+scaled to the whole stream, and the full run happens unless that estimate is more than **20% worse**
+than the native stream.
+
+| corpus | trial | archive | ungated archive |
+|---|---|---|---|
+| `tree.tar`, 1.6 MB mixed | skipped | 316,900 | 316,900 |
+| `code.txt`, 846 KB | skipped | 149,468 | 149,468 |
+| `big.txt`, 1.4 MB code | skipped | 180,016 | 180,016 |
+| `seven.bin`, 1 MB, 7 symbols | ran | 287,758 | 287,758 |
+| `huge.txt`, 2.75 MB mixed | ran | 395,411 | 395,411 |
+| `p1m.txt`, 310 KB text | ran (below the trial threshold) | 70,726 | 70,726 |
+
+**No archive size changed.** On `tree.tar` the fallback cost 2.8 s of a 6.6 s run and won nothing;
+with the gate that is **6.6 s → 4.1–4.8 s**, about a third, against 3.8 s with `--no-lzma2`.
+
+Three things about the margin, because it is the whole safety argument:
+
+- **20%, not 5%.** At 5% the gate also skipped everywhere it skipped at 20% on these corpora, and
+  saved nothing extra — so the extra margin is free. It is the difference between "LZMA2 might just
+  win" and "LZMA2 would have to win by more than a fifth".
+- **The estimate is biased against LZMA2.** A 64 KiB slice starts with a cold dictionary, so it
+  encodes worse than the whole stream would; the margin is spent correcting a bias that points the
+  safe way.
+- **The sample is 64 KiB because liblzma's setup, not its coding, is what the trial pays for.** At
+  256 KiB the trial cost 1.4 s on a 1.6 MB archive — within a third of the run it was trying to
+  avoid — which made the first version of this gate worthless. That was measured, not assumed.
+
+**What this costs the promise**: the fallback is no longer unconditional. On a stream where the
+sample says LZMA2 is more than 20% out of reach and the whole-stream run would have proved it wrong,
+the archive is up to that much larger than it would have been. `--no-lzma2` is still the flag that
+removes the candidate outright; `-v` reports `lzma2: N offered, M skipped`.
+
+## 3g. The base64 gate: what it costs, and the one part of it that could be cheapened
+
+`base64_pays` decides whether decoding base64 runs is worth it by running the **real pipeline** on
+a 256 KiB sample of each side. Two earlier versions estimated instead, and both were wrong in the
+direction that costs ratio (a JPEG missed by 19.6% because brunsli was not in the model; an XML case
+backwards because the spreadsheet transform was not either). The expensive trial is the price of
+being right.
+
+Measured 2026-11-04, `-9`, on this box:
+
+| file | default | `--no-base64` | gate cost | decision |
+|---|---|---|---|---|
+| 34 KB of base64'd text | 1.08 s | 0.52 s | 2.1× | taken, **8,667 vs 12,346 (−30%)** |
+| 540 KB of base64'd random bytes | 11.91 s | 5.14 s | 2.3× | declined, archive identical |
+
+**A decisive first pass is now taken, and only a decisive one.** A 64 KiB sample through the same
+pipeline, one block per side, decides when the two sides differ by **20%** — three times the ~6% error
+a 64 KiB sample is known to carry here (an earlier gate at that size flipped both XML cases by 5.8%).
+Anything closer goes to the full 256 KiB trial.
+
+- 34 KB base64'd text: **1.76 s → 1.08 s**, same archive, transform still taken.
+- 540 KB base64'd random bytes: no change, because that case is a **tie** — and a tie is exactly what
+  the cheap pass cannot decide and must not guess at.
+
+So the saving is real on the files where the answer is obvious, and the dominant cost — resolving a
+tie — is untouched. That is the honest shape of it: the remaining 2.3× is the price of not guessing,
+and three failed estimates say the price is worth paying.
+
+## 3h. The opaque streams: what a zstd, brotli or xz transform would be worth
+
+Phase 4 is "transforms, only when something asks for them". Something does: `.tar.zst` is now the
+default archive for several distributions and release pipelines, `.br` is what web assets ship as, and
+the engine treats all of them as opaque bytes. Measured 2026-11-04 on a 512,000-byte tar of this
+project's own documentation:
+
+| file | input | ziptastic `-9` | transform fired |
+|---|---|---|---|
+| `content.tar` | 512,000 | **127,557** (24.9%) | none, and none needed |
+| `content.tar.zst` | 156,418 | 156,526 | **no** |
+| `content.tar.br` | 149,498 | 149,606 | **no** |
+| `content.tar.xz` | 153,392 | 153,500 | **no** |
+
+The engine adds ~108 bytes to each compressed stream and gets nothing: **a `.tar.zst` costs 22.7% more
+through the engine than the tar itself**, and that gap is the headroom:
+
+| stream | if the engine could see inside | headroom |
+|---|---|---|
+| `.zst` | 127,557 + recipe | **−18.5%** |
+| `.br` | 127,557 + recipe | **−14.7%** |
+| `.xz` | 127,557 + recipe | **−16.9%** |
+
+**The recipe is free in the easy case, and that is the whole question.** Decoding each stream and
+re-encoding it with the same encoder at the same settings reproduced the original **byte for byte** in
+all three cases — so a stream produced by a known encoder at a known level needs only that level
+recorded, which is a few bytes. That is exactly the `preflate` pattern for DEFLATE, and it is why the
+headroom above is nearly all real.
+
+**What is not established**, and is the work: a stream from an unknown encoder version or level needs
+the settings *recovered*, which is a search over the encoder's parameters plus a diff when no setting
+reproduces it — `preflate` does this for zlib's levels and it is the hard part of that project.
+
+**Measured, 2026-11-04: the search is affordable and the full search is not.** Every stream in a sweep
+of levels is recoverable by trying them in order, and the cost is the whole problem:
+
+| encoder | settings tried | recovered | trial encodes | time |
+|---|---|---|---|---|
+| zstd | 1, 3, 5, 9, 15, 19, 22 | every one | 1 → 19 | 0.01 s → **3.25 s** |
+| brotli | 1, 5, 9, 11 | every one | 1 → 11 | 0.01 s → **5.26 s** |
+| xz | 0, 3, 6, 9, 9e | every one | 1 → 5 | 0.10 s → 2.64 s |
+
+The most common real settings are the most expensive to recover, because a linear search costs one
+encode per level and quality 11 is the slowest encoder here. Against the engine's own ~1.3 s for the
+same 512 KB, a full search is **2.5–4× the whole compression** — for an 18.5% win. That is the wrong
+slope.
+
+**A shortlist changes the arithmetic.** Two candidate settings per format, tried in order and declined
+if neither matches:
+
+| encoder | shortlist | cost |
+|---|---|---|
+| zstd | 3, 19 (the default and the release default) | **0.49 s** |
+| xz | 6, 9e | 1.18 s |
+| brotli | 5, 11 | 2.54 s |
+
+So the design that survives is **a short, ordered list of settings and a decline when none matches**,
+not a search — 0.5 s for zstd against a 29 KB win on this fixture, and streams from any other setting
+simply do not get the transform. Brotli stays expensive because quality 11 is; it may only be worth
+trying after the cheap ones fail and the payload is large enough to pay for it.
+
+Also unbuilt: zstd has no decoder in the tree. Brotli and liblzma are already vendored (`brotli_vendor`,
+`liblzma`), so `.br` and `.xz` need no new dependency; `.zst` would.
+
+**The free bit.** `layers3` has seven (bits 1–7) and the policy in `FORMAT.md` asks for four things
+before one may be taken: a measured win on real content (the table above), a gate that can decline
+(the existing `precomp_helps` shape, on the decoded payload), a byte-exact inverse (re-encode, then
+diff when it is not identical), and a test that asserts the transform fired (the corpus script's
+pattern). Three formats, three bits, or one bit and a format byte inside the payload — that is a
+design decision for whoever builds it, not for this measurement.
+
+**Verdict: worth building, with the shortlist and not the search.** The win is 15–18% on a container
+class that is common and currently costs the engine 23%, the pattern is one this project already has,
+and two of the three formats need no new dependency. The recipe recovery was the open question and it
+is now answered: a full search costs 2.5–4× the whole compression, a two-entry shortlist costs 0.5 s
+for zstd and 1.2 s for xz. `.br` is the one that may not pay, because quality 11 costs 2.5 s to
+confirm.
+
+**The corpus, and what it says about the shortlist.** Ten streams of the same 512,000-byte tar from
+different producer shapes — seekable and streaming, levels 3 and 19, long-distance matching, no
+checksum, a custom xz dictionary — tested against the two-entry shortlists:
+
+| stream | shortlist match |
+|---|---|
+| zstd 3, zstd 19 | yes |
+| zstd 19 with long-distance matching | yes |
+| zstd 3 without a checksum | yes |
+| brotli 5, brotli 11 | yes |
+| xz preset 6 | yes |
+| **zstd 3 and 19, written to a pipe** | **MISS** |
+| **xz with a 1 MiB dictionary** | **MISS** |
+
+Three of ten miss, and the misses are informative rather than random:
+
+- **A pipe changes the frame.** A streaming zstd encoder cannot know the content size, so the frame
+  header omits it and the blocks land differently: three bytes shorter, and the shortlist's seekable
+  encode cannot reproduce it. Adding the *streaming* encoder at each level recovers both — so the
+  shortlist entry is a (level, framing) pair, four candidates, not two. This is the streamed-ZIP
+  problem of §3b in a new place: the same file, written by a pipe, and the reader has to know it.
+- **xz needs no shortlist at all.** The dictionary size is in the block header, and reading it out and
+  re-encoding reproduces **both** streams byte-exactly, including the one the shortlist missed. So
+  xz recovery is a header read, not a search — the cheapest of the three by a wide margin.
+
+That reorders the work. `.xz` first (header read, no search, `liblzma` already vendored), `.zst` second
+(four candidates, needs a decoder the tree does not have), `.br` last (quality 11 costs 2.5 s to
+confirm and the header does not carry the quality).
+
+**Partly built** — `.xz` is done, above. What is still missing for `.zst` and `.br` is a stream from a
+*different encoder version* — everything here
+came from the same libraries, and a zstd 1.4 stream may not be reproducible by a zstd 1.5 encoder at
+the same level. That is the remaining unknown, and it needs real-world files, not generated ones.
+
+### The xz foundation, proved in-tree and across versions (2026-11-07)
+
+`tests/benchmark/xz_probe.cpp` does the whole experiment against the **vendored** liblzma, because
+the answer depends on the encoder that would ship:
+
+1. decode the stream;
+2. read the LZMA2 dictionary size out of the block header with `lzma_block_header_decode`;
+3. re-encode at each preset **with that dictionary size forced**, and compare bytes.
+
+On a 522,240-byte tar:
+
+| stream | dict size read from header | re-encode |
+|---|---|---|
+| preset 0 | 262,144 | **identical** |
+| preset 6 | 8,388,608 | **identical** |
+| preset 9 | 67,108,864 | **identical** |
+
+And the version question is answered better than expected: **the streams were produced by liblzma
+5.4.1 and reproduced by the tree's 5.8.4**, byte for byte, two minor versions apart. That is the
+strongest evidence yet that an xz recipe can be a header read rather than a stored diff.
+
+Two details worth having:
+
+- **Presets 6, 7, 8 and 9 all produced the same bytes** once the dictionary size was forced — they
+  differ from each other in exactly that parameter for this input, and the stream already told us.
+  So the recipe is closer to "dictionary size, plus one bit for `extreme`" than to a preset number.
+- `extreme` does change the bytes (156,380 against 156,328), so the recipe needs that bit.
+
+This does not build the transform; it removes the reason it might not work.
+
+### The `.br` transform, built (2026-11-07)
+
+Brotli is the second of the three opaque containers, and it is harder than `.xz` in two ways that
+shaped the code:
+
+- **It has no magic number.** There is nothing to recognise, so the only test is "does it decode" —
+  and then "does it rebuild byte for byte", because a decode alone proves nothing about the bytes
+  we were given.
+- **The quality is not in the stream.** The header carries the window size and nothing else. So the
+  producing settings are guessed from a shortlist of six (quality 11 at windows 22 and 24, 11 text,
+  9, 5, 1) and confirmed by re-encoding. A stream from a setting outside that list is declined.
+
+Measured on a 542,720-byte tar of this project's docs:
+
+| stream | bytes | through the engine | after |
+|---|---|---|---|
+| the tar itself | 542,720 | 136,291 | — |
+| `.tar.br` at quality 11 | 159,883 | 159,975 | **136,299 (−14.8%)** |
+| `.tar.br` at quality 9 | 174,949 | 175,041 | **136,299 (−22.1%)** |
+| `.tar.br` at quality 5 | 184,622 | 184,714 | **136,299 (−26.2%)** |
+| `.tar.br` at quality 1 | 216,913 | 217,005 | **136,299 (−37.2%)** |
+
+All four qualities were recovered by the shortlist, `layers3` reads `0x04`, and every one lands
+within 8 bytes of simply having the tar. The lower the quality, the bigger the win — which is the
+point: the engine was paying for someone else's faster encoder with archive size.
+
+`unit.brotli` covers the three ways this can go wrong: a quality outside the shortlist must decline
+rather than guess, random bytes must not be accepted as brotli, and a stream with a tail appended
+must be refused because treating it as bare brotli would drop the tail.
+
+### The `.zst` transform, built (2026-11-07)
+
+The last of the three opaque containers, and the only one that needed a dependency: `zstd` was not in
+the tree, so `vendor/hcs/old/zstd` is new — BSD-3-Clause, trimmed to `common/compress/decompress` and
+three headers, 2.1 MB, built with `ZSTD_DISABLE_ASM` because vendoring the hand-written Huffman
+assembly across three toolchains cost more than the few percent it buys.
+
+Measured on a 542,720-byte tar of this project's docs:
+
+| stream | bytes | through the engine | after |
+|---|---|---|---|
+| the tar itself | 542,720 | 136,676 | — |
+| `.tar.zst` at level 3, seekable | 195,983 | 196,091 | **136,683 (−30.3%)** |
+| `.tar.zst` at level 19, seekable | 167,622 | 167,730 | **136,683 (−18.5%)** |
+| `.tar.zst` at level 3, **piped** | 195,980 | 196,088 | **136,683 (−30.3%)** |
+
+`layers3` reads `0x08` in all three and every one lands within 7 bytes of the tar itself.
+
+**The piped case is the one worth reading.** A zstd encoder writing to a non-seekable output omits
+the content size from the frame header, and its block boundaries follow whatever chunking the writer
+used — so a one-shot re-encode at the same level does not reproduce it. The first version of this
+transform therefore declined every piped stream, which is why the encoder now feeds its input in
+128 KiB chunks, matching zstd's default block size. That is what a writer with default buffering
+produces, and with it all three cases above are recovered.
+
+### A JPEG inside a PDF *is* transformed — and a trap in reading `info` (2026-11-18)
+
+Measured on a real PDF whose only image is a `/DCTDecode` JPEG (Pillow, 24,387 bytes, one
+23,499-byte progressive JPEG at offset 293):
+
+| file | `-9` | `--no-jpeg` | the transform is worth |
+|---|---|---|---|
+| the PDF | **17,594** | 22,881 | **+23.1%** |
+| the same JPEG extracted, standalone | **16,854** | 22,344 | +24.6% |
+| a photographic JPEG (progressive, 12,266 B) | **10,586** | 12,230 | +13.4% |
+
+So brunsli reaches inside a PDF and does its full job there; the PDF wrapper costs about 740
+bytes over the standalone image.
+
+**The trap: the JPEG stage reports in `flags`, not in `layers`.** `ziptastic info` on a JPEG
+shows `flags coarse, jpeg (0x41)` and `layers 0x00 0x00 0x00 (no Layer 0 transform)`. Read
+carelessly — as it was on 2026-11-18 — that says "the JPEG transform did not fire", and the
+opposite is true. `layers2 0x04` is the *nested* JPEG case inside a container payload; a
+top-level JPEG is a header flag. Anyone comparing the two must read both fields.
+
+**Neither JPEG nor GIF had an off switch until 2026-11-18**, which is why the contribution above
+could not be measured before: every other transform had a `--no-*`. Both exist now, and
+`test_cli.sh` asserts that every transform in the chain can be turned off.
+
+### A real scanned PDF, measured (2026-11-07)
+
+The synthetic PDF above said "PDF is covered". A real one says something different, which is why the
+caveat was written down. The file: `CIA-RDP96-00792R000300330001-8.pdf`, 7,456,578 bytes, **99 pages,
+all scanned, one image per page, none of them digital**.
+
+| measurement | value |
+|---|---|
+| the PDF | 7,456,578 bytes |
+| ziptastic `-9` | **6,373,705 (85.5%)**, 68 s |
+| the same with `--no-precomp` | 6,373,705 — identical |
+| what fired | base64 only (`layers 0x10`); **precomp did not fire** |
+| images | 99, **1 bit per pixel**, 2544×3250, FlateDecode in the PDF |
+
+**The structure is not the problem and the transform is not the answer.** A page's image is 35,725
+bytes of Flate-coded bilevel bitmap inside the PDF; the whole document is an image container with a
+thin text wrapper. `scan_pdf` found nothing worth taking, and it was right: inflating those streams
+hands the backend data that deflate already coded well.
+
+The first reading of that was "1 bit per pixel, so JBIG2 or CCITT G4 will win". **That was wrong, and
+measuring it took one call.** The bitmaps were pulled out of the PDF and coded three ways:
+
+| page | raw bitmap | Flate, as the PDF stores it | CCITT G4 | ziptastic `-9` on the raw bitmap |
+|---|---|---|---|---|
+| 0 (dense) | 1,030,956 | 255,108 | **242,630 (−4.9%)** | 275,300 (+7.9%) |
+| 1 | 1,033,500 | **35,725** | 37,706 (+5.5%) | 52,732 (+47.6%) |
+| 2 | 1,033,500 | **36,720** | 39,550 (+7.7%) | 51,458 (+40.1%) |
+
+**Flate wins on the sparse pages, and it is not close.** These scans are mostly white with sparse
+marks — 35,725 bytes from 1,033,500 is 3.5% of raw — and G4's advantage is 2D correlation across
+dense rows, which there is not much of here. G4 only wins on page 0, the one dense page, and by 4.9%.
+
+And this engine's own backends are **worse than Flate on all three** — BWT, PPMd and the CM stack
+all lose to LZ77 on sparse bilevel, by 8% on the dense page and by 40-48% on the sparse ones. That is
+worth knowing beyond PDF: it is a shape where DEFLATE is simply the better coder.
+
+### Forcing the repack pipeline does not rescue it either (2026-11-08)
+
+The obvious next question is whether the FreeArc-style chain — precomp to inflate, srep to dedup,
+then the engine — does better than the engine declining. It was measured, twenty pages of the same
+scanned PDF, forced rather than gated:
+
+| what | bytes |
+|---|---|
+| the 20 pages as Flate in the PDF | **1,696,978** |
+| the same 20 pages inflated, then `-9` (dedup fired, `flags 0x21`) | 1,832,200 |
+| | **+8.0% worse** |
+
+So the chain loses. `precomp` declining on this file was correct, and forcing it past its own gate
+costs 8% even with `dedup` engaged on 20.6 MB of concatenated bitmaps. That is the same conclusion
+`FINDINGS.md` §3f reached about the LZMA2 gate from the other direction: a transform that is *offered*
+the data and measures itself as not helping is usually right.
+
+**Why the redundancy does not help, which is the useful part.** Consecutive pages of this document are
+**86.9% byte-identical at the same offsets** — 87.8% of page 1's 16-byte blocks appear verbatim in
+page 2. That looks like a dedup goldmine and is not one, because the identical bytes are *white
+space*. A run of 0x00 costs Flate almost nothing and costs a dedup match almost nothing; 1,033,500
+bytes compress to 35,725 (3.5%) precisely because 87% of the page is blank. The expensive part is the
+13% that is ink, and that is where every coder is already working.
+
+That is the general lesson worth keeping: **cross-page similarity is not headroom when the shared
+bytes are cheap.** Dedup earns its place on repeated *content* — the same asset, the same binary — not
+on repeated background.
+
+So there is no cheap win here, and the recommendation to build a bilevel transform was wrong on the
+evidence.
+
+### And JBIG2 would not win either (2026-11-08)
+
+The last candidate was JBIG2's context-modelled arithmetic coding, on the reasoning that it beats G4
+by 20-40% and so might reach 15-30% under what the PDF spends. That reasoning was wrong too, and it
+did not need a JBIG2 encoder to find out: the entropy of the page under a JBIG2-shaped 2D context
+model is a **bound** on what such a coder can achieve, and it is a bound that can be computed.
+
+An 11-bit template — two previous rows of four pixels each plus three pixels to the left in the
+current row — measured on the same three pages:
+
+| page | Flate in the PDF | model bound | verdict |
+|---|---|---|---|
+| 0 (dense) | 255,108 | 282,361 | **worse by 10.7%** |
+| 1 | 35,725 | 67,829 | **worse by 90%** |
+| 2 | 36,720 | 70,624 | **worse by 92%** |
+
+**Per-pixel modelling loses to run-length coding on sparse pages, and it is not close.** The reason is
+the same one that made dedup useless: 87% of these pages is white, and LZ77 codes a long zero run for
+almost nothing while a context coder still pays a fraction of a bit per pixel — 8.3 million pixels at
+even 0.05 bits is 52 KB, which is more than Flate spends on the entire page.
+
+The one mode not captured by this bound is JBIG2's **symbol dictionary**, which codes each repeated
+glyph shape once and then a page of references. That is the only remaining candidate, it only applies
+to text-dense pages, and page 0 — the one dense page here — is the only place in this document where
+it could possibly pay. Recorded, not started, and not recommended without a corpus of dense scans to
+justify it.
+
+Two smaller things worth recording:
+
+- **Our PNG layer makes it worse, not better, on a re-extracted image.** Page 1's image as a PNG
+  (104,660 bytes, which is what an extractor produces) compresses to 53,082 through `-9` — worse
+  than the 35,725 the PDF already stores. That is not a defect: the input had already been
+  re-encoded once, and the comparison is not like for like.
+- **Base64 fired on a binary PDF.** It is verified byte-exact, so it costs nothing but time, and on a
+  file this size that time is measurable. Worth a look before the next speed pass.
+
+### Two of the four "missing formats" were not missing (2026-11-07)
+
+The tool survey listed four formats with prior evidence and no transform here: MP3, FLAC, PDF and
+SWF. Two of them turned out not to be gaps at all, which is why this was measured before anything was
+built.
+
+| file | bytes | through the engine | what fired |
+|---|---|---|---|
+| a PDF with one FlateDecode stream | 471 | 330 | **precomp** (`flags 0x05`) |
+| the same PDF's decoded content | 90,031 | 226 | — |
+| an uncompressed SWF (`FWS`) | 135,016 | — | not measured, nobody ships these |
+| the same SWF zlib-compressed (`CWS`) | 479 | **198** | no transform |
+| that SWF's decoded body | 135,000 | 216 | — |
+
+**PDF is already covered.** `scan_pdf` reaches the content stream, precomp fires, and 330 bytes
+against 226 for the bare content is the container framing plus the precompressed stream — close to
+optimal.
+
+**SWF is dropped.** No transform fires on a `CWS` and none needs to — 198 bytes against 216 for its
+own decoded body, because the backend compresses the DEFLATE stream harder than the text inside it —
+and Flash is dead, so there is no reason to spend anything more on it. Removed from the Phase 4 list
+on 2026-11-07 at the owner's instruction, and kept here only so the measurement is not repeated.
+
+**The caveat, stated because it is large**: both fixtures are synthetic and small. A real PDF has
+many streams and images; a real SWF is megabytes of mixed assets. These numbers say "do not build a
+PDF or SWF transform on the strength of a guess", not "there is no gap". A real corpus of each would
+settle it, and that is a download this session did not do.
+
+**MP3 and FLAC remain unmeasured** — no fixtures here, and both need a real encoder to make one.
+
+### FLAC, measured, and it is the largest gap left (2026-11-08)
+
+The container transforms were worth 16.9% (.xz), 14.8-37% (.br) and 18.5-30.3% (.zst). FLAC looks
+bigger than all of them, on two fixtures built to be as different as possible — 20 s of 44.1 kHz
+stereo, one tonal and one noise-heavy, because a synthetic test that is all tones flatters a BWT
+backend enormously:
+
+| fixture | PCM | FLAC | PCM through `-9` | FLAC through `-9` | headroom |
+|---|---|---|---|---|---|
+| tonal | 3,528,044 | 2,393,014 | **1,615,628** | 2,393,126 | **32.5%** |
+| noise-heavy | 3,528,044 | 2,927,020 | **2,280,032** | 2,927,132 | **22.1%** |
+
+**This engine compresses 16-bit PCM 22-32% better than FLAC does on the same audio.** The reason is
+structural: FLAC models samples with an LPC predictor and Rice codes the residual, while the backends
+here work on the *bytes*, where the high byte of a 16-bit sample is nearly constant and the low byte
+carries the noise — a shape BWT and PPMd handle well. FLAC never sees that.
+
+So a `.flac` transform has more headroom than any container shipped so far, and the recipe question
+is the same shape as the others: vendor libFLAC, inflate to PCM, compress that, and rebuild the stream
+by re-encoding with the recovered settings.
+
+### The recipe works, and it is six bytes (2026-11-08)
+
+That was the question worth answering before writing any of it: **can libFLAC reproduce a stream it
+did not write?** A probe was built against a trimmed vendored libFLAC (29 C files, no Ogg), decoding
+a file to PCM and re-encoding at the same compression level.
+
+On both fixtures, at level 5, the answer was the same and better than expected:
+
+| fixture | original | re-encoded | bytes differing |
+|---|---|---|---|
+| tonal | 2,393,014 | 2,393,014 | **6** |
+| noise-heavy | 2,927,020 | 2,927,020 | **6** |
+
+**The six bytes are the vendor string**, at offsets 70-81: `libFLAC 1.4.3 20230623` in the file
+libsndfile wrote, `libFLAC 1.5.0 20250211` from the vendored 1.5.0. Every audio frame is identical.
+So the encoder's coding decisions are stable across those two versions, and the recipe needs to carry
+the vendor string — and nothing else.
+
+That also names the risk precisely. A `.flac` written by **ffmpeg's own encoder**, or by libFLAC with
+a non-default block size or predictor order, will not reproduce, and will be declined rather than
+guessed at. Coverage is a question for a corpus of real-world files; what is settled is that the
+approach is sound where the producer is libFLAC at a default level.
+
+### The coverage answer, and it is bad (2026-11-08)
+
+Before building the transform, the coverage question: what fraction of real-world `.flac` files does
+the libFLAC recipe actually cover? A corpus of 23 real files was fetched (`mewkiz/flac` test data) and
+every file tried at all nine levels, comparing the **audio frames only** so that a metadata-block
+difference could not masquerade as a mismatch.
+
+| source of the file | vendor string | result |
+|---|---|---|
+| this session's fixtures | `libFLAC 1.4.3 20230623` | **reproduces exactly** (6 metadata bytes) |
+| 8 real files, 20 KB-4 MB | `libFLAC 1.0.25`, `1.1.2`, `1.2.1`, `1.3.0` | **none reproduce at any level** |
+
+**Zero of eight.** Even with metadata excluded and the frames compared directly, the vendored
+libFLAC 1.5.0 does not reproduce what 1.0.25 through 1.3.0 wrote. The reason is that
+`set_compression_level` is a *shorthand that has been redefined between versions* — the LPC order,
+apodization window, and partition-order search behind "level 5" are not the same algorithm in 1.2.1 as
+in 1.5.0, so the encoder makes different decisions on the same PCM.
+
+So the recipe covers **files written by the same encoder generation and nothing else**, which for a
+format whose back catalogue was written over twenty years by many versions and by ffmpeg's separate
+implementation is a thin slice. That changes the recommendation:
+
+**Do not build the `.flac` transform on this recipe.** The 22-32% headroom measured above is real,
+and it is unreachable for most files in the wild — a transform that fires on 1.4.x-and-later output
+and declines on everything else is not worth a vendored encoder, a second metadata path, and the
+maintenance of keeping the vendored version pinned to whatever produced the file.
+
+What would change the answer: a corpus showing that modern files dominate in practice, or a
+version-independent way to recover the encoder's decisions. Neither exists today, and the honest move
+is to record this and leave the transform unbuilt.
+
+**The search is small and it is exact.** Running the probe at every level, one and only one
+reproduces the file:
+
+| level | re-encoded | verdict |
+|---|---|---|
+| 3 | 2,410,068 | different |
+| 4 | 2,400,297 | different |
+| **5** | **2,393,014** | **same size, 6 bytes differ from offset 70 — metadata only** |
+| 6 | 2,392,937 | different |
+| 7 | 2,388,224 | different |
+
+So the recipe is a level byte plus the vendor string, and nine trials settle it.
+
+### Why ffmpeg is the coverage question, and not a dependency (2026-11-08)
+
+FFmpeg came up as a candidate toolkit. It is not one, and the reason is categorical: **a byte-exact
+archiver cannot use a lossy transcoder.** FFmpeg decodes and re-encodes audio and video with
+perceptual codecs; what comes out is a different signal that happens to sound the same. There is no
+recipe that turns an H.264 stream into "the original" because the original was never a frame buffer.
+Adding FFmpeg would be a hundred-megabyte dependency that cannot reconstruct a single byte.
+
+It matters for exactly one thing, and that one thing is real: **FFmpeg contains its own FLAC
+encoder**, and it is a completely separate implementation — `libavcodec/flacenc.c`, written by Justin
+Ruggles in 2006, with its own option set (`block_time_ms`, `lpc_type`, `lpc_passes`,
+`prediction_order_method`, `max_partition_order`, `exact_rice_parameters`). None of those map onto
+libFLAC's nine compression levels, so an ffmpeg-produced `.flac` will not reproduce under the recipe
+above.
+
+That is the coverage risk for the `.flac` transform, and it is not a small one: ffmpeg is the most
+common way `.flac` files get made outside the audiophile tools. Three ways forward, in order of
+cheapness: measure a corpus of real-world `.flac` files and find out what fraction the libFLAC recipe
+covers; accept the decline and ship the transform for the files it does cover; or implement the
+ffmpeg encoder path as a second producer, which is a second encoder to vendor and keep byte-stable.
+
+The FFmpegKit retirement is worth one line as a cautionary tale rather than a fact about this
+project: a wrapper around a media stack that lost its maintainer in January 2025, lost its prebuilt
+packages in April 2025, and was archived in July 2026. The lesson for the vendor tree here is the one
+already being followed — 29 C files of libFLAC, not a media framework. **The risk is the producer**: libFLAC's output depends on
+its version and parameters, so a file written by ffmpeg's own FLAC encoder or by an older libFLAC
+would be declined rather than guessed at. That is the same "producer variant" problem
+`docs/SELECTOR_PROFILE.md` records for the other formats, and the coverage cost is unknown until a
+corpus of real-world `.flac` files is tried.
+
+Two smaller findings from the same run:
+
+- **MP3 is not opaque.** With no transform at all, `-9` takes 800,956 bytes to **580,980 (−27.5%)** —
+  frame headers and Huffman-coded data have structure the backends find. Anything mp3packer-shaped
+  would have to beat that, and the usual 5-10% for Huffman re-coding would not.
+- **BCJ false-fired on FLAC, and now does not.** `flags 0x09` — the x86 branch converter offered
+  itself on an audio file and was accepted, because the payload is verified byte-exact and nothing
+  else objected. The cause: the detector counted E8/E9 bytes and required 0.3%, and *random* bytes
+  put them at 2/256 = 0.78%. Fixed by adding a byte-entropy test, which is the discriminator that
+  actually separates the classes — measured on real inputs, a stripped x86-64 binary sits at **6.54
+  bits**, text at 5.04, while FLAC and a scanned PDF sit at **7.84-7.99**, an `.xz` stream at 8.00
+  and raw 16-bit PCM at 7.91. The bar is 7.0.
+
+  The measurable effect is small and stated plainly: archive sizes are unchanged on every file
+  tried, and the time saved on two FLAC files was 0.3 s and 0.1 s — inside this box's noise. What
+  changed is that a `.flac` no longer *claims* an x86 filter it never had, and the detector now has
+  a signal that corresponds to real code rather than to a coincidence in the opcode byte.
+
+### bzip2, measured before anything is built (2026-11-07)
+
+A `.bz2` is opaque to this engine for the same reason `.xz` was, and it is the one remaining
+container where the recipe question has a trivial answer: **the level is in the file's own header**,
+as the digit in `BZh9…`. Measured on the same 532,480-byte tar:
+
+| what | bytes |
+|---|---|
+| the tar itself, `-9` | 132,541 |
+| the `.tar.bz2` at level 9 today (opaque, plus framing) | 146,804 |
+| headroom if it could see inside | **−9.7%** |
+
+And the recipe would be one byte: re-encoding at the same level reproduces both a level-1 and a
+level-9 stream byte for byte, and at the other level reproduces neither — so the header digit is
+exactly the parameter, and no search is needed at all.
+
+**Not built, and not obviously worth building.** 9.7% is half what `.xz` was worth, and unlike `.xz`
+it needs a dependency the tree does not have: `libbz2` is not vendored (the `bzip3` submodule in
+`vendor/hcs/old` is a different format and is empty). A `.tar.bz2` is also rarer than it was, and
+rarer than `.tar.xz` is now. Recorded so the number exists if it ever comes up.
+
+### The gates the `.xz` stage was not connected to (2026-11-07)
+
+The `.xz` stage sets `precomp_payload` like `precomp` and `gzip` do, but the seven nested-transform
+gates still read `(precomp || gzip)` — they were written before `.xz` existed. So a `.tar.xz` holding
+a CSV, a ZIP, a PNG or a spreadsheet got the container inflated and then **nothing done with what came
+out**, which is the entire reason the recursion stage exists.
+
+Found by reading the gates after shipping, not by a test. There is one now, and it was checked the
+only way that counts: with the gates narrowed back to `(precomp || gzip)` the test fails, and with
+them widened it passes. The mechanism is what the test asserts, because on the fixture tried the
+archive size did not move — 41,786 bytes either way, since the whole-stream LZMA2 fallback wins there
+and masks the difference. A ratio number for this fix needs a fixture where the fallback does not
+win, and that is not a measurement this session made.
+
+### The `.xz` transform, built (2026-11-07)
+
+`src/precompressors/xz_wrap.cpp`, `kLayer3Xz` in `layers3`, `unit.xz` in the suite. Measured on a
+522,240-byte tar of this project's documentation, compressed to 156,796 bytes at preset 6:
+
+| what | bytes |
+|---|---|
+| the tar itself, `-9` | 130,435 |
+| the `.tar.xz` before this transform (opaque, plus framing) | 156,904 |
+| the `.tar.xz` now | **130,449** |
+
+**−16.9%**, and within 14 bytes of simply having the tar — which is what the headroom predicted. The
+round trip is byte-exact, `layers3` reads `0x02`, and the transform costs one inflate plus one or two
+trial encodes: 2.6 s → 3.4 s on this fixture.
+
+Three things the build changed about the recipe, each found by a test rather than by reasoning:
+
+- **The dictionary size alone is not the recipe.** A preset-0 stream uses a different match finder,
+  not just a different dictionary, so it cannot be reproduced by a preset-6 encoder with the size
+  forced. The payload carries a preset byte as well.
+- **Which costs nothing to find**, because the dictionary size narrows the preset to at most two
+  candidates — the presets' default dictionary sizes collide only in pairs (4 MiB is 3 and 4, 8 MiB
+  is 5 and 6). So the recipe is dictionary size, integrity type, preset byte, and one bit for
+  `extreme`; finding it is one or two trial encodes, not a search.
+- **The encoder rebuilds from its own payload and compares before returning it.** A payload that does
+  not round-trip through its own reader is discarded, so a wrong recipe costs ratio and never data.
+
+## 4. Container payloads: what the nested transforms actually do
+
+A container payload puts its own header in front of the member bytes, so every nested transform
+now scans for its signature **anywhere** and carries a prefix and a tail. All of them are
+multi-image: every image in the payload is transformed, not just the first.
+
+| container | transform | measured | verified on |
+|---|---|---|---|
+| ZIP of **BMPs** | plane split + row delta | **−36.9% / −48.3%** | photographic |
+| ZIP of **JPEGs** | brunsli on every image | **−24.9%** | photographic |
+| ZIP of **GIFs** | decode LZW to indices | **−11.1%** | photographic |
+| ZIP of **PNGs** | inflate the PNG's DEFLATE | **−0.3%, often declines** | photographic |
+
+Measured against the same container with the nested stage disabled, so the figure is what the
+transform adds on top of precomp.
+
+**The PNG nested case does not reproduce at all on real content.** It was −79.2% on a ZIP of
+synthetic gradients and is −0.3% on a ZIP of photographic PNGs, where the gate usually declines
+the payload outright: a photographic PNG's scanlines are not much more compressible than the
+DEFLATE stream that already holds them. The transform is not wrong; the fixture was.
+
+**JPEG is the surprise in the other direction**: −24.9% on real photographic JPEGs against −16.5%
+on the synthetic ones, because brunsli's gain comes from the DCT coefficients and a real photo
+has more of them worth modelling than a formula does.
+
+Top-level GIF is worth mentioning separately because it is the strongest image result in the
+engine: a photographic GIF goes 45,588 → **25,268** (−44.6%) and a 512×512 one 113,320 →
+**58,036** (−48.8%), because LZW is a 1980s coder and the palette indices behind it compress far
+better. That is a *file* result, not a container one.
+
+## 5. Measured and rejected — do not rebuild these
+
+| idea | result | why |
+|---|---|---|
+| LZ4 precompression by storing the parse | **+50%** worse | the recipe costs what LZ4's own descriptors cost |
+| "zip store" unpacking | **−1.4%** | the container's redundancy is already collected |
+| split archives compressed per part | **~2× worse** | belongs in the orchestrator, not the codec |
+| parallelising the selector | no gain | the cost is two backends, not the fan-out — and measured on one core of throughput (§0) |
+| Tier-1 fallback on a second thread | **9% slower** | measured on a box with one core of throughput (§0) — the reason given here was never established |
+| adaptive Huffman | **22% of the run, never smaller** | turned off by default; `--huff-adapt` restores it |
+| base64 of single-line structured text | **−6.3%** (a loss) | the gate declines it |
+| near-duplicate delta stage | not needed | the match finder already handles it |
+| lrzip/rzip for the srep step | nothing to add | `dedup` is within 0.1% of the ideal |
+| zopfli on the PNG fast form | **13× slower than zstd for no size gain** — 64,905 bytes for the pixel stream in 16.8 s against a 65,856-byte whole payload in 1.3 s; and 1→15 iterations buys 0.5% | the fast form already beats a zopfli-class deflate on both axes; §6i |
+| oxipng/optipng before archiving | 3 bytes on a 66%-smaller PNG | the transform stores pixels, not deflate choices — and that is why their lever (a smaller *deflate* stream) is not ours; §6i found the one that is |
+| moving the precomp gate after the nested stages | identical output | the gate was never the blocker |
+| decoding from the offset table instead of walking, in memory | 810–817 vs 800–842 ms, inside a ±40 ms spread | the header scan it removes is 10 KB; nothing to measure |
+| moving the block digest into the decode workers | 809.9 vs 817.3 ms median | strictly less serial work, and smaller than this machine's noise |
+| the block offset table as a speed feature | nothing to speed up | it is an addressing feature; §3c |
+| a cheap 64 KiB trial for the base64 gate, answering every case | flips both XML cases by 5.8% | only *decisive* answers are taken; a tie still pays for the 256 KiB trial; §3g |
+| turning static Huffman off by default | no ratio change on five corpora, and it loses 0.73% on the seven-symbol file | gated by a sample trial instead; §3e |
+| a 256 KiB trial for the LZMA2 fallback | 1.4 s of a 1.6 MB run, within a third of what it skips | liblzma's setup dominates, not its coding; 64 KiB and a 20% margin; §3f |
+
+## 6. The audit
+
+`compressor.cpp` and `decompressor.cpp` were read end to end. **Eight findings, six fixed.**
+
+| # | finding | status |
+|---|---|---|
+| 1 | the stage order is not a derivation, and nothing said so | documented in the code |
+| 2 | `DecompressReport::original_size` lied for transformed streams | fixed, tested |
+| 3 | "the default runs no Layer 0" was false, and written down three times | corrected; the default is now a test |
+| 4 | the inverse chain had **no expansion bound** | fixed by `true_size` in v6 |
+| 5 | nothing checked a block's declared size against its body | `write_block` guard, tested |
+| 6 | `ecc_unpack` allocated **2352×** a declared sector count | structural bound, tested |
+| 7 | **data race** on `stats.tokens` between block workers | per-block accumulation, tested |
+| 8 | `dedup_unpack` trusted a 1 TiB declared size | bounded reserve, tested |
+
+The three that would have done real damage (4, 6, 7) were invisible to a suite that was green
+throughout. **Not audited, and not claimed**: the vendored entropy coders, the transforms'
+internals beyond their contracts, `main.cpp`, the match finder and parser.
+
+## 6a. Silesia, at last: the first row anyone else can check
+
+Every number above is on this project's own content, which nobody else can reproduce. The Silesia
+corpus closes that: twelve files, 211,938,580 bytes, the standard set every published table uses.
+Measured 2026-11-07, `-9`, one run per file, both tools built from sources in this tree.
+
+| file | input | ziptastic `-9` | `xz -9e` | gain |
+|---|---|---|---|---|
+| sao | 7,251,944 | 4,415,125 | 4,425,664 | 0.2% |
+| x-ray | 8,474,240 | 3,798,464 | 4,491,264 | 15.4% |
+| ooffice | 6,152,192 | 2,131,573 | 2,427,224 | 12.2% |
+| mozilla | 51,220,480 | 12,217,069 | 12,648,448 | 3.4% |
+| osdb | 10,085,684 | 2,368,404 | 2,844,556 | 16.7% |
+| dickens | 10,192,446 | 2,355,685 | 2,831,212 | 16.8% |
+| mr | 9,970,564 | 2,249,704 | 2,751,892 | 18.2% |
+| samba | 21,606,400 | 3,737,179 | 3,739,524 | 0.1% |
+| webster | 41,458,703 | 7,158,216 | 8,368,672 | 14.5% |
+| reymont | 6,627,202 | 1,024,711 | 1,315,592 | 22.1% |
+| xml | 5,345,280 | 374,814 | 434,892 | 13.8% |
+| nci | 33,553,445 | 1,434,131 | 1,449,272 | 1.0% |
+| **total** | **211,938,580** | **43,265,075 (20.41%)** | **47,728,212 (22.52%)** | **9.4%** |
+
+**9.4% smaller than `xz -9e` across the standard corpus**, produced by `scripts/silesia.sh` on
+2026-11-08 with ziptastic 1.4.1 and an `xz -9e` equivalent built from the vendored liblzma.
+
+**This table replaced an earlier one, and the difference is the point.** The first version was
+measured by hand and reported `mozilla` at 13,376,240 bytes of `xz` output; the script reports
+12,648,448 for the same file and the same encoder, because the script decodes every `xz` stream back
+and compares it to the original before believing its size — and the hand run had not. `mozilla` was
+the third casualty of the full `/tmp` that also corrupted `x-ray`, `xml` and `webster`, and its error
+had survived because nobody re-checked a number that looked plausible. The headline fell from 10.7%
+to **9.4%**: the honest figure, from a run that checks itself.
+Two files are level rather than ahead — `samba` is 0.1% behind and `sao` 0.2% ahead — and those are
+the honest rows: `samba` is source code, where LZMA's long matches and this engine's BWT come out
+even, and `sao` is a star catalogue that is mostly incompressible.
+
+The `xz` column is an `xz -9e` equivalent: LZMA2 at preset 9 with `LZMA_PRESET_EXTREME`, 64 MiB
+dictionary, CRC-64, one stream — built against the liblzma already vendored here, because a baseline
+quoted from someone else's table is a baseline nobody can defend.
+
+### The measurement error that nearly cost a revert
+
+The first pass reported `xz -9e` at 2,007,040 bytes for `x-ray` — 47% better than this engine, on one
+file in twelve, which read as a serious regression in the LZMA2 gate. It was not. `/tmp` on this
+machine is a 64 MB tmpfs, it filled during the run, and that stream was a **truncated write**: the
+last two files wrote zero bytes and `x-ray` stopped at 2,007,040. Regenerating it and **decoding the
+stream to check it** gave 4,491,264, which is what the engine's own fallback encoder produces
+(4,489,807 raw) and what the native path beats.
+
+Two lessons, both cheap and both now habit: check free space before a run that writes hundreds of
+megabytes, and never trust a compressed size until the stream has been decoded back and compared.
+The gate was right; the number was not.
+
+## 6b. The one measurement this project cannot currently make
+
+**Answered, 2026-11-07.** Silesia is measured (§6a) and the corpus is one `git clone` away —
+`github.com/MiloszKrajewski/SilesiaCorpus`, which is reachable from this sandbox where
+`sun.aei.polsl.pl` and `mattmahoney.net` are not.
+
+Still missing are Calgary, Canterbury and enwik8. They matter less: Silesia is the set most tables
+quote per-file, and one row that others can check is worth more than four they cannot.
+
+`scripts/silesia.sh` regenerates §6a: it fetches the corpus, checks all twelve file sizes before
+measuring, refuses to start without 500 MB free, and — the part that matters after the error above —
+**decodes every xz stream back and compares it to the original before reporting its size**. Smoke
+tested on two files (`SILESIA_ONLY=dickens,xml`); the full run is about fifteen minutes of
+compression, which is longer than a single sandbox call, so the table in §6a came from the same steps
+run by hand.
+
+## 6c. Audit, 2026-11-08: the compressor had no inflate cap of its own
+
+A code audit of the first-party tree (12,460 lines across `src/` and `include/`) found one issue worth
+fixing immediately and several worth recording.
+
+**The bug: the three container transforms capped inflation at a flat 4 GiB, and the compressor
+allocated up to it.** The decompressor has always had a relative cap — `true_size * 4096 + 1 MiB` —
+but the *compress* side had a constant, so a small crafted input could ask the engine for gigabytes
+before any decision was made. Measured with `getrusage(RUSAGE_CHILDREN)`:
+
+| input | old build | new build |
+|---|---|---|
+| 28,971-byte `.zst` inflating to 900 MB | **failed**, no archive written | **declines**, 170-byte opaque archive, 524 MB peak |
+| 6,419-byte `.zst` inflating to 200 MB | 810 MB peak | 809 MB peak — under the floor, allowed |
+| 38,082-byte `.br` inflating to 200 MB | 810 MB peak | 809 MB peak — under the floor, allowed |
+
+The cap is now `max(input × 4096, 256 MiB)` in all three, which is the decoder's policy with a floor
+so that legitimately compressible content still passes: a 6 KB stream inflating to 200 MB is a tar of
+zeros and must work. A stream past the cap is **declined**, not allocated — the file is stored
+opaquely and the archive stays correct. Peak memory on the 900 MB bomb is ~524 MB rather than the
+4 GiB the old constant permitted, and the remainder is `std::vector` doubling rather than the payload.
+
+**Not fixed, recorded:**
+
+- `brotli_wrap.cpp` and `zstd_wrap.cpp` treat a short `encode` as a failure only implicitly — the
+  re-encode verification catches it and declines the transform, so it fails safe, but the failure is
+  silent in the code rather than reported.
+- `decompressor.cpp` computes `expansion_cap = fh.true_size * 4096 + 1 MiB` on an attacker-supplied
+  64-bit value. An overflow wraps the cap small, which rejects rather than accepts — safe by
+  accident rather than by construction.
+- Six `catch (...)` blocks in `cm_zpaq.cpp`, `gzip_wrap.cpp` and `preflate_wrap.cpp` swallow every
+  exception and continue. All are in vendored-adjacent paths where the fallback is a valid archive,
+  so none is a correctness bug, but none reports either.
+
+## 6d. QLFC: there is no cheap room in it, and the win is already reachable (2026-11-08)
+
+The plan called this "measure the QLFC experiment; ship nothing unless it wins". The measurement says
+something more useful than a yes or no: **libbsc is QLFC**, so "replace libbsc's stage with QLFC"
+is not a change — and the gain the paper promises is in a *different* place from where it looked.
+
+Two shapes, one text (568,309 bytes of this project's docs) and one binary (the 2,851,800-byte
+release), three coders:
+
+| input | bzip2 | ziptastic's BWT path | `--max-ratio` (CM) |
+|---|---|---|---|
+| text, 568,309 | 159,469 | 144,122 (**−9.6%**) | **136,594** (−14.3%) |
+| binary, 2,851,800 | 1,274,346 | 1,152,591 (**−9.6%**) | **909,777** (−28.6%) |
+
+Three things fall out of that:
+
+- **The BWT path is worth exactly 9.6% over plain bzip2 on both shapes**, which is QLFC doing its
+  job against a Huffman-coded BWT. Consistent, and no surprise.
+- **The CM backend already beats the BWT path by 5.2% on text and 21% on binary.** So the thing the
+  paper says would take "weeks not days" — many contexts, logistic mixing, SSE — is *already in this
+  engine* and already winning. The open question was never "can a better model beat QLFC"; it is
+  "why is the CM path only offered at `--max-ratio`".
+- **And it is 6-25x slower.** 10 s against 3 s on text; 53 s against 14 s on the binary. That is the
+  real trade, and it is the one the default already makes correctly.
+
+So the QLFC batch item closes with no code: replacing libbsc's post-coder cannot help, because a
+better post-coder than libbsc's is already available here under a different flag. What is worth doing
+later is not a new backend but a **cheaper trigger for the CM path** — a predictor that decides, per
+input, whether the 6-25x is worth 5-21% — which belongs in the selector work, not in the entropy
+coder.
+
+## 6e. Can a sample price the CM path? Yes — and that is what makes a gate possible (2026-11-08)
+
+The CM backend wins 5-21% over the BWT path and costs 6-25× the time, and it only runs under
+`--max-ratio`. The obvious next question is whether a cheap sample can predict whether the full run
+is worth it. It was measured on three shapes, comparing a 256 KiB sample's CM gain against the
+whole file's:
+
+| shape | full file: CM vs native | 256 KiB sample predicts | error |
+|---|---|---|---|
+| text, 568,309 | 5.2% | 5.7% | +0.5 pp |
+| csv, 2,046,732 | **34.3%** | 27.2% | −7.1 pp |
+| already-compressed, 400,131 | 0.0% | 0.0% | 0.0 pp |
+
+**The sample is directionally sound, and it errs in the safe direction.** It underestimates the big
+win by 7 points rather than inventing one, and it correctly says "no" on already-compressed data,
+which is the case a gate most needs to get right.
+
+This is the opposite of what happened to the LZMA2 sample gate (`FINDINGS.md` §3f), and the reason is
+structural: LZMA2's advantage is a *dictionary* advantage, and a 64 KiB sample has no dictionary, so
+the estimate was blind to exactly the thing being priced. A CM model has no dictionary — its
+advantage is local adaptation, which a sample exercises the same way the full file does. **A sample
+can price a model; it cannot price a window.**
+
+### What the gate would be, and the decision it needs first
+
+The measurement says a gate is buildable: run the CM over 256 KiB, extrapolate, and spend the full
+time only when the sample shows a real gain. What it does *not* settle is which mode the gate serves,
+and that is a product decision rather than a technical one:
+
+- Under `--max-ratio`, a gate that declines is a **ratio loss** — it contradicts the flag's promise,
+  which is "smallest, whatever it costs". Gating here needs a new mode, not a change to that one.
+- Under the default `-9`, CM never runs at all today. A gate would let it run *opportunistically*,
+  which is a genuine feature: the 21% on binary for 53 seconds is worth having when a user asks for it
+  and not otherwise.
+
+So the item is written up with its measurement and left unbuilt, because building it the wrong way
+changes a documented flag's meaning and building it the right way needs a decision about what `-9`
+promises. Recorded rather than guessed.
+
+### The implementation was attempted and reverted (2026-11-08)
+
+The decision came back as "a new flag", so `--cm-auto` was built: sample 128 KiB from the middle,
+encode it both ways, spend the full CM run only when the sample shows ≥2% gain.
+
+**It works from the CLI and fails from the library, and it was reverted because of the second part.**
+
+What the CLI showed, on four shapes:
+
+| shape | `-9` | `--cm-auto` | `--max-ratio` |
+|---|---|---|---|
+| text, 568,309 | 144,122 | **136,594** (fires, 5.2% sample) | 136,594 |
+| csv, 2,046,732 | 231,226 | **151,915** (fires, 27.3% sample) | 151,915 |
+| already-compressed, 400,131 | 400,239 | 400,239 (declines) | 400,239 |
+| binary, 2,851,800 | — | **909,777** (fires, 7.6% sample) | — |
+
+Every one round-trips byte-exact from the CLI, and the gated archive is byte-identical to the one
+`--max-ratio` produces — the gate changes only whether the time is spent, not the answer.
+
+Two defects were found and fixed on the way, and both are worth remembering:
+
+- **The gate was placed after the Tier-1 LZMA2 fallback**, which returns early when it wins. On the
+  CSV the fallback won at 231,226 and the CM pass worth 151,915 never ran. *A gate that runs after an
+  early return is not a gate.*
+- **The header flag recorded that the user asked for CM, not that CM was used.** With `--cm-auto`
+  those differ, and a stream carrying a `CmZpaq` block without `kFlagMaxRatio` is read differently
+  from the way it was written.
+
+**What stopped it** was a library-level test that failed while the CLI passed. Chasing that down
+produced two findings, and the second one is a bug in shipped code that has nothing to do with
+`--cm-auto`.
+
+**First: the test harness was stale, and I nearly reverted a working feature because of it.** The
+repro linked `build/libchce_core.a` from before the source edit, and that archive compressed
+*everything to a stored block* — 1,000,035 bytes of text came back as 1,000,143. Rebuilt, the same
+repro gave 433. This is the trap `BUILD.md` already documents (depfiles stripped, header and source
+changes do not trigger rebuilds) and it cost an hour and a wrong revert. **Rebuild the library before
+believing a library-level failure.**
+
+**Second, and this is the real find: the whole-stream CM block writes the wrong sizes when a Layer 0
+transform has fired.**
+
+```c
+cfh.original_size = input.size();   // should be data.size()
+cfh.true_size     = input.size();
+```
+
+`data` is the post-transform stream and `input` is what the user handed over. With a transform in play
+those differ, and the archive's header then disagrees with its payload: reading it fails with
+*"declared size does not match payload"*. The LZMA2 fallback next door has always written
+`original_size = data.size()` and `true_size = original_size`, which is why the bug never showed
+there. It is latent in `--max-ratio` today — it needs a case where a transform fires *and* the CM
+block wins, which the corpus tried so far does not produce — and it is fatal in `--cm-auto`, where the
+gate changes which path wins.
+
+Fixed, with the sizes written the way the LZMA2 path writes them.
+
+**The fixture exists now.** A numeric CSV with a float column, compressed with `--max-ratio --no-bwt`,
+makes the CM block win *and* leaves the numeric layer set — `layers 0x01`, one block, `CM_ZPAQ`,
+`original_size` 715,924 against `true_size` 1,348,793. That is the shape the two lines needed, and
+`unit.zpaq` now builds it and asserts both the block mode and the header fields, because without the
+mode assertion the test passes on the block path where the CM header is never written — which is
+exactly how the first version of it proved nothing.
+
+**What the test does not do is fail when the bug is put back**, and that is worth stating rather than
+glossing: reintroducing `original_size = input.size()` and rebuilding left all three cases green, and
+a standalone probe of the same fixture reported the *correct* sizes with that line in place. Either
+there is a second header path that the fixture reaches, or the edit and the built object were not the
+same code — the depfile-stripped rebuild trap, which bit this session twice. The fix is right by
+construction and by the CLI evidence (the `--cm-auto` archive read as *"declared size does not match
+payload"* before it and reads clean after), but **the regression test is not yet proven to catch the
+regression**, and that is `TODO(audit-2026-11-08)` now — not "write a fixture", which is done, but
+"prove the fixture fails on the old code".
+
+`--cm-auto` itself stays unbuilt for now: the gate's logic is sound and its measurements are above,
+but it needs that test before it can be shown to produce a readable archive in every case, and a flag
+that cannot be shown that is not a flag to ship.
+
+## 6f. ALP, and the rest of the 2026-11-08 library list (2026-11-08)
+
+The list was mostly libraries already vendored or already measured — lz4, zstd, brotli, zpaq,
+zpaqfranz, 7-Zip-zstd, PeaZip, CompactGUI, awesome-compopt. Three were new enough to be worth a look,
+and one of them was worth measuring.
+
+**ALP (`spiraldb/alp`) is the one that could have mattered**, because this engine has a numeric
+transform for integers and a known-weak story for floats (`NUMERIC_RESIDUAL_EXPERIMENT.md`: XOR and
+Gorilla both lose on smooth data). ALP's idea is different from both: detect that a double is really
+a decimal with `e` digits, store `round(v × 10^e)` as an integer, and let the integer coder do the
+work. Measured on three 200,000-value float64 arrays, 1,600,000 bytes each:
+
+| shape | raw | ALP-style | XOR-with-previous |
+|---|---|---|---|
+| sensor readings, 2 decimal places | 281,956 | **279,466 (−0.9%)** | 390,072 (+38%) |
+| smooth sinusoid | **911,002** | n/a (no decimal fit) | 885,646 (−2.8%) |
+| noisy | **1,494,630** | n/a | 1,509,130 (+1.0%) |
+
+**−0.9% on the exact shape ALP exists for.** The reason is the same one that made the JBIG2 bound
+lose: the backends here already model the byte structure of a float64 — the exponent bytes are nearly
+constant and the mantissa carries the entropy — so a transform that separates them is largely telling
+the coder something it has already worked out. ALP's published 2-4x figures are against *float
+baselines that do no modelling*, not against a BWT/PPMd backend.
+
+XOR earns 2.8% on the smooth shape, which is better than the −0.6% this project measured for XOR in
+`NUMERIC_RESIDUAL_EXPERIMENT.md` — different fixture, same conclusion: real but small, and not worth a
+transform's complexity or its failure modes.
+
+So: no float transform. Recorded rather than built, and the record now covers ALP as well as XOR and
+Gorilla.
+
+**The other two that were new:** `phiresky/sqlite-zstd` compresses SQLite pages with zstd and a
+dictionary; this engine's SQLite transform reorders pages instead, and the two are complementary
+rather than competing — worth a look if the page-reorder ever stops paying. `borgbackup/borg` is a
+system, not a codec: chunking plus dedup, which is the `dedup` transform's job done at file-tree
+scale. Nothing to vendor from either.
+
+**The rest** — `oxiarc`, `draco`, `meshoptimizer`, `cydec`, `bundle`, `DeveMultiCompressor` — are
+3D geometry, an archive library in another language, or wrappers. None is a byte-exact coder that
+would beat what is already here, and none was measured further.
+
+## 6g. The accept/reject trial measured itself (2026-11-17)
+
+**The bug (ziptastic#22).** `ziptastic -9` segfaulted on *every* valid 16-bit PCM WAV of 256
+bytes or more, mono or stereo. It was not in the transform: `wav_pack()`/`wav_unpack()` round-trip
+every shape `tests/unit/test_wav.cpp` covered, and they still do. It was in the gate that decides
+whether to keep the transform.
+
+The wav stage asks `base64_pays()` — the generic "is this worth doing" trial — and that trial calls
+`actual_cost()`, which runs the whole pipeline. `actual_cost()` switched off `base64` to stop itself
+recursing, but not `wav`. So the trial contained itself:
+
+```
+base64_pays() -> actual_cost() -> compress() -> wav stage -> base64_pays() -> ...
+```
+
+with no base case. Depth 1, 2, 3 … measured with a counter in `actual_cost()` before the fix; the
+stack runs out, and the death is a SIGSEGV inside `compress()`, which is why it read as a crash in
+the transform. Below 256 bytes the trial's own floor (`pn < 256 || on < 256`) declined before
+reaching `actual_cost()`, which is exactly the boundary the issue reported: 64 B and 244 B fine,
+2,044 B dead.
+
+**Why the corpus called it healthy.** A WAV truncated mid-stream never reaches the trial — `parse()`
+rejects it, the transform does not run, the file compresses as opaque bytes and exits 0. A corpus of
+malformed samples is therefore a corpus of files this bug cannot touch.
+
+**What it was worth, on the issue's own fixtures** (synthetic sine, so these price the bug, not
+real music):
+
+| fixture | archive, stage on | archive, `--no-wav` | round trip |
+|---|---|---|---|
+| 1,000 mono frames, 2,044 B (the reproducer) | **1,000** | 1,355 | byte-exact |
+| 1,000 stereo frames, 4,044 B | **1,605** | 1,877 | byte-exact |
+| 8,000 mono frames, 16,044 B | **3,276** | 4,975 | byte-exact |
+
+Before the fix all three died with SIGSEGV, so the "stage on" column did not exist.
+
+**The fix, and the gate behind it.** `trial_options()` now switches off every stage that gates on
+`actual_cost()` — `base64` *and* `wav` — and `actual_cost()` returns "no opinion" (declined by both
+callers) instead of recursing if a trial is ever entered from inside another. That second half is
+observable: `trial_reentries()` counts it and `tests/unit/test_wav.cpp` asserts it stays at zero.
+The list cannot be derived, so the gate is the test, not the comment. `scripts/regression-corpus.sh`
+now carries a *valid* WAV as well — exit 0, byte-exact, and strictly smaller than `--no-wav` —
+because every malformed fixture in that file passes whether or not this bug exists.
+
+## 6h. What the ratio ceiling costs (2026-11-17)
+
+The engine's open question was what the *last* few percent cost. Measured on one input, on this
+machine (§0: two cores, so every time below is one thread).
+
+**Input:** the first 256 KiB of a 2 MiB concatenation of 317 first-party source and doc files
+(`src/`, `include/`, `docs/`, `tests/unit/`, `config/`), prose and C++ in the proportion the tree
+actually has. The 2 MiB file is md5 `3cc0fa929d14f257b1ab92529f262136`.
+
+| tool | bytes | of 262,144 | time | throughput |
+|---|---|---|---|---|
+| `zstd -19` | 88,984 | 33.9% | 0.45 s | 568 KB/s |
+| `7z` (LZMA2) | 87,026 | 33.2% | 0.38 s | 678 KB/s |
+| `xz -9` | 87,000 | 33.2% | 0.46 s | 557 KB/s |
+| **`ziptastic -9`** | **72,625** | **27.7%** | 1.24 s | 206 KB/s |
+| `zpaq -m5` (CM) | 68,926 | 26.3% | 4.17 s | 61 KB/s |
+| `paq8px -5` | 59,625 | 22.7% | 207.9 s | **1.2 KB/s** |
+
+What each step of the ceiling costs, relative to the engine on the same bytes:
+
+| step | size | time | note |
+|---|---|---|---|
+| `ziptastic` → `zpaq -m5` | −5.1% | 3.4× | the one that is worth having |
+| `ziptastic` → `paq8px -5` | −17.9% | **168×** | 1.2 KB/s |
+
+At 1.2 KB/s, 2 MiB is about 28 minutes and 1 GB is about nine and a half days. A `paq8px -5` run on
+the full 2 MiB file did not finish inside the sandbox's 280-second command cap, which is consistent
+with the rate above rather than a separate finding.
+
+On the full 2 MiB file, for the tools that fit in a single call:
+
+| tool | bytes | of 2,097,152 | time |
+|---|---|---|---|
+| `zstd -19` | 493,983 | 23.6% | 2.18 s |
+| `7z` (LZMA2) | 481,067 | 22.9% | 2.32 s |
+| `xz -9` | 480,016 | 22.9% | 3.14 s |
+| **`ziptastic -9`** | **446,053** | **21.3%** | 7.05 s |
+| `zpaq -m5` (CM) | 370,695 | 17.7% | 21.85 s |
+
+**The conclusion is not "paq8px is 17.9% better".** It is that the top of the ceiling is unreachable
+by construction: paq8px is GPL-2+ and may never be linked into this engine (`heavenzip`,
+`docs/TOOL_MANIFEST.md`: "never inside ziptastic"). It can only ever be a separate program the user
+supplies, at a rate of about one kilobyte per second. The reachable ceiling is the CM backend the
+engine already has, and it is worth 5.1% for 3.4× the time — which is the trade `--max-ratio` makes.
+
+## 6i. PNG: the model wants the pixels, not the deltas (2026-11-18)
+
+The transform has always compressed the bytes a PNG stores — each row's filter byte and its
+deltas against the row above or the pixel to the left. That is the right input for *deflate*,
+which is why every PNG optimiser optimises it, and it is why §3 recorded that running
+oxipng/optipng before archiving gains **3 bytes on a 66%-smaller PNG**: the transform stores
+pixels, not deflate choices.
+
+Measured on this engine, the lever is the opposite one:
+
+| image | filtered (as stored) | true pixels + filter map | change |
+|---|---|---|---|
+| `docs/shot.png`, 1,280×900 UI screenshot | 60,678 | **44,694** | **−26.3%** |
+| 320×320 photograph as PNG | **65,152** | 97,556 | **+49.7%** |
+
+A context-mixing model predicts a screenshot's rows once the deltas are gone; a photograph's
+deltas are already small and are what compresses. Both directions, by a lot — so the form is
+**chosen per file by the 256 KiB trial**, never by a constant, and the stage keeps whichever
+the trial prefers.
+
+End to end, `-9`, both binaries interleaved on the same machine state, three runs each
+(§0: this box has no stable clock, so the spread is stated):
+
+| image | 1.4.3 | now | size |
+|---|---|---|---|
+| `docs/shot.png` | 67,217 — 20.5, 20.5, 23.7 s | **51,822** — 18.8, 19.1, 19.9 s | **−22.9%** |
+| photograph | 70,322 — 1.4 s | 70,308 — 2.0 s | −0.02% |
+
+**The ratio costs no time at all, and on the screenshot it is slightly faster** — every one of
+the three new runs beat every one of the three old ones, which is the only claim a box with
+this much variance supports. A single pair of runs read 18.3 vs 17.4 s and a later pair read
+20.9 s; the honest statement is the interleaved one. The likely reason is that unfiltered rows
+are long runs, so the parse has less to search — but that is inference, and the *measurement*
+is only that the new build is never slower here.
+
+The photographic row of §2 stands unchanged at −7.0%/−10.6%, because the trial keeps the
+filtered form for photographs; the screenshot is where the new number comes from.
+
+**The trial's sample size was a repeat of §3g's lesson, and the fix was the one this file's
+sibling prescribed.** Coding both 3.4 MB payloads in full cost 25 s. A 256 KiB sample of the
+whole payload resolved it correctly for 29.2 s. A 64 KiB sample of the whole payload **chose
+wrong** — the same ~6% error §3g documents for a 64 KiB sample on the base64 gate.
+
+`PRECOMP_GATE.md` says the better gate would "compare the actual chosen encoding … on a
+sample". Doing that literally — comparing the two **pixel streams**, not the two payloads, and
+sampling 64 KiB from inside them (`png_pixel_span`) — resolves the decision in 17.4 s, which is
+below the 1.4.3 baseline. The lesson is the location, not the size: a sample of the region that
+actually differs is worth four times a sample of the whole.
+
+**A four-class corpus, measured 2026-11-18 with the shipped 1.4.4 binary** (one screenshot, one
+photograph, one palette image, one line drawing, one real PDF with an embedded JPEG): the default
+beats storing by −44% / −16% / −18% / −79% / −28% respectively, so the −22.9% in this section is
+the *screenshot* figure and not a general one. The PNG layer fires on all four classes; only the
+size of its win varies. `--png-fast` fires on **one** of the four — where unfiltering buys little
+the Tier-0 guard keeps the stored form instead, which is correct and means the fast form is for
+flat-colour images. `PNG_MEASUREMENT.md` has the table.
+
+**The frontier now has a middle, shipped 2026-11-18.** `--png-fast` compresses the pixels inside
+the transform with zstd instead of handing them to the block loop: **62,618 bytes in 1.3 s** on
+`screenshot.png`, against 51,822 in 17.6 s for the CM default and 86,626 in 0.5 s for
+`--no-precomp`. That is 7% smaller than 1.4.3 in a fourteenth of its time. The obvious design —
+re-deflate the file's own bytes — measures as worthless (91,773 against a 92,822-byte file), so
+the transform unfilters first and compresses *that*. Three payload forms now exist and all three
+round-trip byte-exact. `PNG_MEASUREMENT.md` has the tables.
+
+## 7. What is open
+
+- ~~Re-measure PNG and GIF on real content.~~ **DONE** — see the note under the transform table.
+  Every figure in this document is now from real content.
+- ~~The PNG gate accepts payloads that encode worse on small files.~~ **FIXED** — under 2 MiB the
+  encoder compares against the untransformed stream and keeps the smaller. The class of bug is
+  general: every gate compares coded payload sizes at its own stage, and none of them could see
+  the block framing that is added afterwards.
+- **`precomp_helps` accuracy.** Its structural rule (payload ≥ 2× original → accept) can take a
+  payload that encodes worse; a Tier-0 guard now catches that case, but the rule itself is still
+  a predictor.
+- **The base64 gate costs ~2.7× compress time** where it runs.
+- **Speed.** 0.3–0.6 MB/s is the trade for the ratio. **Attacked for PNG on 2026-11-18** —
+  `--png-fast` is 13× faster for 21% more bytes (§6i) — and not for anything else.
+- **The 99 MB ISO and 128 MB raw image** are unmeasured: ~8–10 minutes each at these speeds.
+- **LZ4 across liblz4 versions — answered from the source 2026-11-18.** 1.11.0 exists (released
+  2026-11-04) and differs from 1.10.1 by **one behavioural line**: `ctxIndex` now clamps a stale
+  table entry when `dictSmall` is set, which happens only for **sub-64 KiB blocks through a re-used
+  streaming context**. Everything else is byte-identical, so the boundary is per frame, not per
+  version — which is exactly what re-encode-and-compare gives us. Detail in `LZ4_MEASURED.md`.
+- **LZ4 salvage — built 2026-11-18**, `kLayer3Lz4`, layer 3 bit 4. All four of `FORMAT.md`'s
+  conditions for allocating a free bit now hold: the win is **+41.2%** on a 686 KB tar of this
+  repository's own documentation (159,668 against 271,350 with the transform off), byte-exact. The
+  first measurement was a formula-generated fixture, which the policy says does not count, and it
+  was re-measured rather than argued. **What remains unmeasured is the hit rate** — how often a
+  `.lz4` in the wild comes from the liblz4 this build links — which no fixture can answer. Worth **+33.1%** on a text
+  frame and **0.0%** on one written by a different liblz4: the matcher changed between 1.9.4
+  and 1.10.1, so the transform declines those. The version caveat was the whole story, not a
+  footnote — the earlier 16/16 was one library on both sides. `LZ4_MEASURED.md` has both
+  numbers and what would widen the range.
+- ~~The block offset table (Phase 3b).~~ **DONE** — format v8, section 3c. What it does not do is
+  make archive mode addressable: that mode is sequential by construction, and `--block` on one is
+  a refusal by design.
+- ~~Nothing has been built on the offset table except the reader.~~ **Now also `decode_blocks`,
+  `decode_blocks_parallel`, `--block` and `--from-block`.** The hatch pipeline is still heavenzip's
+  and the shrinking extraction is HatchZip's.
+- **Index-driven parallel decode is not a speed win in memory** (section 3c): 4–6%, and the digest
+  check accounts for it. The gain the table actually offers is I/O — a reader that seeks — and this
+  project's API takes a whole buffer, so that gain is unmeasurable here and untested.
+- ~~**`decompress()` checks block digests after the join, on one thread.**~~ **Done** — the check
+  now runs in the worker that decoded the block. Unmeasurable here (±40 ms spread), kept because it
+  cannot be slower.
+- **This machine cannot resolve a few percent.** Two cores, ±40 ms per run on an 800 ms decode.
+  Any Phase 3 claim under ~5% needs a quieter box or many more runs before it means anything.
+- **The 1.7% table cost on a single-block small archive** (section 3c) is unaddressed.
+- ~~A ZIP inside a plain tar is not reached.~~ **DONE, and it was never the tar** — see §3b.
+- ~~`precomp_helps`' 2× rule decides alone.~~ **Stated.** The rule is a predictor; under 2 MiB the
+  Tier-0 guard catches a bad decision, above it nothing does, and the code now says exactly that
+  where the line is. Making it measure means a full encode of both streams at any size.
+- ~~The `layers3` free bits need a policy.~~ **DONE** — `FORMAT.md`, "Policy: who may take a free
+  layer bit": four conditions for allocating one, and the four things that force a version bump
+  instead.
+- ~~A regression corpus.~~ **DONE** — `scripts/regression-corpus.sh`, run by `ctest` as
+  `integration.corpus`: the streamed ZIP, the tar holding it, the small PNG (asserting the
+  transform cannot make it bigger) and the near-duplicate tree, each asserting the property that
+  was broken.
+
+## 8. How to read the rest of this directory
+
+The per-item documents are the working record: the measurement, the attempt, the bug, the
+correction. Several were revised in place and say so at the bottom. If you want the current
+number for anything, it is in this document. If you want to know *how* a number was arrived at,
+or what went wrong on the way, the per-item document has it.
