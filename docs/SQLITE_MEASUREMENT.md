@@ -58,3 +58,42 @@ no risk to the payload's own bytes.
 - `src/engine/compressor.cpp`, `decompressor.cpp` — stage and inverse
 - `src/engine/compressor.hpp`, `src/main.cpp` — `opt.sqlite`, `--no-sqlite`
 - `tests/unit/test_sqlite.cpp` — 6 cases with a synthetic database
+
+## Column filters: the opportunity is large and NOT YET PROVEN (2026-11-18)
+
+The ClickHouse survey proposed a column-aware encoding under the codec, and Blosc2 (BSD) ships
+exactly that as two filters — `shuffle` (transpose by element width) and `bytedelta` (delta within
+each byte-channel). `scripts/column_filter_probe.py` measures both against plain zstd on a real
+database's integer columns.
+
+### The result, and why it does not count yet
+
+| database | integer payload | zstd raw | +shuffle | +shuffle+bytedelta |
+|---|---|---|---|---|
+| `multi_big.db` (10 columns, 200,000 values) | 800,000 B | 48,306 | 993 | **411** |
+| `multi_small.db` (8 columns, 9,600 values) | 38,400 B | 2,449 | 459 | **159** |
+
+A 99% saving. **It does not count**, because both fixtures are formula-generated: sequential `id`
+values and a computed `val`. Formula data makes any filter look miraculous — it is the same trap that
+once made BMP read −99% and mean −37%.
+
+I searched this environment for a real SQLite database to measure instead and found none: the Debian
+`avahi/service-types.db` is not a SQLite file (`file is not a database`), and the one from lexora's
+own test suite has **8 bytes** of integer data in total.
+
+### What would settle it
+
+One real database with real integer columns — ids that are not sequential, timestamps, prices,
+foreign keys — run through:
+
+```bash
+scripts/column_filter_probe.py /path/to/real.db
+```
+
+If the filtered column is not clearly smaller than the raw one, the transform is not worth its
+complexity and its byte-exact inverse. If it is, the design is: shuffle + bytedelta per column,
+stored as a new stage inside the existing SQLite transform, with the filters re-derived from
+Blosc2's BSD-2-Clause implementations and the inverse proven byte-exact on the corpus.
+
+**Until that number exists, this transform is unstarted by choice, not by oversight.** The 27.8%
+page-grouping result in this document stands on its own and is unaffected.
