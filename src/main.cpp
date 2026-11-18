@@ -71,6 +71,8 @@ void print_usage(FILE* f) {
       "      --no-numeric     disable the integer CSV/TSV column transform\n"
       "      --no-base64      disable the base64 decode transform\n"
       "      --no-wav         disable the WAV per-channel delta transform\n"
+      "      --no-jpeg        disable the JPEG (brunsli) transform\n"
+      "      --no-gif         disable the GIF (LZW decode) transform\n"
       "      --no-sqlite      disable the SQLite page-grouping transform\n"
       "      --no-ecc         disable CD sector parity regeneration\n"
       "      --no-bmp         disable the BMP colour-plane transform\n"
@@ -340,6 +342,10 @@ int parse_args(int argc, char** argv, Options& o) {
       o.comp.sqlite = false;
     } else if (a == "--no-wav") {
       o.comp.wav = false;
+    } else if (a == "--no-jpeg") {
+      o.comp.jpeg = false;
+    } else if (a == "--no-gif") {
+      o.comp.gif = false;
     } else if (a == "--no-base64") {
       o.comp.base64 = false;
     } else if (a == "--no-numeric") {

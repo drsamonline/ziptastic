@@ -9,6 +9,16 @@ short version: what changed, and what it cost.
 
 ---
 
+## Unreleased
+
+### Added
+
+- **`--no-jpeg` and `--no-gif`.** Every other transform had an off switch and these two did not,
+  so their contribution could not be measured and a caller could not exclude them. Found while
+  trying to measure what brunsli does inside a PDF — where it turns out to be worth **+23.1%**
+  (17,594 vs 22,881 with it off). `test_cli.sh` now asserts that every transform in the chain has
+  one.
+
 ## 1.4.4 — 2026-11-18
 
 ### Added
