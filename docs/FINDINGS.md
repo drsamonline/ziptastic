@@ -69,7 +69,7 @@ Every figure below is post-compression: how much smaller the *archive* got.
 | base64 one level down | layers2 0x02 | −19.7% | `.json.gz` with a JPEG |
 | JPEG one level down | layers2 0x04 | see section 4 | |
 | GIF one level down | layers2 0x08 | see section 4 | |
-| PNG image data inflated | layers2 0x10 | **−7.0% / −10.6%** | photographic PNGs (re-measured) |
+| PNG image data inflated | layers2 0x10 | **−7.0% / −10.6%** photographic · **−22.9%** screenshot | photographic PNGs; the screenshot figure is §6i |
 | **CD sector parity (ECM)** | layers2 0x20 | **−28.2%** | real Mode 2 Form 1 image |
 | BMP colour planes + row delta | layers2 0x40 | **−36.9% / −48.3%** | photographic BMPs |
 | PNG one level down | layers2 0x80 | **−0.3%, usually declines** | ZIP of photographic PNGs |
@@ -920,7 +920,7 @@ better. That is a *file* result, not a container one.
 | base64 of single-line structured text | **−6.3%** (a loss) | the gate declines it |
 | near-duplicate delta stage | not needed | the match finder already handles it |
 | lrzip/rzip for the srep step | nothing to add | `dedup` is within 0.1% of the ideal |
-| oxipng/optipng before archiving | 3 bytes on a 66%-smaller PNG | the transform stores pixels, not deflate choices |
+| oxipng/optipng before archiving | 3 bytes on a 66%-smaller PNG | the transform stores pixels, not deflate choices — and that is why their lever (a smaller *deflate* stream) is not ours; §6i found the one that is |
 | moving the precomp gate after the nested stages | identical output | the gate was never the blocker |
 | decoding from the offset table instead of walking, in memory | 810–817 vs 800–842 ms, inside a ±40 ms spread | the header scan it removes is 10 KB; nothing to measure |
 | moving the block digest into the decode workers | 809.9 vs 817.3 ms median | strictly less serial work, and smaller than this machine's noise |
@@ -1328,6 +1328,47 @@ by construction: paq8px is GPL-2+ and may never be linked into this engine (`hea
 `docs/TOOL_MANIFEST.md`: "never inside ziptastic"). It can only ever be a separate program the user
 supplies, at a rate of about one kilobyte per second. The reachable ceiling is the CM backend the
 engine already has, and it is worth 5.1% for 3.4× the time — which is the trade `--max-ratio` makes.
+
+## 6i. PNG: the model wants the pixels, not the deltas (2026-11-18)
+
+The transform has always compressed the bytes a PNG stores — each row's filter byte and its
+deltas against the row above or the pixel to the left. That is the right input for *deflate*,
+which is why every PNG optimiser optimises it, and it is why §3 recorded that running
+oxipng/optipng before archiving gains **3 bytes on a 66%-smaller PNG**: the transform stores
+pixels, not deflate choices.
+
+Measured on this engine, the lever is the opposite one:
+
+| image | filtered (as stored) | true pixels + filter map | change |
+|---|---|---|---|
+| `docs/shot.png`, 1,280×900 UI screenshot | 60,678 | **44,694** | **−26.3%** |
+| 320×320 photograph as PNG | **65,152** | 97,556 | **+49.7%** |
+
+A context-mixing model predicts a screenshot's rows once the deltas are gone; a photograph's
+deltas are already small and are what compresses. Both directions, by a lot — so the form is
+**chosen per file by the 256 KiB trial**, never by a constant, and the stage keeps whichever
+the trial prefers.
+
+End to end, `-9`:
+
+| image | before | after | change | time |
+|---|---|---|---|---|
+| `docs/shot.png` | 67,217 | **51,822** | **−22.9%** | 18.7 → 29.8 s |
+| photograph | 70,322 | 70,308 | −0.02% | 1.4 → 2.1 s |
+
+The photographic row of §2 stands unchanged at −7.0%/−10.6%, because the trial keeps the
+filtered form for photographs; the screenshot is where the new number comes from.
+
+**The trial's sample size was a repeat of §3g's lesson.** Coding both 3.4 MB payloads in full
+cost 25 s, so a sample budget was passed instead. 64 KiB was tried first and **chose wrong** —
+it picked the filtered form on the screenshot — which is the same ~6% error §3g already
+documents for a 64 KiB sample on the base64 gate, and the same failure mode. 256 KiB resolves
+it and costs 15 s less than the full encode: 44.1 → 29.2 s at identical output. The floor is
+recorded so it is not shrunk again without measuring.
+
+**What is still missing**: no point on the measured frontier is fast *and* small — the only
+sub-second option (`--no-precomp`) is 67% larger, and the only small one is 30 s. Closing that
+needs a fast deflate re-encode of the IDAT, which is a second code path.
 
 ## 7. What is open
 
