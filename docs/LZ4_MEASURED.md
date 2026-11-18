@@ -190,3 +190,35 @@ Only the narrow case declines, and it declines safely — the file is stored unc
 1.11.0 and re-run the corpus, then record how many frames changed. If none do, the bump is free and
 the transform covers both generations. If some do, the count says whether the old generation is worth
 a second matcher — and that is the sampling question, answered by files rather than by argument.
+
+### Measured: 1.10.1 and 1.11.0 produce identical frames on everything tried
+
+The source diff above says the change *can* matter. Compiling both libraries and compressing the
+same inputs settles whether it *does* on our data. Both versions were built from their own `lib/`
+trees and driven through the same probe — one-shot `LZ4F_compressFrame` (4 MB blocks, linked) and a
+**streaming** pass with **16 KiB chunks**, which is the path that reaches `dictSmall` (small block,
+re-used context).
+
+| input | bytes | one-shot 1.10.1 | one-shot 1.11.0 | streaming 1.10.1 | streaming 1.11.0 |
+|---|---|---|---|---|---|
+| ui.png | 92,822 | 88,852 | **88,852** | 88,930 | **88,930** |
+| photo.pdf | 24,387 | 23,534 | **23,534** | 23,674 | **23,674** |
+| alice.txt | 151,884 | 84,928 | **84,928** | 84,945 | **84,945** |
+| periodic4k.bin | 32,768 | 169 | **169** | 161 | **161** |
+| shift.bin | 41,197 | 1,979 | **1,979** | 1,971 | **1,971** |
+| zeros_then_text.bin | 80,000 | 371 | **371** | 376 | **376** |
+| rand_then_repeat.bin | 185,600 | 1,024 | **1,024** | 1,042 | **1,042** |
+
+Byte-identical in **14 of 14** cells — same size and same FNV-1a hash of the frame. The last four
+inputs were built specifically to create the stale table entries the change is about (periodic
+motifs, shifting runs, zeros then text, random then repetitive).
+
+**What this does and does not prove.** It shows the change is unreachable from these inputs, not that
+it is unreachable from all inputs: `prevIndex < startIndex` needs a stale slot that also survives the
+`dictSmall` range check further down, and when it does not, the candidate is rejected either way.
+So the honest position is: **the bump is free on everything measured, and the residual risk is a
+narrow corner no fixture here reached.**
+
+That is enough to recommend the bump, and not enough to claim the versions are equivalent. If the
+vendored library moves to 1.11.0, the corpus gate is what proves it — the transform verifies every
+frame it rewrites, so a divergence would decline rather than corrupt.
