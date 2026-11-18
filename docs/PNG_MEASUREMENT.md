@@ -347,3 +347,32 @@ than `--no-precomp`; it simply declines.
 
 So the honest summary of the fast form: it is for flat-colour images, where unfiltering plus a
 fast deflate beats the file's own DEFLATE. Everywhere else the engine stores, and did before.
+
+## zopfli on the fast form: measured and rejected (2026-11-18)
+
+The plan said a zopfli-class encoder would "move the 62,618 / 1.3 s point left on bytes without
+giving back the time". Measured, with the vault's own `zopfli-master` built against the same
+unfiltered pixel stream the fast form uses:
+
+| encoder | bytes | time | throughput |
+|---|---|---|---|
+| zopfli, 1 iteration | 64,905 | **16.8 s** | 0.21 MB/s |
+| zopfli, 5 iterations (256 KiB sample) | 4,278 | 2.6 s | 0.10 MB/s |
+| zopfli, 15 iterations (256 KiB sample) | 4,276 | 5.6 s | 0.05 MB/s |
+| **zstd -9, the fast form as shipped** | **65,856 for the whole payload** | **1.3 s** | 2.6 MB/s |
+
+Two things kill it:
+
+1. **zopfli's 64,905 is the pixel stream alone.** The entire zstd payload — pixels, filter map,
+   preflate diff and skeleton — is 65,856. There is no size to win.
+2. **It is 13× slower.** 16.8 s is the CM default's own wall-clock, with a 25% larger result. So
+   zopfli is strictly dominated by *both* points on the frontier: slower than the fast form and
+   bigger than the default.
+
+**Iteration count is not the lever either.** On a 256 KiB sample, 1 → 15 iterations buys **0.5%**
+for 3.7× the time, so no amount of waiting closes a 20% gap. That is worth knowing before anyone
+tries the same thing with more patience.
+
+This is the second time measuring before building has removed a plan item rather than implemented
+one — the first was the original S1, whose obvious version (re-deflate the file's own bytes)
+reproduced the file. Both are recorded where the next person will read them.
