@@ -1,3 +1,10 @@
+> **Stale as of 2026-11-18.** This document was written 2026-11-01 and describes format v5
+> and a heavenzip that did not exist yet. The current state lives in `FINDINGS.md` (numbers and
+> decisions) and in the audit repo's `docs/handoff-2026-11-18.md` (fleet state and next steps).
+> Read those first; this file is kept for the reasoning it records, not for its status table.
+> The three facts most likely to mislead were corrected below on 2026-11-18; everything else
+> here should be treated as a 2026-11-01 snapshot.
+
 **Read `docs/FINDINGS.md` first.** It is the single authoritative record — current numbers,
 the audit, the rejected ideas and what is open. This handoff is the working document; where the
 two disagree, `FINDINGS.md` wins.
@@ -17,7 +24,8 @@ Three MIT-or-source-available repos by Dr Sohil Momin, all one author:
   **Layer 0**: parse the container, transform it into something more compressible,
   store a recipe that reproduces the original bytes exactly.
 - **heavenzip** — orchestrator that spawns prebuilt binaries as separate processes,
-  so it can drive GPL tools ziptastic legally cannot link. Still an idea; docs only.
+  so it can drive GPL tools ziptastic legally cannot link. **Shipped** as of 2026-11-18: 10 binaries, 18 profiles, `bmp`/`audio` routes, a `vendor-sync` path; see its own
+  `docs/BENCHMARKS.md` and `docs/PROFILES.md`.
 - **lexora** — conservative text canonicalisation + compression, Python, PolyForm
   Noncommercial. Same idea applied to text.
 
@@ -28,8 +36,8 @@ higher licence ceiling). That difference is why both exist.
 
 | repo | remote HEAD | status |
 |---|---|---|
-| ziptastic | `cd9f2a5` + SQLite | builds clean, **28/28 suites pass**, format **v5** |
-| heavenzip | `88ac3d6` | docs only, no implementation |
+| ziptastic | see the audit handoff | builds clean, **37/37 suites pass**, format **v8**, release **v1.4.3** (linux + windows) |
+| heavenzip | see the audit handoff | 10 binaries, 18 profiles, CI green |
 | lexora | `ad57991` | Phase-1 prototype, 502 tests local |
 
 ziptastic `docs/` holds 20 files. Start with `BENCHMARKS.md`,
