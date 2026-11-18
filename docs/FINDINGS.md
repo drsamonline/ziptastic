@@ -81,9 +81,11 @@ a fixture built to match their own description — `gzip members` on a plain `.g
 level down`, which lives inside a gzip member and therefore depends on the first. `SQLite` looked
 like a third and is not: it fires on multi-kind databases and is worth **27.8%** on a 6.9 MB
 indexed one, four times the −6.3% this table quotes, and nothing at all on a single-B-tree
-database. The table's single figure sits at the bottom of that range. The gzip case is the gate being right: for that file the engine's own
-compression of the `.gz` bytes already reaches what inflating the member would, so the −21.2%
-above is **conditional on the member exposing something the block loop cannot already reach**.
+database. The table's single figure sits at the bottom of that range. The gzip case is the gate being right, and it is **content-specific**: on four `.gz` fixtures the
+transform fires on three (worth 48.5% on a CSV, 16.1% on a PNG, 13.2% on a JPEG) and declines only
+on repetitive XML, where the engine's own compression of the `.gz` bytes already reaches what
+inflating would. So the −21.2% above is conditional on the member exposing something the block loop
+cannot already reach — which it usually does.
 Read every row here as conditional, not as a property of the format.
 
 **These were re-measured on real content on 2026-11-04, and the earlier synthetic figures were
