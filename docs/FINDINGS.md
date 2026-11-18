@@ -955,6 +955,7 @@ better. That is a *file* result, not a container one.
 | base64 of single-line structured text | **−6.3%** (a loss) | the gate declines it |
 | near-duplicate delta stage | not needed | the match finder already handles it |
 | lrzip/rzip for the srep step | nothing to add | `dedup` is within 0.1% of the ideal |
+| zopfli on the PNG fast form | **13× slower than zstd for no size gain** — 64,905 bytes for the pixel stream in 16.8 s against a 65,856-byte whole payload in 1.3 s; and 1→15 iterations buys 0.5% | the fast form already beats a zopfli-class deflate on both axes; §6i |
 | oxipng/optipng before archiving | 3 bytes on a 66%-smaller PNG | the transform stores pixels, not deflate choices — and that is why their lever (a smaller *deflate* stream) is not ours; §6i found the one that is |
 | moving the precomp gate after the nested stages | identical output | the gate was never the blocker |
 | decoding from the offset table instead of walking, in memory | 810–817 vs 800–842 ms, inside a ±40 ms spread | the header scan it removes is 10 KB; nothing to measure |
