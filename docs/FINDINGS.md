@@ -1378,6 +1378,14 @@ sampling 64 KiB from inside them (`png_pixel_span`) — resolves the decision in
 below the 1.4.3 baseline. The lesson is the location, not the size: a sample of the region that
 actually differs is worth four times a sample of the whole.
 
+**A four-class corpus, measured 2026-11-18 with the shipped 1.4.4 binary** (one screenshot, one
+photograph, one palette image, one line drawing, one real PDF with an embedded JPEG): the default
+beats storing by −44% / −16% / −18% / −79% / −28% respectively, so the −22.9% in this section is
+the *screenshot* figure and not a general one. The PNG layer fires on all four classes; only the
+size of its win varies. `--png-fast` fires on **one** of the four — where unfiltering buys little
+the Tier-0 guard keeps the stored form instead, which is correct and means the fast form is for
+flat-colour images. `PNG_MEASUREMENT.md` has the table.
+
 **The frontier now has a middle, shipped 2026-11-18.** `--png-fast` compresses the pixels inside
 the transform with zstd instead of handing them to the block loop: **62,618 bytes in 1.3 s** on
 `screenshot.png`, against 51,822 in 17.6 s for the CM default and 86,626 in 0.5 s for

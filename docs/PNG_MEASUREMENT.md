@@ -313,3 +313,37 @@ The flag is a choice, not a default: a caller who has not asked for speed should
 `png_unpack_fast` and the payload's second flag bit are the whole mechanism; the decode side
 decompresses, refilters with the stored filter bytes, and preflate's diff makes the original
 IDAT exact as before.
+
+## A four-class corpus (2026-11-18)
+
+Every number above was one file. Measured with the **shipped 1.4.4 binary** on four PNG classes
+plus a real PDF with an embedded JPEG:
+
+| file | class | raw | `-9` | `--png-fast` | `--no-precomp` |
+|---|---|---|---|---|---|
+| `ui.png` | 1,280×900 UI screenshot, flat colour | 92,822 | **51,822** (24.4 s) | **62,618** (1.4 s) | 86,626 |
+| `photo.png` | 400×400 photograph, smooth gradients | 116,378 | **97,504** (4.0 s) | 115,774 | 115,774 |
+| `palette.png` | 300×300, colour type 3 (palette) | 16,927 | **13,831** (1.0 s) | 17,035 | 17,035 |
+| `diagram.png` | 900×600 line art, mostly white | 4,491 | **938** (5.1 s) | 2,155 | 2,155 |
+| `photo.pdf` | a real PDF, `/DCTDecode` JPEG inside | 24,387 | **17,594** (0.3 s) | 17,594 | 17,594 |
+
+Two things this settles and one it exposes.
+
+**The headline is class-specific, as suspected.** The default's gain over storing the file is
+−44% on the screenshot, −16% on the photograph, −18% on the palette image, −79% on the small
+diagram, and −28% on the PDF. The −22.9% figure this file has been quoting is the *screenshot*;
+quoting it unqualified was a one-file claim doing the work of a general one.
+
+**The PNG layer fires on all four classes** — `layers2 0x10` in every default-mode archive. The
+transform is not screenshot-only; only the *size* of its win is.
+
+**`--png-fast` fires on one of the four.** On the other three its archive is byte-identical to
+`--no-precomp`, which is the Tier-0 guard at work: the fast form compresses the pixels with zstd
+and hands an already-compressed stream to the block loop, and where unfiltering buys little the
+result is no better than storing the file, so the guard keeps the stored form and the layer flag
+clears. That is correct behaviour — but it means the changelog line "13× faster for 21% more
+bytes" is a *screenshot* statement. On a photograph `--png-fast` is neither faster nor smaller
+than `--no-precomp`; it simply declines.
+
+So the honest summary of the fast form: it is for flat-colour images, where unfiltering plus a
+fast deflate beats the file's own DEFLATE. Everywhere else the engine stores, and did before.
