@@ -121,3 +121,22 @@ payloads and not on container members. The same scan would work for both — JPE
 and GIF is `GIF87a`/`GIF89a`, both far weaker signatures than PNG's eight bytes, so a scan for
 them needs the verify-by-rebuild to do more of the work. That is the next piece, and it is now
 a known shape rather than an open question.
+
+## Not re-measured since the pixel-stream change (2026-11-18)
+
+The transform now hands the model either the file's per-row deltas or its **true pixels**,
+whichever a 256 KiB trial prefers (`FINDINGS.md` §6i). That applies per image inside a nested
+payload too, so the numbers above — measured on the deltas-only form — are a lower bound on
+what this stage can now do, and nobody has re-run them.
+
+Two reasons it matters and two reasons it may not:
+
+- the −79.2% figure above came from **synthetic gradients**, and §5 of `FINDINGS.md` records
+  that the same case is **−0.3%, usually declining** on real photographic PNGs. The gate
+  declines before the pixel form is even built, so on real content the change may be invisible;
+- on a ZIP of *screenshots* — the case where unfiltering is worth 26% — the nested stage
+  should gain, and that has not been measured at all.
+
+The honest state: this file's numbers predate the change and were already known not to
+reproduce on real content. Re-running it needs a ZIP of real screenshots, which the corpus
+does not have.
