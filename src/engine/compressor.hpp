@@ -29,6 +29,11 @@ struct CompressOptions {
   bool coarse = false;         // consult the coarse (SREP-style) index
   bool lzma2_fallback = true;  // Tier-1 guarantee; --no-lzma2 disables it
   bool parse = true;           // Phase 3 optimal parse (rANS candidate)
+  // PNG fast path: compress the image's pixels inside the transform with zstd instead of
+  // handing them to the block loop. Tens of times faster for a few tens of percent more
+  // bytes — the middle of the frontier in docs/PNG_MEASUREMENT.md. Off by default, because
+  // a caller who has not asked for speed should get the ratio.
+  bool png_fast = false;
   // Phase 5 adaptive tables, offered as an extra per-block candidate. The mode
   // selector keeps whichever of static and adaptive is smaller, so enabling it
   // cannot make a block worse.

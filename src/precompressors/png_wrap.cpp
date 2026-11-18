@@ -11,6 +11,7 @@
 #include <utility>
 
 #include <preflate.h>
+#include <zstd.h>
 
 namespace chce {
 namespace {
@@ -197,7 +198,7 @@ bool png_likely(const std::vector<uint8_t>& in) {
 }
 
 // One PNG, at [base, end) of `in`, into its own payload.
-bool unpack_one(const std::vector<uint8_t>& in, size_t base, size_t end, bool unfilter,
+bool unpack_one(const std::vector<uint8_t>& in, size_t base, size_t end, int mode,
                 std::vector<uint8_t>& payload) {
   std::vector<Chunk> chunks;
   if (walk_one(in, base, chunks) != end) return false;
@@ -255,7 +256,7 @@ bool unpack_one(const std::vector<uint8_t>& in, size_t base, size_t end, bool un
   std::vector<uint8_t> pixels;
   std::vector<uint8_t> filters;
   bool did_unfilter = false;
-  if (unfilter) {
+  if (mode >= 1) {
     uint32_t w = 0, h = 0;
     uint8_t depth = 0, colour = 0;
     bool have_ihdr = false;
@@ -278,14 +279,26 @@ bool unpack_one(const std::vector<uint8_t>& in, size_t base, size_t end, bool un
       }
     }
   }
-  const std::vector<unsigned char>& body = did_unfilter ? pixels : inflated;
+  // Fast form: compress the pixels here with zstd, so the block loop has nothing left to do
+  // on them. This is what makes the fast path fast — the loop is the 131 KB/s part.
+  std::vector<uint8_t> packed_pixels;
+  const bool zstd_pixels = did_unfilter && mode == 2;
+  if (zstd_pixels) {
+    packed_pixels.resize(ZSTD_compressBound(pixels.size()));
+    const size_t n = ZSTD_compress(packed_pixels.data(), packed_pixels.size(), pixels.data(),
+                                   pixels.size(), 9);
+    if (ZSTD_isError(n)) return false;
+    packed_pixels.resize(n);
+  }
+  const std::vector<unsigned char>& body =
+      did_unfilter ? (zstd_pixels ? packed_pixels : pixels) : inflated;
 
   payload.clear();
   payload.reserve(body.size() + filters.size() + diff.size() + skeleton.size() + 64);
   payload.push_back(kPayloadMagic0);
   payload.push_back(kPayloadMagic1);
   payload.push_back(kPayloadTag);
-  payload.push_back(did_unfilter ? 1 : 0);
+  payload.push_back(static_cast<uint8_t>((did_unfilter ? 1 : 0) | (zstd_pixels ? 2 : 0)));
   put_varint(payload, chunks.size());
   for (const Chunk& c : chunks) payload.push_back(c.idat ? 1 : 0);
   for (size_t i = 0; i < idat_lens.size(); ++i) {
@@ -378,9 +391,11 @@ bool png_pixel_span(const std::vector<uint8_t>& payload, size_t& offset, size_t&
 bool repack_one(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out) {
   size_t pos = 0;
   bool unfiltered = false;
+  bool zstd_pixels = false;
   if (payload.size() >= 4 && payload[0] == kPayloadMagic0 && payload[1] == kPayloadMagic1 &&
       payload[2] == kPayloadTag) {
     unfiltered = (payload[3] & 1) != 0;
+    zstd_pixels = (payload[3] & 2) != 0;
     pos = 4;
   }
   uint64_t nchunks = 0;
@@ -440,10 +455,22 @@ bool repack_one(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out) 
     std::vector<unsigned char> u(payload.begin() + static_cast<long>(infl_at),
                                 payload.begin() + static_cast<long>(infl_at + infl_len));
     if (unfiltered) {
+      std::vector<uint8_t> pixels;
+      if (zstd_pixels) {
+        // The pixel stream is zstd, so its inflated size is not in the payload: ask the frame.
+        const unsigned long long want = ZSTD_getFrameContentSize(u.data(), u.size());
+        if (want == ZSTD_CONTENTSIZE_ERROR || want == ZSTD_CONTENTSIZE_UNKNOWN) return false;
+        if (want > kPngMaxInflated) return false;
+        pixels.resize(static_cast<size_t>(want));
+        const size_t got = ZSTD_decompress(pixels.data(), pixels.size(), u.data(), u.size());
+        if (ZSTD_isError(got) || got != pixels.size()) return false;
+      } else {
+        pixels.assign(u.begin(), u.end());
+      }
       // Pixels back to the file's own deltas, using the filter byte each row had. The
       // row geometry comes from the skeleton's IHDR, which is the only place it survives.
       std::vector<uint8_t> filtered;
-      if (!refilter_from_skeleton(payload, skel_at, u, filters, filtered)) return false;
+      if (!refilter_from_skeleton(payload, skel_at, pixels, filters, filtered)) return false;
       u = filtered;
     }
     if (!preflate_reencode(raw, d, u)) return false;
@@ -506,18 +533,21 @@ bool repack_one(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out) 
 // precomp recipe), and it is carried verbatim.
 // ---------------------------------------------------------------------------
 
-bool png_unpack_mode(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload, bool unfilter);
+bool png_unpack_mode(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload, int mode);
 
 bool png_unpack(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload) {
-  return png_unpack_mode(in, payload, false);
+  return png_unpack_mode(in, payload, 0);
 }
 
 bool png_unpack_unfiltered(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload) {
-  return png_unpack_mode(in, payload, true);
+  return png_unpack_mode(in, payload, 1);
 }
 
-bool png_unpack_mode(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload,
-                     bool unfilter) {
+bool png_unpack_fast(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload) {
+  return png_unpack_mode(in, payload, 2);
+}
+
+bool png_unpack_mode(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload, int mode) {
   // Scan for the first PNG signature rather than demanding one at offset 0.
   //
   // This is the same move `scan_zip` made for archives inside tar: a container payload puts
@@ -557,7 +587,7 @@ bool png_unpack_mode(const std::vector<uint8_t>& in, std::vector<uint8_t>& paylo
 
   std::vector<std::vector<uint8_t>> per_image(segments.size());
   for (size_t i = 0; i < segments.size(); ++i) {
-    if (!unpack_one(in, segments[i].first, segments[i].second, unfilter, per_image[i])) return false;
+    if (!unpack_one(in, segments[i].first, segments[i].second, mode, per_image[i])) return false;
   }
 
   payload.clear();

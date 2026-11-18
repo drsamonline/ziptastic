@@ -282,3 +282,34 @@ numbers above say where that curve starts.
 
 Not implemented. zlib's numbers are used because zlib is already linked; zopfli and libdeflate
 are in the vault and would need a build target.
+
+## S1 shipped: the fast form (2026-11-18)
+
+`--png-fast` compresses the image's pixels **inside the transform** with zstd, so the block loop
+has nothing left to do on the 3.4 MB that make the default slow. Measured, `-9`, `docs/shot.png`,
+all byte-exact:
+
+| run | bytes | time |
+|---|---|---|
+| `-9` (CM over the pixels) | **51,822** | 17.6 s |
+| **`-9 --png-fast`** | **62,618** | **1.3 s** |
+| `-9 --no-precomp` | 86,626 | 0.5 s |
+| 1.4.3, for reference | 67,217 | ~18–20 s |
+
+**62,618 bytes in 1.3 s**: 7% smaller than 1.4.3 in a fourteenth of the time, 28% smaller than
+`--no-precomp` for 0.8 s more, and 21% larger than the CM default for 13× less time. The
+predicted ≈72 KB was pessimistic — zstd at level 9 beats the zlib-9 measurement this section
+started from.
+
+Three forms now exist, and all three round-trip byte-exact (`test_png`):
+
+| form | payload | what it is |
+|---|---|---|
+| plain | 3,462,638 | the file's own deltas, handed to the block loop |
+| unfiltered | 3,462,640 | true pixels, handed to the block loop |
+| **fast** | **65,856** | true pixels, zstd-compressed inside the transform |
+
+The flag is a choice, not a default: a caller who has not asked for speed should get the ratio.
+`png_unpack_fast` and the payload's second flag bit are the whole mechanism; the decode side
+decompresses, refilters with the stored filter bytes, and preflate's diff makes the original
+IDAT exact as before.

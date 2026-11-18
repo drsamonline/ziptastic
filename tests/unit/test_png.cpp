@@ -522,4 +522,24 @@ TEST(the_unfiltered_mode_is_byte_exact) {
   CHECK_MSG(back == in, "filtered round trip is not byte-exact");
 }
 
+// The fast form: unfiltered pixels compressed with zstd inside the transform, so the block
+// loop has nothing left to do on them. It must be exact like the other two, and it must
+// actually be a different encoding — otherwise the flag would be a no-op that silently costs
+// ratio.
+TEST(the_fast_form_is_byte_exact_and_smaller_than_the_raw_streams) {
+  const auto in = vec(kPng, kPng_len);
+  std::vector<uint8_t> plain_payload, fast_payload, back;
+  CHECK_MSG(png_unpack(in, plain_payload), "the plain form declined a valid PNG");
+  CHECK_MSG(png_unpack_fast(in, fast_payload), "the fast form declined a valid PNG");
+  CHECK_MSG(fast_payload != plain_payload, "the fast form produced the plain payload");
+
+  CHECK_MSG(png_repack(fast_payload, back), "repack rejected a fast payload");
+  CHECK_MSG(back == in, "fast round trip is not byte-exact");
+
+  // The payload carries compressed pixels, so it must be smaller than the raw pixel stream
+  // the plain form carries. If this ever inverts, the fast path is not compressing.
+  CHECK_MSG(fast_payload.size() < plain_payload.size(),
+            "the fast payload is not smaller than the plain one");
+}
+
 TEST_MAIN()

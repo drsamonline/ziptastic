@@ -942,7 +942,18 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
       png_likely(std::vector<uint8_t>(stage_ecc.begin(), stage_ecc.end()))) {
     const std::vector<uint8_t> png_in(stage_ecc.begin(), stage_ecc.end());
     std::vector<uint8_t> payload;
-    if (png_unpack(png_in, payload)) {
+    if (opt.png_fast) {
+      // Asked for speed: one form, pixels compressed inside the transform, no trial. The
+      // block loop then has nothing left to do on the 3.4 MB of pixels that make this slow.
+      if (png_unpack_fast(png_in, payload)) {
+        std::vector<uint8_t> check;
+        if (png_repack(payload, check) && check.size() == stage_ecc.size() &&
+            std::memcmp(check.data(), stage_ecc.data(), stage_ecc.size()) == 0) {
+          png_payload = std::move(payload);
+          png = true;
+        }
+      }
+    } else if (png_unpack(png_in, payload)) {
       // Two forms of the same image: the file's own per-row deltas, and its true pixels.
       // Which one codes smaller is not a property of PNG, it is a property of the content
       // and of this engine — measured at -26.3% on a flat-colour screenshot and +49.7% on
