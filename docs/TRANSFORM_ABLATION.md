@@ -20,7 +20,7 @@ looking for.
 | gzip members inflated | −21.2% / −25.4% | `.xml.gz`, 103 KB → 958 KB XML | **0.0%** | **did not fire** |
 | second container level | −44.8% | `.tar.gz` holding the CSV | **49.7%** | fires |
 | WAV PCM per-channel delta | −16.4% (16-bit) | 2-channel 44.1 kHz sine | **74.3%** | fires; a pure sine is the best case for a delta |
-| SQLite pages by B-tree type | −4.8% / −6.3% | 770 KB db, one table | **0.0%** | **did not fire** |
+| SQLite pages by B-tree type | −4.8% / −6.3% | see below — shape decides | **0.0% to 27.8%** | **settled: fires on multi-kind databases, and is worth 4× the claim** |
 | BMP colour planes + row delta | −36.9% / −48.3% | 400×400 photographic BMP | **22.0%** | fires, smaller |
 | GIF, top level | −44.6% / −48.8% | 400×400, 128-colour | **50.2%** | fires |
 | PNG one level down | −0.3%, usually declines | ZIP of a photographic PNG | **0.0%** | declines, as documented |
@@ -46,10 +46,24 @@ So the −21.2% in §2 is not wrong, it is **conditional**: it holds where infla
 exposes something the engine cannot already reach. On a `.gz` of text it does not, and the gate
 correctly declines.
 
-**The SQLite row did not fire on a one-table database.** §2 measured 295 KB and 3.46 MB databases;
-this fixture is 770 KB with a single table and 30,000 rows. Grouping pages by B-tree type has
-little to group when there is one B-tree, which is the likely reason. Unconfirmed — it needs a
-multi-table database to say whether the row reproduces.
+**The SQLite row was unconfirmed when this document was first written, and is now settled —
+the fixture's shape decides, exactly as `SQLITE_MEASUREMENT.md` implies.** The transform groups
+pages by kind, so a database with one B-tree has nothing to group:
+
+| database | pages | kinds present | archive | `--no-sqlite` | gain |
+|---|---|---|---|---|---|
+| one table, 30,000 rows | 188 | leaf-table only | 69,438 | 69,438 | **0.0%** |
+| 4 tables + 8 indexes, 397 KB | 96 | all four | 22,548 | 22,548 | **0.0%** |
+| 5 tables + 10 indexes, 6.9 MB | 1,685 | all four | **326,723** | 452,223 | **27.8%** |
+
+So the row reproduces, and on a realistic indexed database it is **worth four times the −6.3%
+§2 quotes** (27.8% against 6.3%). The small multi-kind database still declines, which is
+consistent with §2's own smallest figure being only −4.8% at 295 KB: below a few hundred pages
+the reordering does not pay for its permutation, and the gate is right to decline.
+
+The honest summary: the transform is worth **nothing** on a one-kind database and **a quarter of
+the file** on a large indexed one. §2's single number sits at the bottom of that range and should
+not be read as the general case.
 
 ## What this does not settle
 
