@@ -1349,22 +1349,30 @@ deltas are already small and are what compresses. Both directions, by a lot — 
 **chosen per file by the 256 KiB trial**, never by a constant, and the stage keeps whichever
 the trial prefers.
 
-End to end, `-9`:
+End to end, `-9`, back to back on the same machine state:
 
-| image | before | after | change | time |
+| image | 1.4.3 | now | change | time |
 |---|---|---|---|---|
-| `docs/shot.png` | 67,217 | **51,822** | **−22.9%** | 18.7 → 29.8 s |
-| photograph | 70,322 | 70,308 | −0.02% | 1.4 → 2.1 s |
+| `docs/shot.png` | 67,217 in 18.3 s | **51,822 in 17.4 s** | **−22.9%** | **4% faster** |
+| photograph | 70,322 in 1.4 s | 70,308 in 2.0 s | −0.02% | +0.6 s |
+
+**The ratio costs nothing in time, and on the screenshot it comes with a small speed gain** —
+the unfiltered stream has long runs, so the parse has less to search. That was not the plan;
+it is what the measurement said, twice per binary.
 
 The photographic row of §2 stands unchanged at −7.0%/−10.6%, because the trial keeps the
 filtered form for photographs; the screenshot is where the new number comes from.
 
-**The trial's sample size was a repeat of §3g's lesson.** Coding both 3.4 MB payloads in full
-cost 25 s, so a sample budget was passed instead. 64 KiB was tried first and **chose wrong** —
-it picked the filtered form on the screenshot — which is the same ~6% error §3g already
-documents for a 64 KiB sample on the base64 gate, and the same failure mode. 256 KiB resolves
-it and costs 15 s less than the full encode: 44.1 → 29.2 s at identical output. The floor is
-recorded so it is not shrunk again without measuring.
+**The trial's sample size was a repeat of §3g's lesson, and the fix was the one this file's
+sibling prescribed.** Coding both 3.4 MB payloads in full cost 25 s. A 256 KiB sample of the
+whole payload resolved it correctly for 29.2 s. A 64 KiB sample of the whole payload **chose
+wrong** — the same ~6% error §3g documents for a 64 KiB sample on the base64 gate.
+
+`PRECOMP_GATE.md` says the better gate would "compare the actual chosen encoding … on a
+sample". Doing that literally — comparing the two **pixel streams**, not the two payloads, and
+sampling 64 KiB from inside them (`png_pixel_span`) — resolves the decision in 17.4 s, which is
+below the 1.4.3 baseline. The lesson is the location, not the size: a sample of the region that
+actually differs is worth four times a sample of the whole.
 
 **What is still missing**: no point on the measured frontier is fast *and* small — the only
 sub-second option (`--no-precomp`) is 67% larger, and the only small one is 30 s. Closing that

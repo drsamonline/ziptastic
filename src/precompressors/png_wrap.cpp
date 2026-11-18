@@ -343,6 +343,37 @@ bool refilter_from_skeleton(const std::vector<uint8_t>& payload, size_t skel_at,
   return refilter_rows(pixels, filters, static_cast<size_t>(w) * channels, channels, filtered);
 }
 
+bool png_pixel_span(const std::vector<uint8_t>& payload, size_t& offset, size_t& length) {
+  offset = 0;
+  length = 0;
+  size_t pos = 0;
+  if (payload.size() >= 4 && payload[0] == kPayloadMagic0 && payload[1] == kPayloadMagic1 &&
+      payload[2] == kPayloadTag) {
+    pos = 4;
+  }
+  uint64_t nchunks = 0;
+  if (!get_varint(payload, pos, nchunks)) return false;
+  if (nchunks == 0 || nchunks > (1u << 20)) return false;
+  if (pos + nchunks > payload.size()) return false;
+  const size_t kinds_at = pos;
+  pos += static_cast<size_t>(nchunks);
+  for (size_t i = 0; i < nchunks; ++i) {
+    if (payload[kinds_at + i] == 1) {
+      uint64_t l = 0;
+      if (!get_varint(payload, pos, l)) return false;
+      pos += 4;
+    }
+  }
+  uint64_t diff_len = 0, infl_len = 0;
+  if (!get_varint(payload, pos, diff_len) || !get_varint(payload, pos, infl_len)) return false;
+  pos += 6;  // the zlib wrapper
+  pos += static_cast<size_t>(diff_len);
+  if (pos + infl_len > payload.size()) return false;
+  offset = pos;
+  length = static_cast<size_t>(infl_len);
+  return true;
+}
+
 // One image's payload appended to `out`.
 bool repack_one(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out) {
   size_t pos = 0;

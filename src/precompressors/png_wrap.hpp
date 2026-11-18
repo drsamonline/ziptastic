@@ -53,4 +53,13 @@ bool png_unpack(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload);
 bool png_unpack_unfiltered(const std::vector<uint8_t>& in, std::vector<uint8_t>& payload);
 bool png_repack(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out);
 
+// Where the stored pixel stream sits inside a payload, and how long it is.
+//
+// The caller needs this to sample the right region when it is choosing between two
+// encodings of the same image: sampling the middle of the *payload* lands wherever the
+// skeleton and the preflate diff put it, which is how a 64 KiB sample picked the wrong
+// form on a screenshot. The pixel stream is the part that differs between the two
+// candidates, so it is the part to measure.
+bool png_pixel_span(const std::vector<uint8_t>& payload, size_t& offset, size_t& length);
+
 }  // namespace chce
