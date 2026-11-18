@@ -149,3 +149,44 @@ markdown is close to the best case for this transform, and it is still one file.
 **What remains unmeasured is the hit rate**, not the payoff: how often a `.lz4` in the wild was
 written by the liblz4 this build links. That is the open question, and it is a sampling question
 about other people's files rather than anything a fixture can answer.
+
+## The version question, answered from the source (2026-11-18)
+
+The open decision was "widen backwards to liblz4 1.9.4, or not". Checking upstream showed the
+question was the wrong shape: **liblz4 1.11.0 was released 2026-11-04**, so the fleet's 1.10.1 is
+already one generation behind, and there are at least three matcher generations in the wild.
+
+**Diffing 1.10.1 against 1.11.0** (`lib/lz4.c`, 2,922 against 2,953 lines, 36 diff lines) gives a
+precise answer:
+
+| diff | meaning |
+|---|---|
+| 28 lines | obsolete `LZ4_compress*` declarations **re-added** for ABI compatibility — no behaviour |
+| **4 lines** | **one behavioural change**, in the match-finder |
+
+```c
+-  {   U32 const ctxIndex = prevIndex + 1;
++  {   int const usedTable = (dictDirective == noDict) && (dictIssue == dictSmall);
++      U32 const ctxIndex = ((usedTable && (prevIndex < startIndex)) ? startIndex : prevIndex) + 1;
+```
+
+`ctxIndex` is the table slot consulted for the next match. It now clamps a stale entry to
+`startIndex` when the table is being reused. `dictSmall` is reached from exactly one place
+(`LZ4_compress_generic_continue`): **`srcSize < LZ4_64Klimit` (64 KiB) *and* `ctx->currentOffset != 0`** — a
+small block compressed through a **re-used streaming context**.
+
+**So the change is narrow, and it is knowable:**
+
+- one-shot compression of a fresh context → **unchanged** (`noDictIssue`, not `dictSmall`)
+- any input **≥ 64 KiB** → **unchanged**
+- a **sub-64 KiB block through a re-used streaming context** → **may differ**
+
+That is why the re-encode-and-compare design is the right one here: the version boundary is not a
+wall between "all 1.10 frames" and "all 1.11 frames", it is **per frame**. A 1.11.0 frame that never
+touches the small-block path is reproduced byte-for-byte by the 1.10.1 matcher and salvaged normally.
+Only the narrow case declines, and it declines safely — the file is stored unchanged.
+
+**Recommendation, now that it is measurable:** do not widen backwards. Bump the vendored liblz4 to
+1.11.0 and re-run the corpus, then record how many frames changed. If none do, the bump is free and
+the transform covers both generations. If some do, the count says whether the old generation is worth
+a second matcher — and that is the sampling question, answered by files rather than by argument.
