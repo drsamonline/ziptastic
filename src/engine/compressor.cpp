@@ -953,11 +953,24 @@ Err compress(std::span<const uint8_t> input, std::vector<uint8_t>& out,
         std::vector<uint8_t> check;
         const bool ok = png_repack(unfiltered, check) && check.size() == stage_ecc.size() &&
                         std::memcmp(check.data(), stage_ecc.data(), stage_ecc.size()) == 0;
-        // 256 KiB, not the full encode: the two candidates are the same image with the same
-        // skeleton and the same preflate diff, so they differ only in the pixel stream and a
-        // slice of it decides. Measured: the answer is unchanged on both fixtures and the
-        // trial drops from 25 s to about 7 s. 64 KiB was tried first and chose wrong.
-        if (ok && precomp_helps(unfiltered, payload, 256u << 10)) payload = std::move(unfiltered);
+        // Compare the two PIXEL STREAMS, not the two payloads. The candidates share the chunk
+        // table, the preflate diff and the skeleton; the only part that differs is the pixel
+        // stream, so that is the part to measure — and measuring it is what lets the sample be
+        // small. A 64 KiB sample of the whole payload picked the wrong form, because "the
+        // middle of the payload" is wherever the skeleton happens to put it.
+        size_t a_off = 0, a_len = 0, b_off = 0, b_len = 0;
+        const bool spans = png_pixel_span(payload, a_off, a_len) &&
+                           png_pixel_span(unfiltered, b_off, b_len);
+        if (ok && spans) {
+          const std::span<const uint8_t> keep = std::span<const uint8_t>(payload).subspan(a_off, a_len);
+          const std::span<const uint8_t> cand =
+              std::span<const uint8_t>(unfiltered).subspan(b_off, b_len);
+          if (precomp_helps(cand, keep, 64u << 10)) payload = std::move(unfiltered);
+        } else if (ok && precomp_helps(unfiltered, payload, 256u << 10)) {
+          // Could not locate the pixel streams: use the whole-payload sample at the size known
+          // to resolve this decision.
+          payload = std::move(unfiltered);
+        }
       }
       std::vector<uint8_t> check;
       if (png_repack(payload, check) && check.size() == stage_ecc.size() &&

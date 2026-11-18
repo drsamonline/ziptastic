@@ -223,12 +223,15 @@ trial in place, so these are the choices available now:
 
 | run | bytes | time | vs default |
 |---|---|---|---|
-| `-9` | **51,822** | 29.8 s | — |
-| `-9 --no-parse` | 52,884 | **23.2 s** | **+2.1% size, −22% time** |
-| `-9 --no-lzma2` | 51,822 | 29.7 s | nothing: the LZMA2 trial ran and lost |
-| `-9 --no-bwt` | 51,822 | 31.8 s | nothing: BWT ran and lost on every block |
-| `-9 --no-precomp` | 86,626 | 0.5 s | +67% size, −98% time |
-| `-9 --no-parse --no-lzma2` | 92,930 | 23.3 s | **stored** — see below |
+| `-9` | **51,822** | 17.2 s | — |
+| `-9 --no-parse` | 52,884 | **12.6 s** | +2.1% size, **−27% time** |
+| `-9 --no-lzma2` | 51,822 | 17.2 s | nothing: the LZMA2 trial ran and lost |
+| `-9 --no-bwt` | 51,822 | 17.0 s | nothing: BWT ran and lost on every block |
+| `-9 --no-precomp` | 86,626 | 0.5 s | +67% size, −97% time |
+
+Re-measured 2026-11-18 after the trial moved to a 64 KiB pixel-stream sample, so this table and
+the one above it are not comparable — the default got 1.4 s faster and 15,395 bytes smaller
+between them. Against 1.4.3 the default is now **67,217 in 18.3 s → 51,822 in 17.4 s**.
 
 **`--no-parse` is the good speed point now.** It costs 2.1% and saves 22%, where it used to
 cost 4.6% on the filtered stream: with the unfiltered payload the parse has much less to do,
