@@ -65,7 +65,7 @@ Every figure below is post-compression: how much smaller the *archive* got.
 | gzip members inflated | layers 0x20 | −21.2% / −25.4% | `.xml.gz`, `.tar.gz` |
 | second container level | layers 0x40 | **−44.8%** | `.tar.gz` holding an `.xlsx` |
 | WAV PCM per-channel delta | layers 0x80 | −16.4% / −14.2% / −6.1% | 16-bit / 24-bit / float |
-| SQLite pages by B-tree type | layers2 0x01 | −4.8% / −6.3% | 295 KB / 3.46 MB db |
+| SQLite pages by B-tree type | layers2 0x01 | −4.8% / −6.3% small · **−27.8%** 6.9 MB indexed | 295 KB / 3.46 MB db; the large figure is §7 ablation |
 | base64 one level down | layers2 0x02 | −19.7% | `.json.gz` with a JPEG |
 | JPEG one level down | layers2 0x04 | see section 4 | |
 | GIF one level down | layers2 0x08 | see section 4 | |
@@ -77,9 +77,11 @@ Every figure below is post-compression: how much smaller the *archive* got.
 
 **Ablated as a set on 2026-11-18** (`TRANSFORM_ABLATION.md`): one fixture per row, transform on
 against `--no-<transform>`. Most rows reproduce in direction. Three produce **nothing at all** on
-a fixture built to match their own description — `gzip members` on a plain `.gz`, `SQLite` on a
-one-table database, and `base64 one level down`, which lives inside a gzip member and therefore
-depends on the first. The gzip case is the gate being right: for that file the engine's own
+a fixture built to match their own description — `gzip members` on a plain `.gz`, and `base64 one
+level down`, which lives inside a gzip member and therefore depends on the first. `SQLite` looked
+like a third and is not: it fires on multi-kind databases and is worth **27.8%** on a 6.9 MB
+indexed one, four times the −6.3% this table quotes, and nothing at all on a single-B-tree
+database. The table's single figure sits at the bottom of that range. The gzip case is the gate being right: for that file the engine's own
 compression of the `.gz` bytes already reaches what inflating the member would, so the −21.2%
 above is **conditional on the member exposing something the block loop cannot already reach**.
 Read every row here as conditional, not as a property of the format.
