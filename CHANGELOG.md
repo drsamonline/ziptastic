@@ -9,6 +9,35 @@ short version: what changed, and what it cost.
 
 ---
 
+## 1.4.4 — 2026-11-18
+
+### Added
+
+- **`--png-fast`.** The PNG transform can compress the image's pixels *inside* the transform
+  instead of handing 3.4 MB of them to the block loop, which runs at 131 KB/s. On the 93 KB
+  screenshot fixture: **62,618 bytes in 1.3 s**, against 51,822 in 17.6 s for the default and
+  86,626 in 0.5 s for `--no-precomp`. That is 7% smaller than 1.4.3 in a fourteenth of its time.
+  A choice, not a default: a caller who has not asked for speed still gets the ratio.
+- **A PNG inflate ceiling** of 256 MiB. The transform had none while zstd, xz and brotli all cap
+  theirs. The cap is absolute rather than proportional because deflate's own maximum expansion is
+  ~1032:1, so the 4096x ratio rule the others use can never fire on a PNG — a ratio cap here
+  would have been decoration.
+
+### Fixed
+
+- **PNG screenshots compress 22.9% smaller.** The transform always compressed the bytes a PNG
+  stores — each row's filter byte and its deltas against the row above — which is the right input
+  for *deflate* and the wrong one for a context-mixing model. It now builds both forms and keeps
+  the one a 64 KiB trial over the *pixel streams* prefers: **67,217 → 51,822 bytes** on
+  `docs/shot.png`, byte-exact, at no time cost. Photographic PNGs are unchanged, because the trial
+  keeps the filtered form for them; unfiltering is +49.7% there.
+- **`vendor-check` is green again.** HCS synced to `f44ff8d` (15 files, one new gitlink, 333
+  upstream build artifacts skipped, nothing deleted). It had been blocked on a real defect in the
+  vault: its brunsli glue called a 3-argument `BrunsliEncodeJpeg` while the library it drives
+  defines four, so syncing it did not compile. Fixed upstream in HCS#17.
+
+---
+
 ## 1.4.3 — 2026-11-17
 
 ### Fixed
