@@ -78,6 +78,7 @@ real binary: round trips, layer-bit assertions, split parts, corruption paths.
 | idea | result | doc |
 |---|---|---|
 | LZ4 precompression by storing the parse | **+50%** on real LZ4 data | `LZ4_MEASURED.md` |
+| ~~LZ4 by re-encode-and-compare~~ | **shipped 2026-11-18, +33.1%** — the negative above is about the parse, not the idea | `LZ4_MEASURED.md` |
 | "zip store" unpacking | **−1.4%** (it is worse) | `ZIP_STORE_MEASURED.md` |
 | split archives, per part | **~2x worse**; belongs to heavenzip | `SPLIT_ARCHIVES.md` |
 | parallelising the selector | wrong lever; two candidates are waste | `SELECTOR_PROFILE.md` |
