@@ -35,12 +35,22 @@ looking for.
 member. If the member is not inflated, the base64 is never visible — so "base64 one level down"
 depends on "gzip members inflated", and both read 0.0% here.
 
-**The gzip row declines on a plain `.gz`.** Not a bug in the transform: `precomp_helps` compares
-the inflated payload against the original, and for this file the engine's own compression of the
-*`.gz` bytes* already reaches 5,453 bytes — the same as the transform would get from the XML. A
-deflate stream of highly repetitive text is itself compressible, so inflating it buys nothing.
-The same file as `.tar.gz` fires and is worth 49.7%, because there the payload is a container the
-block loop cannot see into.
+**The gzip row declines on a plain `.gz` — but only for *that* content.** Followed up on
+2026-11-18 with four `.gz` files of different content, which is what the single fixture could not
+tell us:
+
+| `.gz` holding | bytes | transform on | `--no-precomp` | worth | fired |
+|---|---|---|---|---|---|
+| 547 KB of numeric CSV | 241,981 | **113,167** | 219,851 | **48.5%** | yes |
+| a 12 KB JPEG | 12,123 | **10,616** | 12,227 | 13.2% | yes |
+| a 116 KB PNG | 116,364 | **97,706** | 116,472 | 16.1% | yes |
+| 2.5 MB of repetitive XML | 371,412 | 55,595 | 55,595 | **0.0%** | no |
+
+So the transform is not weak — it is worth nearly half the file on a CSV — and it declines only
+where it adds nothing: for the XML, the engine's own compression of the *`.gz` bytes* already
+reaches 55,595, because a deflate stream of highly repetitive text is itself compressible. The gate
+is right in both directions, and this document's earlier "did not fire" was one fixture standing in
+for a content class.
 
 So the −21.2% in §2 is not wrong, it is **conditional**: it holds where inflating the member
 exposes something the engine cannot already reach. On a `.gz` of text it does not, and the gate
