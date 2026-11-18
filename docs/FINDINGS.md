@@ -1447,6 +1447,11 @@ round-trip byte-exact. `PNG_MEASUREMENT.md` has the tables.
 - **Speed.** 0.3–0.6 MB/s is the trade for the ratio. **Attacked for PNG on 2026-11-18** —
   `--png-fast` is 13× faster for 21% more bytes (§6i) — and not for anything else.
 - **The 99 MB ISO and 128 MB raw image** are unmeasured: ~8–10 minutes each at these speeds.
+- **LZ4 across liblz4 versions — answered from the source 2026-11-18.** 1.11.0 exists (released
+  2026-11-04) and differs from 1.10.1 by **one behavioural line**: `ctxIndex` now clamps a stale
+  table entry when `dictSmall` is set, which happens only for **sub-64 KiB blocks through a re-used
+  streaming context**. Everything else is byte-identical, so the boundary is per frame, not per
+  version — which is exactly what re-encode-and-compare gives us. Detail in `LZ4_MEASURED.md`.
 - **LZ4 salvage — built 2026-11-18**, `kLayer3Lz4`, layer 3 bit 4. All four of `FORMAT.md`'s
   conditions for allocating a free bit now hold: the win is **+41.2%** on a 686 KB tar of this
   repository's own documentation (159,668 against 271,350 with the transform off), byte-exact. The
