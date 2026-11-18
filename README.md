@@ -80,6 +80,8 @@ decode that stopped. Reading the index touches under 1% of an archive.
 |---|---|
 | [`CHANGELOG.md`](CHANGELOG.md) | what each release changed, and what it cost |
 | [`docs/FINDINGS.md`](docs/FINDINGS.md) | every measured number, the audit, what was rejected, what is open |
+| [`docs/HOLDOUT.md`](docs/HOLDOUT.md) | the files no transform was tuned on, and how a release is checked against them |
+| [`docs/PARETO.md`](docs/PARETO.md) | the speed/size frontier — which settings dominate which, per file |
 | [`docs/RELEASE_PLAN.md`](docs/RELEASE_PLAN.md) | 1.0 first, speed after, and why in that order |
 | [`docs/BUILD.md`](docs/BUILD.md) | building it, including the traps |
 | [`docs/FORMAT.md`](docs/FORMAT.md) | the stream format |
