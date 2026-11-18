@@ -75,6 +75,15 @@ Every figure below is post-compression: how much smaller the *archive* got.
 | PNG one level down | layers2 0x80 | **−0.3%, usually declines** | ZIP of photographic PNGs |
 | **BMP one level down** | layers3 0x01 | **−36.9% / −48.3%** | ZIP of photographic BMPs |
 
+**Ablated as a set on 2026-11-18** (`TRANSFORM_ABLATION.md`): one fixture per row, transform on
+against `--no-<transform>`. Most rows reproduce in direction. Three produce **nothing at all** on
+a fixture built to match their own description — `gzip members` on a plain `.gz`, `SQLite` on a
+one-table database, and `base64 one level down`, which lives inside a gzip member and therefore
+depends on the first. The gzip case is the gate being right: for that file the engine's own
+compression of the `.gz` bytes already reaches what inflating the member would, so the −21.2%
+above is **conditional on the member exposing something the block loop cannot already reach**.
+Read every row here as conditional, not as a property of the format.
+
 **These were re-measured on real content on 2026-11-04, and the earlier synthetic figures were
 2–8× too optimistic.** The original fixtures were generated gradients whose pixels are a formula;
 they compress to almost nothing under any transform, so they measured the fixture rather than the
