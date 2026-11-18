@@ -228,5 +228,17 @@ printf 'CHCE\x07' | dd of="$TMP/v7.bin" conv=notrunc 2>/dev/null
 "$BIN" d -f -o "$TMP/v7.out" "$TMP/v7.bin" 2>/dev/null
 expect_fail $? "a stream claiming format v7 is refused"
 
+# Every transform has a switch to turn it off, so that its contribution can be measured and
+# so that a caller can exclude one that misfires on their data. JPEG and GIF were the two
+# without one until 2026-11-18 — found by trying to measure what brunsli contributes to a PDF.
+for flag in --no-precomp --no-numeric --no-base64 --no-wav --no-sqlite --no-ecc --no-bmp \
+            --no-jpeg --no-gif; do
+  if "$BIN" --help 2>&1 | grep -q -- "$flag"; then
+    ok "help lists $flag"
+  else
+    bad "help does not list $flag"
+  fi
+done
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

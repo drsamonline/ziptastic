@@ -546,6 +546,30 @@ transform therefore declined every piped stream, which is why the encoder now fe
 128 KiB chunks, matching zstd's default block size. That is what a writer with default buffering
 produces, and with it all three cases above are recovered.
 
+### A JPEG inside a PDF *is* transformed — and a trap in reading `info` (2026-11-18)
+
+Measured on a real PDF whose only image is a `/DCTDecode` JPEG (Pillow, 24,387 bytes, one
+23,499-byte progressive JPEG at offset 293):
+
+| file | `-9` | `--no-jpeg` | the transform is worth |
+|---|---|---|---|
+| the PDF | **17,594** | 22,881 | **+23.1%** |
+| the same JPEG extracted, standalone | **16,854** | 22,344 | +24.6% |
+| a photographic JPEG (progressive, 12,266 B) | **10,586** | 12,230 | +13.4% |
+
+So brunsli reaches inside a PDF and does its full job there; the PDF wrapper costs about 740
+bytes over the standalone image.
+
+**The trap: the JPEG stage reports in `flags`, not in `layers`.** `ziptastic info` on a JPEG
+shows `flags coarse, jpeg (0x41)` and `layers 0x00 0x00 0x00 (no Layer 0 transform)`. Read
+carelessly — as it was on 2026-11-18 — that says "the JPEG transform did not fire", and the
+opposite is true. `layers2 0x04` is the *nested* JPEG case inside a container payload; a
+top-level JPEG is a header flag. Anyone comparing the two must read both fields.
+
+**Neither JPEG nor GIF had an off switch until 2026-11-18**, which is why the contribution above
+could not be measured before: every other transform had a `--no-*`. Both exist now, and
+`test_cli.sh` asserts that every transform in the chain can be turned off.
+
 ### A real scanned PDF, measured (2026-11-07)
 
 The synthetic PDF above said "PDF is covered". A real one says something different, which is why the
