@@ -249,3 +249,36 @@ constant would think the archive grew.
 sub-second option is 67% larger, and the only small option is 30 seconds. That is what S1 in
 the plan is for — a fast deflate re-encode of the IDAT, the way ECT and oxipng do it, which is
 a second code path and not a flag on this one.
+
+## The fast point S1 is aiming at (2026-11-18)
+
+The frontier above has nothing between 0.5 s and 17 s. S1 was "a fast deflate re-encode of the
+IDAT"; measured with zlib at level 9, on the same screenshot, to see whether that is worth
+building:
+
+| stream | zlib-9 | time | throughput |
+|---|---|---|---|
+| the file's own filtered bytes | 91,773 | 0.15 s | 24 MB/s |
+| **unfiltered pixels** | **70,987** | **0.11 s** | 30 MB/s |
+
+Three things fall out:
+
+1. **Deflate on the filtered bytes reproduces the file** — 91,773 against a 92,822-byte PNG. So a
+   fast path that simply re-deflates what is there is worth nothing, which is the trap S1 would
+   have walked into if it had been built before measuring.
+2. **Deflate on the unfiltered pixels is worth 23%** on its own, in a tenth of a second. That is
+   the same lever as §6i, applied to a different encoder: the deltas exist for deflate, but a
+   screenshot's rows are long runs and even deflate prefers them.
+3. **The fast point lands at roughly 72 KB** (70,987 plus the skeleton, the preflate diff and
+   framing) **in about 0.2 s** — against 86,626 in 0.5 s for `--no-precomp` and 51,822 in 17 s for
+   the CM path. That is the missing middle, and it is 100× faster than the CM path for 39% more
+   bytes.
+
+So S1's design is now specific rather than a direction: keep preflate's diff (it is what makes
+the output exact), replace the CM pass over the pixels with a deflate of the *unfiltered* stream,
+and store the filter map so decode can refilter. A zopfli-class encoder — ECT's, or the
+`zopfli-master` already in the vault — would trade seconds for bytes on top of this, and the
+numbers above say where that curve starts.
+
+Not implemented. zlib's numbers are used because zlib is already linked; zopfli and libdeflate
+are in the vault and would need a build target.
