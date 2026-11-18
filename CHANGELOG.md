@@ -18,6 +18,9 @@ short version: what changed, and what it cost.
   screenshot fixture: **62,618 bytes in 1.3 s**, against 51,822 in 17.6 s for the default and
   86,626 in 0.5 s for `--no-precomp`. That is 7% smaller than 1.4.3 in a fourteenth of its time.
   A choice, not a default: a caller who has not asked for speed still gets the ratio.
+  Measured on a four-class corpus (2026-11-18), this form wins only on flat-colour images —
+  on a photograph, a palette image and a line drawing the Tier-0 guard keeps the stored form and
+  the transform declines, so the numbers above are the screenshot case. `docs/PNG_MEASUREMENT.md`.
 - **A PNG inflate ceiling** of 256 MiB. The transform had none while zstd, xz and brotli all cap
   theirs. The cap is absolute rather than proportional because deflate's own maximum expansion is
   ~1032:1, so the 4096x ratio rule the others use can never fire on a PNG — a ratio cap here
