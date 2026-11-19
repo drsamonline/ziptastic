@@ -103,6 +103,20 @@ void check_roundtrip(const std::vector<uint8_t>& data, size_t block_size,
 
 }  // namespace
 
+TEST(block_size_policy) {
+  // 4 MiB is the default at and below the threshold; above it the policy raises the block
+  // to 16 MiB, because BWT and PPMd gain from a bigger block only when the file can hold
+  // one (docs/BLOCK_SIZE_LARGE.md).
+  CHECK_EQ(default_block_size_for(kLargeInputThreshold), kDefaultBlockSize);
+  CHECK_EQ(default_block_size_for(kLargeInputThreshold + 1), kLargeBlockSize);
+  CHECK_EQ(default_block_size_for(0), kDefaultBlockSize);
+
+  // The decoder learns block sizes from each header, so a 16 MiB block must round-trip on
+  // a small input without any change to the reader.
+  chce_test::Rng rng(11);
+  check_roundtrip(make_data(rng, 4096, 0), kLargeBlockSize, false);
+}
+
 TEST(empty_input) {
   check_roundtrip({}, kDefaultBlockSize);
 }

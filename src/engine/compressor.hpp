@@ -18,6 +18,15 @@
 
 namespace chce {
 
+// The block size a run should use when the caller did not name one. Above
+// kLargeInputThreshold the BWT and PPMd candidates gain more than the bigger block costs
+// (measured 2026-11-19, docs/BLOCK_SIZE_LARGE.md: -4.27% on text at 16 MiB, +0.31% on
+// binary and container files, so the raise is conditional on the file being big enough to
+// contain a large block at all). An explicit choice always wins; this is only the default.
+inline size_t default_block_size_for(size_t input_size) {
+  return input_size > kLargeInputThreshold ? kLargeBlockSize : kDefaultBlockSize;
+}
+
 struct CompressOptions {
   size_t block_size = kDefaultBlockSize;
   bool max_ratio = false;      // --max-ratio: allow CM_ZPAQ candidates

@@ -50,6 +50,16 @@ inline constexpr uint8_t kFormatVersion = 8;
 // that would capture the difference, and is not attempted.
 inline constexpr size_t kDefaultBlockSize = 4u * 1024u * 1024u;
 
+// Block-size policy for large inputs (measured 2026-11-19, docs/BLOCK_SIZE_LARGE.md).
+// BWT sorts one block and PPMd builds one model per block, so both gain from a bigger
+// block — but only when the file is large enough to contain one. On Silesia, 16 MiB
+// against the 4 MiB default is 4.27% smaller on text and 0.31% *larger* on binary and
+// container files, so the size is raised only where the measurement says it pays.
+// Files at or below the threshold keep the default, which is what every holdout baseline
+// was recorded at.
+inline constexpr size_t kLargeInputThreshold = 8u * 1024u * 1024u;
+inline constexpr size_t kLargeBlockSize = 16u * 1024u * 1024u;
+
 // Hard ceiling on a single block's uncompressed size. Guards the decoder
 // against absurd varints in fuzzed input (never a real encoder output).
 inline constexpr uint64_t kMaxBlockSize = 1ull << 30;  // 1 GiB

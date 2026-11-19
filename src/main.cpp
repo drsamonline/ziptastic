@@ -91,7 +91,7 @@ void print_usage(FILE* f) {
       "      --no-range       disable the range-coded model\n"
       "      --no-bcj         disable the x86 BCJ transform\n"
       "      --no-coarse      disable the coarse match index\n"
-      "  -b, --block-size N   block size in KiB (default 4096)\n"
+      "  -b, --block-size N   block size in KiB (default 4096; 16384 for inputs above 8 MiB)\n"
       "      --block N        with d: decode block N alone (needs --parallel blocks)\n"
       "      --from-block N   with d: decode blocks N to the end (resumable)\n"
       "  -o, --output FILE    write to FILE instead of stdout\n"
@@ -253,7 +253,20 @@ struct Options {
   // block onwards (which is what a crashed decode resumes with).
   long long block = -1;
   long long from_block = -1;
+  // True when -b/--block-size was given. The large-input policy below must never
+  // override an explicit choice.
+  bool block_size_explicit = false;
 };
+
+// The block size this run should use. 4 MiB is the measured default; above
+// kLargeInputThreshold the BWT and PPMd candidates gain enough to pay for the bigger
+// block, and below it they do not — see docs/BLOCK_SIZE_LARGE.md. An explicit -b always
+// wins, which is also how the measurement itself was taken.
+chce::CompressOptions compress_options_for(const Options& o, size_t input_size) {
+  chce::CompressOptions comp = o.comp;
+  if (!o.block_size_explicit) comp.block_size = chce::default_block_size_for(input_size);
+  return comp;
+}
 
 // Parses argv. Returns -1 to continue, or an exit code to return immediately.
 int parse_args(int argc, char** argv, Options& o) {
@@ -381,6 +394,7 @@ int parse_args(int argc, char** argv, Options& o) {
         return 2;
       }
       o.comp.block_size = static_cast<size_t>(kib) * 1024;
+      o.block_size_explicit = true;
     } else if (a == "-o" || a == "--output") {
       const char* v = need_value("--output");
       if (!v) return 2;
@@ -464,7 +478,8 @@ int run_compress(const Options& o) {
 
   std::vector<uint8_t> out;
   chce::CompressStats stats;
-  const chce::Err e = chce::compress(input, out, o.comp, &stats);
+  const chce::CompressOptions comp = compress_options_for(o, input.size());
+  const chce::Err e = chce::compress(input, out, comp, &stats);
   if (e != chce::Err::Ok) return fail("compression failed", e);
 
   if (o.split_size > 0) {
@@ -767,8 +782,9 @@ int run_bench(const Options& o) {
     std::fclose(f);
 
     std::vector<uint8_t> out;
+    const chce::CompressOptions comp = compress_options_for(o, data.size());
     const auto t0 = std::chrono::steady_clock::now();
-    const chce::Err e = chce::compress(data, out, o.comp, nullptr);
+    const chce::Err e = chce::compress(data, out, comp, nullptr);
     const auto t1 = std::chrono::steady_clock::now();
     if (e != chce::Err::Ok) {
       std::fprintf(stderr, "ziptastic: %s: %s\n", path.c_str(),
