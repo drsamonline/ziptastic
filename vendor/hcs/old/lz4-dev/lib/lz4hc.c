@@ -43,9 +43,15 @@
  *  allocate memory for their workspace:
  *  in stack (0:fastest), or in heap (1:default, requires malloc()).
  *  Since workspace is rather large, heap mode is recommended.
+ *  Stack mode is the default when memory allocation is disabled
+ *  (LZ4_STATIC_LINKING_ONLY_DISABLE_MEMORY_ALLOCATION, see lz4.c).
 **/
 #ifndef LZ4HC_HEAPMODE
-#  define LZ4HC_HEAPMODE 1
+#  if defined(LZ4_STATIC_LINKING_ONLY_DISABLE_MEMORY_ALLOCATION)
+#    define LZ4HC_HEAPMODE 0
+#  else
+#    define LZ4HC_HEAPMODE 1
+#  endif
 #endif
 
 
@@ -1688,10 +1694,10 @@ static size_t LZ4HC_sizeofState(const LZ4_streamHC_t* s)
     return s->internal_donotuse.hasWorkspace ? LZ4_STREAMHC_EXTSIZE : sizeof(*s);
 }
 
-/* just a stub */
+/* initializes arbitrary data, as LZ4_initStreamHC() : its extension marker can't be trusted */
 void LZ4_resetStreamHC (LZ4_streamHC_t* LZ4_streamHCPtr, int compressionLevel)
 {
-    LZ4_initStreamHC(LZ4_streamHCPtr, LZ4HC_sizeofState(LZ4_streamHCPtr));
+    LZ4_initStreamHC(LZ4_streamHCPtr, sizeof(*LZ4_streamHCPtr));
     LZ4_setCompressionLevel(LZ4_streamHCPtr, compressionLevel);
 }
 
@@ -2209,10 +2215,34 @@ static int LZ4HC_compress_optimal ( LZ4HC_CCtx_internal* ctx,
 
 
 /***************************************************
-*  Deprecated Functions
+*  Obsolete functions, removed from lz4hc.h (v1.11.0)
+*  still exported, for programs linked to previous versions
 ***************************************************/
+#if defined (__cplusplus)
+extern "C" {
+#endif
 
-/* These functions currently generate deprecation warnings */
+LZ4LIB_API int LZ4_compressHC (const char* source, char* dest, int inputSize);
+LZ4LIB_API int LZ4_compressHC_limitedOutput (const char* source, char* dest, int inputSize, int maxOutputSize);
+LZ4LIB_API int LZ4_compressHC2 (const char* source, char* dest, int inputSize, int compressionLevel);
+LZ4LIB_API int LZ4_compressHC2_limitedOutput (const char* source, char* dest, int inputSize, int maxOutputSize, int compressionLevel);
+LZ4LIB_API int LZ4_compressHC_withStateHC (void* state, const char* source, char* dest, int inputSize);
+LZ4LIB_API int LZ4_compressHC_limitedOutput_withStateHC (void* state, const char* source, char* dest, int inputSize, int maxOutputSize);
+LZ4LIB_API int LZ4_compressHC2_withStateHC (void* state, const char* source, char* dest, int inputSize, int compressionLevel);
+LZ4LIB_API int LZ4_compressHC2_limitedOutput_withStateHC (void* state, const char* source, char* dest, int inputSize, int maxOutputSize, int compressionLevel);
+LZ4LIB_API int LZ4_compressHC_continue (LZ4_streamHC_t* LZ4_streamHCPtr, const char* source, char* dest, int inputSize);
+LZ4LIB_API int LZ4_compressHC_limitedOutput_continue (LZ4_streamHC_t* LZ4_streamHCPtr, const char* source, char* dest, int inputSize, int maxOutputSize);
+LZ4LIB_API void* LZ4_createHC (const char* inputBuffer);
+LZ4LIB_API int   LZ4_freeHC (void* LZ4HC_Data);
+LZ4LIB_API char* LZ4_slideInputBufferHC (void* LZ4HC_Data);
+LZ4LIB_API int LZ4_compressHC2_continue (void* LZ4HC_Data, const char* source, char* dest, int inputSize, int compressionLevel);
+LZ4LIB_API int LZ4_compressHC2_limitedOutput_continue (void* LZ4HC_Data, const char* source, char* dest, int inputSize, int maxOutputSize, int compressionLevel);
+LZ4LIB_API int   LZ4_sizeofStreamStateHC(void);
+LZ4LIB_API int   LZ4_resetStreamStateHC(void* state, char* inputBuffer);
+
+#if defined (__cplusplus)
+}
+#endif
 
 /* Wrappers for deprecated compression functions */
 int LZ4_compressHC(const char* src, char* dst, int srcSize) { return LZ4_compress_HC (src, dst, srcSize, LZ4_compressBound(srcSize), 0); }
