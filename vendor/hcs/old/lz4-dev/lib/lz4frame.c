@@ -999,7 +999,8 @@ static size_t LZ4F_compressBegin_internal(LZ4F_cctx* cctx,
     }   }
 
     /* raw dictionary : employed by each block as a CDict (independent blocks, or jobs of multi-threaded frames) ;
-     * single-threaded linked blocks keep the historical behavior : dictionary loaded as history of the first block */
+     * single-threaded linked blocks keep the historical behavior : dictionary loaded as history, preceding the first block,
+     * from a copy within @tmpBuff (see below) */
     if ( dictBuffer
       && ((cctx->prefs.frameInfo.blockMode == LZ4F_blockIndependent) || mtFrame) ) {
         assert(cdict == NULL);
@@ -1028,6 +1029,19 @@ static size_t LZ4F_compressBegin_internal(LZ4F_cctx* cctx,
     }   }
     cctx->tmpIn = cctx->tmpBuff;
     cctx->tmpInSize = 0;
+    if (dictBuffer) {
+        /* single-threaded linked blocks : the dictionary is copied into @tmpBuff, as saved history :
+         * buffered input follows it, and references it in prefix mode
+         * (faster than an external dictionary, which fast levels also lose after the first block) */
+        if (dictSize > 64 KB) {
+            dictBuffer = (const BYTE*)dictBuffer + dictSize - 64 KB;
+            dictSize = 64 KB;
+        }
+        assert(cctx->tmpBuffCapacity >= 128 KB);
+        memcpy(cctx->tmpBuff, dictBuffer, dictSize);
+        dictBuffer = cctx->tmpBuff;
+        cctx->tmpIn = cctx->tmpBuff + dictSize;
+    }
     (void)XXH32_reset(&(cctx->xxh), 0);
 
     /* context init */
@@ -1324,8 +1338,10 @@ static size_t LZ4F_copyPending(LZ4F_cctx_t* cctx, BYTE* dst, size_t dstCapacity,
 {
     size_t const n = MIN(cctx->pendingSize, dstCapacity - pos);
     assert(pos <= dstCapacity);
-    if (n) memcpy(dst + pos, cctx->pending, n);
-    cctx->pending += n;
+    if (n) {
+        memcpy(dst + pos, cctx->pending, n);
+        cctx->pending += n;
+    }
     cctx->pendingSize -= n;
     return n;
 }
@@ -1403,7 +1419,9 @@ static size_t LZ4F_flushBlockPartial(LZ4F_cctx_t* cctx, BYTE* dst, size_t dstCap
  * and their outputs are emitted in order by the calling thread.
  * Output only depends on content and flush points :
  * never on nb of workers, scheduling, input slicing, nor stableSrc.
- * nbWorkers is the nb of worker threads compressing jobs : the calling thread only fills and emits them.
+ * nbWorkers is the nb of worker threads compressing jobs : the calling thread fills and emits them.
+ * At a flush point (LZ4F_flush(), LZ4F_compressEnd(), autoFlush), it waits for all jobs : when no other job is running,
+ * it compresses the flushed job itself. So at most nbWorkers threads compress at any time.
  * Without multi-threading support (LZ4F_MULTITHREAD), the calling thread processes jobs alone, producing the same output.
  * If no worker thread can be created, frame compression fails (allocation_failed) ;
  * with fewer threads than requested (ex: system limits), it proceeds with them. */
@@ -1925,8 +1943,9 @@ static void LZ4F_mt_addHistory(LZ4F_mtCtx_t* mt, const BYTE* content, size_t siz
     }
 }
 
-/* submits the job being filled */
-static void LZ4F_mt_submit(LZ4F_mtCtx_t* mt)
+/* submits the job being filled : to worker threads,
+ * or, @inCallingThread, runs it right away with the cctx's own state (states[0], unused by workers) */
+static void LZ4F_mt_submit_internal(LZ4F_mtCtx_t* mt, int inCallingThread)
 {
     LZ4F_mtJob_t* const job = LZ4F_mt_fillingSlot(mt);
     assert(mt->filling);
@@ -1934,11 +1953,19 @@ static void LZ4F_mt_submit(LZ4F_mtCtx_t* mt)
     job->done = 0;
     mt->filling = 0;
     mt->nbSubmitted++;
-    if (LZ4F_pool_submit(mt->pool, LZ4F_mt_runJob, job))
+    if (inCallingThread)
+        LZ4F_mt_runJob(job, 0);
+    else if (LZ4F_pool_submit(mt->pool, LZ4F_mt_runJob, job))
         LZ4F_mt_addWorker(mt);   /* more jobs than idle threads */
     if (mt->prefs->frameInfo.blockMode == LZ4F_blockLinked)
         LZ4F_mt_addHistory(mt, job->src, job->srcSize);   /* job content is only read while job runs */
 }
+
+static void LZ4F_mt_submit(LZ4F_mtCtx_t* mt) { LZ4F_mt_submit_internal(mt, 0); }
+
+/* the calling thread is about to wait for all jobs : when no other job is running, it compresses the last one itself,
+ * which saves the synchronization with a worker (same output : jobs don't depend on their state) */
+static void LZ4F_mt_submitLast(LZ4F_mtCtx_t* mt) { LZ4F_mt_submit_internal(mt, mt->nbSubmitted == 0); }
 
 /* input buffer of a completed job returns to the free stack */
 static void LZ4F_mt_releaseInBuff(LZ4F_mtCtx_t* mt, LZ4F_mtJob_t* job)
@@ -2208,12 +2235,12 @@ static size_t LZ4F_mt_begin(LZ4F_cctx_t* cctx)
 }
 
 /*! LZ4F_mt_flushPoint() :
- *  LZ4F_flush() and LZ4F_compressEnd(), multi-threaded mode : the job being filled is submitted,
+ *  LZ4F_flush() and LZ4F_compressEnd(), multi-threaded mode : the job being filled is submitted (see LZ4F_mt_submitLast()),
  *  and all jobs are waited for : input is no longer read, and their output is emitted by LZ4F_mt_emitPartial(). */
 static void LZ4F_mt_flushPoint(LZ4F_mtCtx_t* mt)
 {
     unsigned n;
-    if (mt->filling) LZ4F_mt_submit(mt);
+    if (mt->filling) LZ4F_mt_submitLast(mt);
     for (n = 0; n < mt->nbSubmitted; n++)
         LZ4F_pool_waitDone(mt->pool, &LZ4F_mt_job(mt, n)->done);
 }
@@ -2307,7 +2334,10 @@ static size_t LZ4F_mt_update(LZ4F_cctx_t* cctx,
                 size_t const jobSize = MIN(remaining, mt->jobSize);
                 job->src = ip;
                 job->srcSize = jobSize;
-                LZ4F_mt_submit(mt);
+                if (cctx->prefs.autoFlush && (jobSize == remaining))
+                    LZ4F_mt_submitLast(mt);   /* all jobs are waited for before returning */
+                else
+                    LZ4F_mt_submit(mt);
                 if (checksum) (void)XXH32_update(&(cctx->xxh), ip, jobSize);
                 ip += jobSize;
                 continue;
@@ -2339,8 +2369,8 @@ static size_t LZ4F_mt_update(LZ4F_cctx_t* cctx,
         mt->stableRun = MIN(prevRun + srcSize, LZ4F_MT_PREFIX_SIZE);
     }
 
-    /* autoFlush : the last job is submitted too, and all jobs are emitted */
-    if (cctx->prefs.autoFlush && mt->filling) LZ4F_mt_submit(mt);
+    /* autoFlush : the last job is submitted too (see LZ4F_mt_submitLast()), and all jobs are emitted */
+    if (cctx->prefs.autoFlush && mt->filling) LZ4F_mt_submitLast(mt);
     {   size_t const r = LZ4F_mt_emit(mt, dst, dstCapacity, pos, cctx->prefs.autoFlush != 0);
         FORWARD_IF_ERROR_INVALIDATE(r, cctx);
         return pos + r;
@@ -3181,7 +3211,7 @@ size_t LZ4F_decompress(LZ4F_dctx* dctx,
             DEBUGLOG(6, "dstage_getFrameHeader");
             if ((size_t)(srcEnd-srcPtr) >= maxFHSize) {  /* enough to decode - shortcut */
                 size_t const hSize = LZ4F_decodeHeader(dctx, srcPtr, (size_t)(srcEnd-srcPtr));  /* will update dStage appropriately */
-                FORWARD_IF_ERROR(hSize);
+                if (LZ4F_isError(hSize)) { nextSrcSizeHint = hSize; goto _output; }
                 srcPtr += hSize;
                 break;
             }
@@ -3203,7 +3233,9 @@ size_t LZ4F_decompress(LZ4F_dctx* dctx,
                 doAnotherStage = 0;   /* not enough src data, ask for some more */
                 break;
             }
-            FORWARD_IF_ERROR( LZ4F_decodeHeader(dctx, dctx->header, dctx->tmpInTarget) ); /* will update dStage appropriately */
+            {   size_t const hSize = LZ4F_decodeHeader(dctx, dctx->header, dctx->tmpInTarget); /* will update dStage appropriately */
+                if (LZ4F_isError(hSize)) { nextSrcSizeHint = hSize; goto _output; }
+            }
             break;
 
         case dstage_init:
@@ -3220,12 +3252,18 @@ size_t LZ4F_decompress(LZ4F_dctx* dctx,
                     LZ4F_free(dctx->tmpIn, dctx->cmem);
                     dctx->tmpInCapacity = 0;
                     dctx->tmpIn = (BYTE*)LZ4F_malloc(tmpInNeeded, dctx->cmem);
-                    RETURN_ERROR_IF(dctx->tmpIn == NULL, allocation_failed);
+                    if (dctx->tmpIn == NULL) {
+                        nextSrcSizeHint = LZ4F_returnErrorCode(LZ4F_ERROR_allocation_failed);
+                        goto _output;
+                    }
                     dctx->tmpInCapacity = tmpInNeeded;
                     LZ4F_free(dctx->tmpOutBuffer, dctx->cmem);
                     dctx->tmpOutBufferCapacity = 0;
                     dctx->tmpOutBuffer= (BYTE*)LZ4F_malloc(tmpOutNeeded, dctx->cmem);
-                    RETURN_ERROR_IF(dctx->tmpOutBuffer== NULL, allocation_failed);
+                    if (dctx->tmpOutBuffer== NULL) {
+                        nextSrcSizeHint = LZ4F_returnErrorCode(LZ4F_ERROR_allocation_failed);
+                        goto _output;
+                    }
                     dctx->tmpOutBufferCapacity = tmpOutNeeded;
             }   }
             dctx->tmpInSize = 0;
@@ -3255,7 +3293,8 @@ size_t LZ4F_decompress(LZ4F_dctx* dctx,
                     break;
                 }
                 if (nextCBlockSize > dctx->maxBlockSize) {
-                    RETURN_ERROR(maxBlockSize_invalid);
+                    nextSrcSizeHint = LZ4F_returnErrorCode(LZ4F_ERROR_maxBlockSize_invalid);
+                    goto _output;
                 }
                 if (blockHeader & LZ4F_BLOCKUNCOMPRESSED_FLAG) {
                     /* next block is uncompressed */
@@ -3334,7 +3373,8 @@ size_t LZ4F_decompress(LZ4F_dctx* dctx,
                 if (readCRC != calcCRC) {
                     DEBUGLOG(4, "incorrect block checksum: %08X != %08X",
                             readCRC, calcCRC);
-                    RETURN_ERROR(blockChecksum_invalid);
+                    nextSrcSizeHint = LZ4F_returnErrorCode(LZ4F_ERROR_blockChecksum_invalid);
+                    goto _output;
                 }
 #else
                 (void)readCRC;
@@ -3364,7 +3404,10 @@ size_t LZ4F_decompress(LZ4F_dctx* dctx,
                     U32 const readBlockCrc = LZ4F_readLE32(selectedIn + dctx->tmpInTarget);
                     U32 const calcBlockCrc = XXH32(selectedIn, dctx->tmpInTarget, 0);
 #ifndef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-                    RETURN_ERROR_IF(readBlockCrc != calcBlockCrc, blockChecksum_invalid);
+                    if (readBlockCrc != calcBlockCrc) {
+                        nextSrcSizeHint = LZ4F_returnErrorCode(LZ4F_ERROR_blockChecksum_invalid);
+                        goto _output;
+                    }
 #else
                     (void)readBlockCrc;
                     (void)calcBlockCrc;
@@ -3378,7 +3421,7 @@ size_t LZ4F_decompress(LZ4F_dctx* dctx,
                   * to benefit from prefix speedup */
               && !(dctx->dict!= NULL && (const BYTE*)dctx->dict + dctx->dictSize == dctx->tmpOut) )
             {   size_t const decodedSize = LZ4F_decodeBlock(dctx, selectedIn, dctx->tmpInTarget, dstPtr);
-                FORWARD_IF_ERROR(decodedSize);
+                if (LZ4F_isError(decodedSize)) { nextSrcSizeHint = decodedSize; goto _output; }
 
                 /* dictionary management, unless the frame ends with this block */
                 if ( (dctx->frameInfo.blockMode==LZ4F_blockLinked)
@@ -3409,7 +3452,7 @@ size_t LZ4F_decompress(LZ4F_dctx* dctx,
 
             /* Decode block into tmpOut */
             {   size_t const decodedSize = LZ4F_decodeBlock(dctx, selectedIn, dctx->tmpInTarget, dctx->tmpOut);
-                FORWARD_IF_ERROR(decodedSize);
+                if (LZ4F_isError(decodedSize)) { nextSrcSizeHint = decodedSize; goto _output; }
                 dctx->tmpOutSize = decodedSize;
                 dctx->tmpOutStart = 0;
                 dctx->dStage = dstage_flushOut;
@@ -3441,7 +3484,10 @@ size_t LZ4F_decompress(LZ4F_dctx* dctx,
             break;
 
         case dstage_getSuffix:
-            RETURN_ERROR_IF(dctx->frameRemainingSize, frameSize_wrong);   /* incorrect frame size decoded */
+            if (dctx->frameRemainingSize) {   /* incorrect frame size decoded */
+                nextSrcSizeHint = LZ4F_returnErrorCode(LZ4F_ERROR_frameSize_wrong);
+                goto _output;
+            }
             if (!dctx->frameInfo.contentChecksumFlag) {  /* no checksum, frame is completed */
                 nextSrcSizeHint = 0;
                 LZ4F_resetDecompressionContext(dctx);
@@ -3459,7 +3505,10 @@ size_t LZ4F_decompress(LZ4F_dctx* dctx,
                 U32 const resultCRC = XXH32_digest(&(dctx->xxh));
                 DEBUGLOG(4, "frame checksum: stored 0x%0X vs 0x%0X processed", readCRC, resultCRC);
 #ifndef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-                RETURN_ERROR_IF(readCRC != resultCRC, contentChecksum_invalid);
+                if (readCRC != resultCRC) {
+                    nextSrcSizeHint = LZ4F_returnErrorCode(LZ4F_ERROR_contentChecksum_invalid);
+                    goto _output;
+                }
 #else
                 (void)readCRC;
                 (void)resultCRC;
@@ -3520,8 +3569,9 @@ size_t LZ4F_decompress(LZ4F_dctx* dctx,
         }
     }
 
+_output:   /* also on error : report progress, but do not preserve history for reuse */
     *srcSizePtr = (size_t)(srcPtr - srcStart);
-    *dstSizePtr = (size_t)(dstPtr - dstStart);
+    *dstSizePtr = dstStart ? (size_t)(dstPtr - dstStart) : 0;
     return nextSrcSizeHint;
 }
 

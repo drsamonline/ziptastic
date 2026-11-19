@@ -480,6 +480,8 @@ static const int      dec64table[8] = {0, 0, 0, -1, -4,  1, 2, 3};
 #    define LZ4_FAST_DEC_LOOP 1
 #  elif defined(__aarch64__)
 #    define LZ4_FAST_DEC_LOOP 1
+#  elif defined(__PPC64__)
+#    define LZ4_FAST_DEC_LOOP 1
 #  elif defined(__riscv) && (__riscv_xlen == 64) && defined(__riscv_misaligned_fast)
 #    define LZ4_FAST_DEC_LOOP 1   /* otherwise, unaligned memcpy() become byte copies, defeating the fast loop */
 #  else
@@ -517,11 +519,11 @@ LZ4_memcpy_using_offset_base(BYTE* dstPtr, const BYTE* srcPtr, BYTE* dstEnd, con
 
 #if LZ4_FAST_DEC_LOOP
 
-/* LZ4_wildCopy64 is faster on aarch64 and x86-64, but not on 32-bit x86.
+/* LZ4_wildCopy64 is faster on aarch64, x86-64 and ppc64, but not on 32-bit x86.
  * On wasm, it depends on the host cpu (faster on Apple silicon, slower on x86-64) :
  * it's not enabled by default, but can be, with LZ4_FAST_DEC_LOOP, from the build command */
 #ifndef LZ4_WILDCOPY64
-#  if defined(__aarch64__) || defined(__x86_64__) || defined(_M_X64)
+#  if defined(__aarch64__) || defined(__x86_64__) || defined(_M_X64) || defined(__PPC64__)
 #    define LZ4_WILDCOPY64 1
 #  else
 #    define LZ4_WILDCOPY64 0
@@ -793,6 +795,34 @@ int LZ4_decompress_safe_forceExtDict(const char* source, char* dest,
 int LZ4_decompress_safe_partial_forceExtDict(const char* source, char* dest,
                                      int compressedSize, int targetOutputSize, int dstCapacity,
                                      const void* dictStart, size_t dictSize);
+#if defined (__cplusplus)
+}
+#endif
+
+
+/*-****************************************
+*  Obsolete functions, removed from lz4.h (v1.11.0)
+*  still exported, for programs linked to previous versions
+*******************************************/
+#if defined (__cplusplus)
+extern "C" {
+#endif
+
+LZ4LIB_API int LZ4_compress (const char* src, char* dest, int srcSize);
+LZ4LIB_API int LZ4_compress_limitedOutput (const char* src, char* dest, int srcSize, int maxOutputSize);
+LZ4LIB_API int LZ4_compress_withState (void* state, const char* source, char* dest, int inputSize);
+LZ4LIB_API int LZ4_compress_limitedOutput_withState (void* state, const char* source, char* dest, int inputSize, int maxOutputSize);
+LZ4LIB_API int LZ4_compress_continue (LZ4_stream_t* LZ4_streamPtr, const char* source, char* dest, int inputSize);
+LZ4LIB_API int LZ4_compress_limitedOutput_continue (LZ4_stream_t* LZ4_streamPtr, const char* source, char* dest, int inputSize, int maxOutputSize);
+LZ4LIB_API int LZ4_uncompress (const char* source, char* dest, int outputSize);
+LZ4LIB_API int LZ4_uncompress_unknownOutputSize (const char* source, char* dest, int isize, int maxOutputSize);
+LZ4LIB_API void* LZ4_create (char* inputBuffer);
+LZ4LIB_API int   LZ4_sizeofStreamState(void);
+LZ4LIB_API int   LZ4_resetStreamState(void* state, char* inputBuffer);
+LZ4LIB_API char* LZ4_slideInputBuffer (void* state);
+LZ4LIB_API int LZ4_decompress_safe_withPrefix64k (const char* src, char* dst, int compressedSize, int maxDstSize);
+LZ4LIB_API int LZ4_decompress_fast_withPrefix64k (const char* src, char* dst, int originalSize);
+
 #if defined (__cplusplus)
 }
 #endif
@@ -1323,7 +1353,10 @@ _resume:
                 /* no occurrence in the current context : try the dictionary */
                 prevIndex = LZ4_getIndexOnHash(hPrev, dictCtx->hashTable, byU32) + dictDelta;
             }
-            {   U32 const ctxIndex = prevIndex + 1;
+            {   /* used table (small block, see LZ4_prepareTable()) : a stale entry yields the candidate of an empty slot
+                 * of a cleared table (0), the position after the first one : the output doesn't depend on the table's history */
+                int const usedTable = (dictDirective == noDict) && (dictIssue == dictSmall);
+                U32 const ctxIndex = ((usedTable && (prevIndex < startIndex)) ? startIndex : prevIndex) + 1;
                 int const inDict = (dictDirective == usingExtDict || dictDirective == usingDictCtx) && (ctxIndex < startIndex);
                 if ( ((dictIssue==dictSmall) ? (ctxIndex >= prefixIdxLimit) : 1)
                   && (((tableType==byU16) && (LZ4_DISTANCE_MAX == LZ4_DISTANCE_ABSOLUTE_MAX)) ? 1 : (ctxIndex+LZ4_DISTANCE_MAX >= current))

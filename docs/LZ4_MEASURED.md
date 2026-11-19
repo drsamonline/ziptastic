@@ -222,3 +222,67 @@ narrow corner no fixture here reached.**
 That is enough to recommend the bump, and not enough to claim the versions are equivalent. If the
 vendored library moves to 1.11.0, the corpus gate is what proves it — the transform verifies every
 frame it rewrites, so a divergence would decline rather than corrupt.
+
+## Bumped to 1.11.1 (2026-11-19) — and the frames did not change
+
+The recommendation above was "bump to 1.11.0 and re-run the corpus, then record how many frames
+changed". Done, one version later than recommended, for a reason worth stating.
+
+**1.11.1, not 1.11.0.** Upstream shipped 1.11.1 on 2026-11-10, six days after 1.11.0. Diffing the
+two `lib/` trees shows what changed: ppc64 fast-decode paths, CLI fixes, and one library fix —
+`LZ4_resetStreamHC()` could write out of bounds at levels ≥ 10 on a state containing garbage (since
+1.11.0). **The match finder is untouched**, so the 14-of-14 measurement taken against 1.11.0 carries
+over unchanged, and the point fix is the version a decompressor should link.
+
+The 1.10.1 → 1.11.0 behavioural line recorded earlier is present exactly as described:
+
+```c
+-            {   U32 const ctxIndex = prevIndex + 1;
++                U32 const ctxIndex = ((usedTable && (prevIndex < startIndex)) ? startIndex : prevIndex) + 1;
+```
+
+### How many frames changed: zero, on ten frames
+
+The vendored encoder was built at both versions and driven through the same probe — one-shot
+`LZ4F_compressFrame` (4 MB blocks, linked) and a streaming pass with 16 KiB chunks, which is the
+path that reaches `dictSmall`. Five inputs: a tar of this repository's documentation, plus four
+built to create the stale table entries the change is about (periodic motifs, shifting runs, zeros
+then text, random then repetitive). Sizes and FNV-1a hashes of the frames:
+
+| input | one-shot 1.10.1 | one-shot 1.11.1 | streaming 1.10.1 | streaming 1.11.1 |
+|---|---|---|---|---|
+| `docs.tar` 880,640 | 524,452 | **524,452** | 524,452 | **524,452** |
+| `periodic4k.bin` 4,096 | 52 | **52** | 52 | **52** |
+| `rand_then_repeat.bin` 194,600 | 94,314 | **94,314** | 94,314 | **94,314** |
+| `shift.bin` 41,197 | 1,615 | **1,615** | 1,601 | **1,601** |
+| `zeros_then_text.bin` 80,000 | 371 | **371** | 371 | **371** |
+
+**10 of 10 identical, size and hash.** Combined with the 14 of 14 measured against 1.11.0, that is
+24 cells with no divergence — and the residual risk is unchanged and narrow: a stale slot that also
+survives the `dictSmall` range check.
+
+### The transform still fires, and pays
+
+A frame produced by the new encoder, compressed by the new build:
+
+| | archive |
+|---|---:|
+| `docs.tar` as `.lz4` (524,452 bytes), transform on | **249,207** |
+| the same file, `--no-lz4` | 406,454 |
+
+**38.7% smaller**, `layers3 = 0x10`, byte-exact. Bigger than the 41.2% recorded earlier because the
+fixture is larger (880,640 against 686,080 bytes of the same documentation).
+
+### Gates
+
+- `ctest`: **38/38 suites**, including `unit.lz4` and `integration.corpus` case 8 (the layer bit and
+  the size drop).
+- `scripts/holdout.py --check`: 4 files, **+0 bytes**, hashes match.
+
+### One thing this does not fix
+
+`vendor/hcs/SOURCES` still records lz4 as "1.10.1", and that row lives in the **HCS** repository —
+the vault, not this one. Until HCS updates it, `check-vendor-current.sh` compares a SOURCES file that
+is still accurate to *HCS main* while the tree it describes has moved. The bump is pinned to a real
+tag this time (`v1.11.1`), which removes the "states a version with no tag of that name" caveat that
+kept lz4 in the `copy` column.

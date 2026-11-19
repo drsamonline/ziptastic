@@ -207,8 +207,8 @@ LZ4LIB_API int LZ4_saveDictHC (LZ4_streamHC_t* streamHCPtr, char* safeBuffer, in
  *  a stream that has just been reset).
  *
  *  The dictionary will remain attached to the working stream only for the
- *  current stream session. Calls to LZ4_resetStreamHC(_fast) will remove the
- *  dictionary context association from the working stream. The dictionary
+ *  current stream session. Calls to LZ4_resetStreamHC_fast() or LZ4_initStreamHC()
+ *  will remove the dictionary context association from the working stream. The dictionary
  *  stream (and source buffer) must remain in-place / accessible / unchanged
  *  through the lifetime of the stream session.
  */
@@ -290,46 +290,18 @@ LZ4LIB_API LZ4_streamHC_t* LZ4_initStreamHC(void* buffer, size_t size);
 **************************************/
 /* see lz4.h LZ4_DISABLE_DEPRECATE_WARNINGS to turn off deprecation warnings */
 
-/* deprecated compression functions */
-LZ4_DEPRECATED("use LZ4_compress_HC() instead") LZ4LIB_API int LZ4_compressHC               (const char* source, char* dest, int inputSize);
-LZ4_DEPRECATED("use LZ4_compress_HC() instead") LZ4LIB_API int LZ4_compressHC_limitedOutput (const char* source, char* dest, int inputSize, int maxOutputSize);
-LZ4_DEPRECATED("use LZ4_compress_HC() instead") LZ4LIB_API int LZ4_compressHC2              (const char* source, char* dest, int inputSize, int compressionLevel);
-LZ4_DEPRECATED("use LZ4_compress_HC() instead") LZ4LIB_API int LZ4_compressHC2_limitedOutput(const char* source, char* dest, int inputSize, int maxOutputSize, int compressionLevel);
-LZ4_DEPRECATED("use LZ4_compress_HC_extStateHC() instead") LZ4LIB_API int LZ4_compressHC_withStateHC               (void* state, const char* source, char* dest, int inputSize);
-LZ4_DEPRECATED("use LZ4_compress_HC_extStateHC() instead") LZ4LIB_API int LZ4_compressHC_limitedOutput_withStateHC (void* state, const char* source, char* dest, int inputSize, int maxOutputSize);
-LZ4_DEPRECATED("use LZ4_compress_HC_extStateHC() instead") LZ4LIB_API int LZ4_compressHC2_withStateHC              (void* state, const char* source, char* dest, int inputSize, int compressionLevel);
-LZ4_DEPRECATED("use LZ4_compress_HC_extStateHC() instead") LZ4LIB_API int LZ4_compressHC2_limitedOutput_withStateHC(void* state, const char* source, char* dest, int inputSize, int maxOutputSize, int compressionLevel);
-LZ4_DEPRECATED("use LZ4_compress_HC_continue() instead") LZ4LIB_API int LZ4_compressHC_continue               (LZ4_streamHC_t* LZ4_streamHCPtr, const char* source, char* dest, int inputSize);
-LZ4_DEPRECATED("use LZ4_compress_HC_continue() instead") LZ4LIB_API int LZ4_compressHC_limitedOutput_continue (LZ4_streamHC_t* LZ4_streamHCPtr, const char* source, char* dest, int inputSize, int maxOutputSize);
+/* Removed in v1.11.0, deprecated since v1.7.x (liblz4 still exports them, for linked programs) :
+ * LZ4_compressHC*(), LZ4_createHC(), LZ4_freeHC(), LZ4_sizeofStreamStateHC(), LZ4_resetStreamStateHC(),
+ * LZ4_slideInputBufferHC() */
 
-/* Obsolete streaming functions; degraded functionality; do not use!
- *
- * In order to perform streaming compression, these functions depended on data
- * that is no longer tracked in the state. They have been preserved as well as
- * possible: using them will still produce a correct output. However, use of
- * LZ4_slideInputBufferHC() will truncate the history of the stream, rather
- * than preserve a window-sized chunk of history.
+/* LZ4_resetStreamHC() : deprecated (v1.11.0)
+ * LZ4_resetStreamHC(s, level) is replaced by :
+ *     LZ4_initStreamHC(s, sizeof(*s));
+ *     LZ4_resetStreamHC_fast(s, level);
+ * Same behavior : @s may contain garbage, and is initialized as a state of sizeof(LZ4_streamHC_t) bytes.
+ * To start a new stream on an already initialized state, LZ4_resetStreamHC_fast(s, level) alone is faster.
  */
-#if !defined(LZ4_STATIC_LINKING_ONLY_DISABLE_MEMORY_ALLOCATION)
-LZ4_DEPRECATED("use LZ4_createStreamHC() instead") LZ4LIB_API void* LZ4_createHC (const char* inputBuffer);
-LZ4_DEPRECATED("use LZ4_freeStreamHC() instead") LZ4LIB_API   int   LZ4_freeHC (void* LZ4HC_Data);
-#endif
-LZ4_DEPRECATED("use LZ4_saveDictHC() instead") LZ4LIB_API     char* LZ4_slideInputBufferHC (void* LZ4HC_Data);
-LZ4_DEPRECATED("use LZ4_compress_HC_continue() instead") LZ4LIB_API int LZ4_compressHC2_continue               (void* LZ4HC_Data, const char* source, char* dest, int inputSize, int compressionLevel);
-LZ4_DEPRECATED("use LZ4_compress_HC_continue() instead") LZ4LIB_API int LZ4_compressHC2_limitedOutput_continue (void* LZ4HC_Data, const char* source, char* dest, int inputSize, int maxOutputSize, int compressionLevel);
-LZ4_DEPRECATED("use LZ4_createStreamHC() instead") LZ4LIB_API int   LZ4_sizeofStreamStateHC(void);
-LZ4_DEPRECATED("use LZ4_initStreamHC() instead") LZ4LIB_API  int   LZ4_resetStreamStateHC(void* state, char* inputBuffer);
-
-
-/* LZ4_resetStreamHC() is now replaced by LZ4_initStreamHC().
- * The intention is to emphasize the difference with LZ4_resetStreamHC_fast(),
- * which is now the recommended function to start a new stream of blocks,
- * but cannot be used to initialize a memory segment containing arbitrary garbage data.
- *
- * It is recommended to switch to LZ4_initStreamHC().
- * LZ4_resetStreamHC() will generate deprecation warnings in a future version.
- */
-LZ4LIB_API void LZ4_resetStreamHC (LZ4_streamHC_t* streamHCPtr, int compressionLevel);
+LZ4_DEPRECATED("use LZ4_initStreamHC(s, sizeof(*s)) then LZ4_resetStreamHC_fast(s, level) instead") LZ4LIB_API void LZ4_resetStreamHC (LZ4_streamHC_t* streamHCPtr, int compressionLevel);
 
 
 #if defined (__cplusplus)
@@ -379,11 +351,11 @@ LZ4LIB_STATIC_API void LZ4_favorDecompressionSpeed(
  *  When an LZ4_streamHC_t is known to be in a internally coherent state,
  *  it can be prepared for a new compression with almost no work, instead of
  *  the full, expensive reset that is required when the stream is in an
- *  indeterminate state (i.e., the reset performed by LZ4_resetStreamHC()).
+ *  indeterminate state (i.e., the initialization performed by LZ4_initStreamHC()).
  *
  *  LZ4_streamHCs are guaranteed to be in a valid state when:
  *  - returned from LZ4_createStreamHC()
- *  - reset by LZ4_resetStreamHC()
+ *  - initialized by LZ4_initStreamHC()
  *  - memset(stream, 0, sizeof(LZ4_streamHC_t))
  *  - the stream was in a valid state and was reset by LZ4_resetStreamHC_fast()
  *  - the stream was in a valid state and was then used in any compression call,
@@ -395,7 +367,7 @@ LZ4LIB_STATIC_API void LZ4_favorDecompressionSpeed(
 LZ4LIB_STATIC_API void LZ4_resetStreamHC_fast(
     LZ4_streamHC_t* LZ4_streamHCPtr, int compressionLevel);
 
-/*! LZ4_STREAMHC_EXTSIZE : v1.10.1+ (experimental)
+/*! LZ4_STREAMHC_EXTSIZE : v1.11.0+ (experimental)
  *  Levels >= LZ4HC_CLEVEL_OPT_MIN employ a temporary buffer (~64 KB), allocated at each compression
  *  (or on stack, when lz4hc.c is compiled with LZ4HC_HEAPMODE=0).
  *  A state initialized by LZ4_initStreamHC() on a buffer of LZ4_STREAMHC_EXTSIZE bytes includes this buffer :
@@ -414,7 +386,7 @@ LZ4LIB_STATIC_API void LZ4_resetStreamHC_fast(
  *  "correctly initialized"). From a high level, the difference is that this
  *  function initializes the provided state with a call to
  *  LZ4_resetStreamHC_fast() while LZ4_compress_HC_extStateHC() starts with a
- *  call to LZ4_resetStreamHC().
+ *  call to LZ4_initStreamHC().
  */
 LZ4LIB_STATIC_API int LZ4_compress_HC_extStateHC_fastReset (
     void* state,
