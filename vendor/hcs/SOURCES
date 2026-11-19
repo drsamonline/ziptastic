@@ -42,7 +42,7 @@ Columns:
 |---|---|---|---|---|
 | srep | https://github.com/essencesh/srep | copy | all-rights-reserved | reference |
 | zstd | https://github.com/facebook/zstd | copy | BSD-3-Clause | link |
-| lz4 | https://github.com/lz4/lz4 | copy | BSD-2-Clause | link |
+| lz4 | https://github.com/lz4/lz4 | aa4647fad575d01a874aaaadcdbe8e6a40e072f5 | BSD-2-Clause | link |
 | lzham | https://github.com/richgel999/lzham_codec | d379b1f9121e2197881c61cfc4713c78848bdfe7 | MIT | link |
 | freearc-c | https://github.com/seb3773/freearc-c | copy | GPL-2.0 | copy-src |
 | freearc-main | https://github.com/Bulat-Ziganshin/FA | copy | mixed | reference |
@@ -151,13 +151,43 @@ Columns:
 |---|---|---|---|---|
 | csc | https://github.com/fusiyuan2010/CSC | unvendored | verify | link |
 | lzo | https://github.com/nemequ/lzo | copy | GPL+commercial | external-process |
+| bzip2 | https://github.com/libarchive/bzip2 | unvendored | bzip2-1.0.6 | link |
+| lrzip | https://github.com/ckolivas/lrzip | unvendored | GPL-2.0 | external-process |
+| blosc2 | https://github.com/Blosc/c-blosc2 | unvendored | BSD-2-Clause | link |
+| libarchive | https://github.com/libarchive/libarchive | unvendored | BSD-2-Clause | link |
+| 7zip-cli | https://github.com/ip7z/7zip | unvendored | LGPL-2.1+unRAR | external-process |
+
+The last five were added 2026-11-18 after checking fifty codec and archive
+repositories (`audit/docs/codec-repos-survey-2026-11-18.md`). Licences were read,
+not assumed:
+
+- **bzip2** — the classic 1.0.6 licence: two redistribution clauses plus the
+  "cannot be misrepresented as being the original software" clause. SPDX
+  `bzip2-1.0.6`. The vault had **no bzip2 row at all** until now, which is why
+  `bzip2` appearing in a consumer's dependency list was previously unchecked.
+- **lrzip** — GPL-2.0, so `external-process` only. It is here for one reason:
+  long-range matching, which a fixed block size cannot do.
+- **blosc2** — **BSD-2-Clause**, confirmed by counting the redistribution clauses
+  in `LICENSE.txt` (two, not three). Linkable. Its **filters** (shuffle,
+  bitshuffle, delta) are the reference for the SQLite column transform.
+- **libarchive** — BSD-2-Clause, likewise confirmed from `COPYING`. The format
+  coverage reference: it reads tar/cpio/ar/iso/zip and **does not** read 7z or
+  RAR, which is why a consumer needs the row below as well.
+- **7zip-cli** — LGPL-2.1 **with the unRAR restriction**, so `external-process`
+  and never linked. It is the reference implementation for the formats
+  heavenzip shells out to.
 
 Clone them with:
 
 ```bash
 git clone --depth=1 https://github.com/fusiyuan2010/CSC.git old/csc
 git clone --depth=1 https://github.com/nemequ/lzo.git        old/lzo
-rm -rf old/csc/.git old/lzo/.git
+git clone --depth=1 https://github.com/libarchive/bzip2.git  old/bzip2
+git clone --depth=1 https://github.com/ckolivas/lrzip.git    old/lrzip
+git clone --depth=1 https://github.com/Blosc/c-blosc2.git    old/blosc2
+git clone --depth=1 https://github.com/libarchive/libarchive.git old/libarchive
+git clone --depth=1 https://github.com/ip7z/7zip.git         old/7zip-cli
+rm -rf old/csc/.git old/lzo/.git old/bzip2/.git old/lrzip/.git old/blosc2/.git old/libarchive/.git old/7zip-cli/.git
 
 ---
 
@@ -172,8 +202,9 @@ A copied tree carries no git history, so its upstream commit was not recorded. W
 | `libdeflate` | 1.26 | `v1.26` | `92e6a0db9fa8` | `old/libdeflate-master/libdeflate.h` |
 | `xz` | 5.8.4 | `v5.8.4` | `d3e650e63c11` | `old/xz-master/src/liblzma/api/lzma/version.h` |
 | `zpaq` | 7.15 | `7.15` | `9ab539f644e3` | `old/zpaq-master/zpaq.cpp` |
+| `lz4` | 1.11.1 | `v1.11.1` | `aa4647fad575` | `old/lz4-dev/lib/lz4.h` |
 
-These stay `copy`, with the reason: `zstd` states 1.6.0 and `lz4` states 1.10.1, and neither has a tag of that name — the copied trees are ahead of the last release, and a pin to the previous tag would be a claim the tree contradicts. `advancecomp`'s `configure.ac` reads `AC_INIT([AdvanceCOMP], [git_revision], ...)`, which is a placeholder, not a version. `zopfli`, `packJPG`, `precomp-cpp`, `bitshuffle`, `parmar`, `zlib-ng`, `freearc-c`, `freearc-main`, `srep`, `LPAQ9`, `BARF`, `BBB`, `FLZP`, `FPAQF2` and `SR3A` state no version in a file this vault can read.
+These stay `copy`, with the reason: `zstd` states 1.6.0 and has no tag of that name — the copied tree is ahead of the last release, and a pin to the previous tag would be a claim the tree contradicts. `lz4` was in this list until 2026-11-19, when it moved to 1.11.1 — a version upstream *does* tag — so it is pinned above. `advancecomp`'s `configure.ac` reads `AC_INIT([AdvanceCOMP], [git_revision], ...)`, which is a placeholder, not a version. `zopfli`, `packJPG`, `precomp-cpp`, `bitshuffle`, `parmar`, `zlib-ng`, `freearc-c`, `freearc-main`, `srep`, `LPAQ9`, `BARF`, `BBB`, `FLZP`, `FPAQF2` and `SR3A` state no version in a file this vault can read.
 
 ## Submodule entries
 
