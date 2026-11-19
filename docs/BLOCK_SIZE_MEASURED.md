@@ -25,7 +25,8 @@ the identical transform:
 
 Both halves of the "weaker coder" hypothesis are dead. Probes: `probe_bwt.cpp` (libbsc settings
 exactly as the engine uses them) and `probe_bwt2.cpp` (`bsc_bwt_encode` alone, so an external coder
-can be measured on the same transform).
+can be measured on the same transform). Both live in the audit repo at
+`log/2026-11/2026-11-19-probes/`.
 
 ## 2. The block size — the actual cause
 
@@ -85,6 +86,3 @@ g++ -O2 -I vendor/hcs/old/libbsc-master probe_bwt2.cpp <libbsc sources> -o probe
 ziptastic -9 -b 16384 -f -o /tmp/a.dr "$CORPUS/nci"
 ziptastic -d -f -o /tmp/a.out /tmp/a.dr && cmp "$CORPUS/nci" /tmp/a.out
 ```
-
-The probe sources are kept in the audit repo's log entry for this measurement, since they are
-throwaway harnesses rather than part of the engine.
